@@ -72,7 +72,7 @@ algoLoopCount si counter clp =
 
 
 -- dumb rule-choosing strategy
-chooseRule :: [RuleL] -> Maybe RuleL
+chooseRule :: [Rule] -> Maybe Rule
 chooseRule (hd:_)  = Just hd
 chooseRule [] = Nothing
 

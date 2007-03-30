@@ -11,74 +11,48 @@ data StructModification =    SM_AddFormulas   [PrFormula]
                            | SM_RemFormula PrFormula
                            | SM_IncLastPr
 
--- type Rule =   [StructModification]
-class Rule a where
- mods :: a -> [[StructModification]]
- txt :: a -> String
-
--- problem : maybe the coupling beetween the txt functions and the internals
---           of ConjRule, DiaRule ... should and could be avoided
-data ConjRule = ConjRule [StructModification]
-instance Rule ConjRule where
-   mods (ConjRule setOfMods) = [setOfMods]
-   txt (ConjRule ((SM_RemFormula f):_)) = "conjunction : " ++ (show f)
-   txt _ = error $ "txt ConjRule"
-
-data DiaRule = DiaRule [StructModification]
-instance Rule DiaRule where
-   mods (DiaRule setOfMods) = [setOfMods]
-   txt (DiaRule ((SM_RemFormula f):_)) = "diamond : " ++ (show f)
-   txt _ = error $ "txt DiaRule"
-
-data BoxRule = BoxRule [StructModification]
-instance Rule BoxRule where
-   mods (BoxRule setOfMods) = [setOfMods]
-   txt (BoxRule _) = "box"
-
-data DisjRule = DisjRule [[StructModification]]
-instance Rule DisjRule where
-   mods (DisjRule setOfSetOfMods) = setOfSetOfMods
-   txt (DisjRule (((SM_RemFormula f):_):_)) = "disjunction : " ++ (show f)
-   txt _ = error $ "txt DisjRule"
+data Rule =  ConjRule [StructModification]
+           | DiaRule  [StructModification]
+           | BoxRule  [StructModification]
+           | DisjRule [[StructModification]]
 
 
+mods :: Rule -> [[StructModification]]
+mods (ConjRule setOfMods) = [setOfMods]
+mods (DiaRule setOfMods) = [setOfMods]
+mods (BoxRule setOfMods) = [setOfMods]
+mods (DisjRule setOfSetOfMods) = setOfSetOfMods
 
--- to create heterogenous lists of Rules
--- idea taken here :
--- http://en.wikibooks.org/wiki/Haskell/Existentially_quantified_types
-
-data RuleL = forall r. Rule r => RL r
-instance Rule RuleL where
-   mods (RL r) = mods r
-   txt (RL r)  = txt r
-instance Show RuleL where
-   show (RL r) = txt r
-
-
+instance Show Rule where
+   show (ConjRule ((SM_RemFormula f):_)) = "conjunction : " ++ (show f)
+   show (DiaRule ((SM_RemFormula f):_)) = "diamond : " ++ (show f)
+   show (BoxRule _) = "box"
+   show (DisjRule (((SM_RemFormula f):_):_)) = "disjunction : " ++ (show f)
+   show _ = error $ "show Rule"
 
 -- is it a good idea to generate all the modifications done by each application of rule ??
 -- of is it better to just say : rule that there, rule that there .. yes!
 
-applicableRules :: SetOfStructures -> [RuleL]
+applicableRules :: SetOfStructures -> [Rule]
 applicableRules sos =    (applicableConjRules sos)
                       ++ (applicableDiaRules sos)
                       ++ (applicableBoxRules sos)
                       ++ (applicableDisjRules sos)
 
 
-applicableConjRules :: SetOfStructures -> [RuleL]
-applicableConjRules sos = [RL (conjRule f sos) | f <- (conjStr sos)]
+applicableConjRules :: SetOfStructures -> [Rule]
+applicableConjRules sos = [conjRule f sos | f <- (conjStr sos)]
 
-applicableDiaRules :: SetOfStructures -> [RuleL]
-applicableDiaRules sos = [RL (diaRule f sos) | f <- (diaStr sos)]
+applicableDiaRules :: SetOfStructures -> [Rule]
+applicableDiaRules sos = [diaRule f sos | f <- (diaStr sos)]
 
 
-applicableBoxRules :: SetOfStructures -> [RuleL]
+applicableBoxRules :: SetOfStructures -> [Rule]
 applicableBoxRules sos
-  = [RL (boxRule prF accF sos) | (prF,accF) <- (unCheckedBoxPairs sos)]
+  = [boxRule prF accF sos | (prF,accF) <- (unCheckedBoxPairs sos)]
 
-applicableDisjRules :: SetOfStructures -> [RuleL]
-applicableDisjRules sos = [RL (disjRule f sos) | f <- (disjStr sos)]
+applicableDisjRules :: SetOfStructures -> [Rule]
+applicableDisjRules sos = [disjRule f sos | f <- (disjStr sos)]
 
 
 unCheckedBoxPairs :: SetOfStructures -> [(PrFormula,AccFormula)]
@@ -90,7 +64,7 @@ unCheckedBoxPairs sos
 
 --
 
-applyRule :: Rule a => a -> SetOfStructures -> [StructInfo]
+applyRule :: Rule -> SetOfStructures -> [StructInfo]
 applyRule rule sos = applyMods (mods rule) sos
 
 
@@ -122,7 +96,7 @@ applyMod (SM_RemFormula f) sos = StructOK (remFormula sos f)
 -- conjunction
 
 -- takes 1 argument, the formula to remove
-conjRule :: PrFormula -> SetOfStructures -> ConjRule
+conjRule :: PrFormula -> SetOfStructures -> Rule
 conjRule f _ = ConjRule [(SM_RemFormula f),
                          (SM_AddFormulas (breakConj f))]
 
@@ -132,7 +106,7 @@ breakConj _ = error $ "breakConj error"
 
 
 -- dia
-diaRule :: PrFormula -> SetOfStructures -> DiaRule
+diaRule :: PrFormula -> SetOfStructures -> Rule
 diaRule f@(PrFormula pr (Dia r f2)) sos
   = DiaRule [(SM_RemFormula f),
              (SM_AddAccFormula (AccFormula r pr newPr)),
@@ -145,7 +119,7 @@ getNewPr :: SetOfStructures -> Prefix
 getNewPr sos = (lastPr sos)+1
 
 -- box
-boxRule :: PrFormula -> AccFormula -> SetOfStructures -> BoxRule
+boxRule :: PrFormula -> AccFormula -> SetOfStructures -> Rule
 boxRule bf@(PrFormula pr0 (Box r1 f2)) af@(AccFormula r2 pr1 pr2) _
  | (pr0 == pr1) && (r1 == r2) = BoxRule [(SM_AddFormulas [(prefix pr2 f2)]),
                 (SM_AddBoxRuleCheck (bf,af))]
@@ -154,7 +128,7 @@ boxRule _ _ _ = error $ "boxrule error"
 
 -- disjunction
 
-disjRule :: PrFormula -> SetOfStructures -> DisjRule
+disjRule :: PrFormula -> SetOfStructures -> Rule
 disjRule df _ = DisjRule [[(SM_RemFormula df),
                            (SM_AddFormulas [oneDisjointed])]
                           | oneDisjointed <- disjointed]
