@@ -2,7 +2,7 @@ module Main (main)
 
 where
 
-import System
+import System.Environment
 --import Control.Exception
 --import Control.Concurrent
 --import Control.Monad.State

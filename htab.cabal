@@ -1,0 +1,13 @@
+Name:                htab
+Version:             0.01
+Description:         Theorem prover for hybrid logics
+License:             GPL
+License-file:        COPYING
+Author:              Guillaume Hoffmann, Carlos Areces, Daniel Gorin, Juan Heguiabehere
+Maintainer:          guillaumh@gmail.com
+Build-Depends:       base
+ 
+Executable:          htab
+Main-is:             Htab.hs
+Hs-Source-Dirs:      src
+ghc-options:         

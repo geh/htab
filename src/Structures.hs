@@ -21,7 +21,7 @@ module Structures where
 --          been treated, by storing it in a special list in the structure
 
 import Formula
-import List
+import Data.List
 import qualified Data.Map as Map
 
 type Clasher = PrFormula
