@@ -33,7 +33,7 @@ data StructInfo = StructOK SetOfStructures |
 -- by looking if there is already something at the (prefix, prop) place
 -- and if what is there contradicts what we want to add
 
-data Lit_structure = Lit_structure (Map.Map (Prefix,Prop) Bool)
+data Lit_structure = Lit_structure (Map.Map (Prefix,Atom) Bool)
 type Conj_structure = [PrFormula]
 type Disj_structure = [PrFormula]
 type Dia_structure  = [PrFormula]
@@ -45,10 +45,10 @@ instance Show Lit_structure where
  show (Lit_structure ls) = "[" ++ (join "," [litStructShowElem pair  | pair <- pairs]) ++ "]"
                            where pairs = Map.assocs ls
 
-litStructShowElem :: ((Prefix,Prop),Bool) -> String
+litStructShowElem :: ((Prefix,Atom),Bool) -> String
 litStructShowElem pair =
-    if (snd pair) == True then (show (fst (fst pair))) ++ ":P" ++ (show (snd (fst pair)))
-                          else (show (fst (fst pair))) ++ ":!P" ++ (show (snd (fst pair)))
+    if (snd pair) == True then (show (fst (fst pair))) ++ ":" ++ (show (snd (fst pair)))
+                          else (show (fst (fst pair))) ++ ":!" ++ (show (snd (fst pair)))
 
 join :: String -> [String] -> String
 join s (hd:tl) = hd ++ s ++ (join s tl)
@@ -67,7 +67,7 @@ data SetOfStructures = SetOf {  litStr :: Lit_structure,
 
 emptyStructs :: SetOfStructures
 emptyStructs = SetOf
-                { litStr= Lit_structure (Map.empty::Map.Map (Prefix,Prop) Bool),
+                { litStr= Lit_structure (Map.empty::Map.Map (Prefix,Atom) Bool),
                   conjStr=[],
                   disjStr=[],
                   diaStr=[],
@@ -103,26 +103,34 @@ addFormula sos f@(PrFormula _ (Box _ _))
 addFormula sos f@(PrFormula _ (Dia _ _))
            = StructOK sos{diaStr = (f:(diaStr sos))}
 
-addFormula sos f@(PrFormula pr (PosLit (P p)))
-           = case (updateMap (litStr sos) (pr,p) True) of
+addFormula sos f@(PrFormula pr (PosLit a))
+           = case (updateMap (litStr sos) (pr,a) True) of
               Just m  -> StructOK sos{litStr = m}
               Nothing -> StructClash sos f
 
-addFormula sos f@(PrFormula pr (NegLit (P p)))
-           = case (updateMap (litStr sos) (pr,p) False) of
+addFormula sos f@(PrFormula pr (NegLit a))
+           = case (updateMap (litStr sos) (pr,a) False) of
               Just m  -> StructOK sos{litStr = m}
               Nothing -> StructClash sos f
+
+
 
 addFormula _ _ = error $ "unimplemented formula"
 
 
 
-updateMap :: Lit_structure -> (Prefix,Prop) -> Bool -> Maybe Lit_structure
-updateMap (Lit_structure m) (pre,pro) b
-    = case (Map.lookup (pre,pro) m) of
+updateMap :: Lit_structure -> (Prefix,Atom) -> Bool -> Maybe Lit_structure
+updateMap (Lit_structure m) (pre,Taut) True
+    = Just (Lit_structure (Map.insert (pre,Taut) True m))
+
+updateMap (Lit_structure m) (pre,Taut) False
+    = Nothing
+
+updateMap (Lit_structure m) (pre,atom) b
+    = case (Map.lookup (pre,atom) m) of
        Just b2 -> if b == b2 then Just (Lit_structure m)
                              else Nothing                   -- clash!
-       Nothing -> Just (Lit_structure (Map.insert (pre,pro) b m))
+       Nothing -> Just (Lit_structure (Map.insert (pre,atom) b m))
 
 
 

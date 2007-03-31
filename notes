@@ -1,11 +1,8 @@
 TODO :
 
 add:
- * nominals and satisfaction operators
- * possibility to add nominals to literalStructure, and different display then
+ * satisfaction operators
  * timeout handling
- * handle tautologies
- 
 
 
 change:
