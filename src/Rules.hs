@@ -1,58 +1,58 @@
 module Rules where
 
 import Formula
-import Structures
+import Branch
 
 -- a "rule" is basically a list of modifications of the structures
 
-data StructModification =    SM_AddFormulas   [PrFormula]
-                           | SM_AddAccFormula AccFormula
-                           | SM_AddBoxRuleCheck (PrFormula,AccFormula)
-                           | SM_RemFormula PrFormula
-                           | SM_IncLastPr
+data BranchModification =    BM_AddFormulas   [PrFormula]
+                           | BM_AddAccFormula AccFormula
+                           | BM_AddBoxRuleCheck (PrFormula,AccFormula)
+                           | BM_RemFormula PrFormula
+                           | BM_IncLastPr
 
-data Rule =  ConjRule [StructModification]
-           | DiaRule  [StructModification]
-           | BoxRule  [StructModification]
-           | DisjRule [[StructModification]]
+data Rule =  ConjRule [BranchModification]
+           | DiaRule  [BranchModification]
+           | BoxRule  [BranchModification]
+           | DisjRule [[BranchModification]]
 
 
-mods :: Rule -> [[StructModification]]
+mods :: Rule -> [[BranchModification]]
 mods (ConjRule setOfMods) = [setOfMods]
 mods (DiaRule setOfMods) = [setOfMods]
 mods (BoxRule setOfMods) = [setOfMods]
 mods (DisjRule setOfSetOfMods) = setOfSetOfMods
 
 instance Show Rule where
-   show (ConjRule ((SM_RemFormula f):_)) = "conjunction : " ++ (show f)
-   show (DiaRule ((SM_RemFormula f):_)) = "diamond : " ++ (show f)
+   show (ConjRule ((BM_RemFormula f):_)) = "conjunction : " ++ (show f)
+   show (DiaRule ((BM_RemFormula f):_)) = "diamond : " ++ (show f)
    show (BoxRule _) = "box"
-   show (DisjRule (((SM_RemFormula f):_):_)) = "disjunction : " ++ (show f)
+   show (DisjRule (((BM_RemFormula f):_):_)) = "disjunction : " ++ (show f)
    show _ = error $ "show Rule"
 
 -- is it a good idea to generate all the modifications done by each application of rule ??
 -- of is it better to just say : rule that there, rule that there .. yes!
 
-applicableRules :: SetOfStructures -> [Rule]
-applicableRules sos =    (applicableConjRules sos)
-                      ++ (applicableDiaRules sos)
-                      ++ (applicableBoxRules sos)
-                      ++ (applicableDisjRules sos)
+applicableRules :: Branch -> [Rule]
+applicableRules br =    (applicableConjRules br)
+                     ++ (applicableDiaRules br)
+                     ++ (applicableBoxRules br)
+                     ++ (applicableDisjRules br)
 
 
-applicableConjRules :: SetOfStructures -> [Rule]
-applicableConjRules sos = [conjRule f sos | f <- (conjStr sos)]
+applicableConjRules :: Branch -> [Rule]
+applicableConjRules br = [conjRule f br | f <- (conjStr br)]
 
-applicableDiaRules :: SetOfStructures -> [Rule]
-applicableDiaRules sos = [diaRule f sos | f <- (diaStr sos)]
+applicableDiaRules :: Branch -> [Rule]
+applicableDiaRules br = [diaRule f br | f <- (diaStr br)]
 
 
-applicableBoxRules :: SetOfStructures -> [Rule]
-applicableBoxRules sos
-  = [boxRule prF accF sos | (prF,accF) <- (unCheckedBoxPairs sos)]
+applicableBoxRules :: Branch -> [Rule]
+applicableBoxRules br
+  = [boxRule prF accF br | (prF,accF) <- (unCheckedBoxPairs br)]
 
-applicableDisjRules :: SetOfStructures -> [Rule]
-applicableDisjRules sos = [disjRule f sos | f <- (disjStr sos)]
+applicableDisjRules :: Branch -> [Rule]
+applicableDisjRules br = [disjRule f br | f <- (disjStr br)]
 
 
 unCheckedBoxPairs :: SetOfStructures -> [(PrFormula,AccFormula)]
@@ -64,30 +64,30 @@ unCheckedBoxPairs sos
 
 --
 
-applyRule :: Rule -> SetOfStructures -> [StructInfo]
-applyRule rule sos = applyMods (mods rule) sos
+applyRule :: Rule -> Branch -> [BranchInfo]
+applyRule rule br = applyMods (mods rule) br
 
 
 -- the functions names really suck here :
-applyMods :: [[StructModification]] -> SetOfStructures -> [StructInfo]
-applyMods (hd:tl) sos = (applyMods2 hd sos):(applyMods tl sos)
+applyMods :: [[BranchModification]] -> Branch -> [BranchInfo]
+applyMods (hd:tl) br = (applyMods2 hd br):(applyMods tl br)
 applyMods [] _ = []
 
 
-applyMods2 :: [StructModification] -> SetOfStructures -> StructInfo
-applyMods2 (hd:tl) sos = case (applyMod hd sos) of
-                          StructOK sos2        -> applyMods2 tl sos2
-                          si@(StructClash _ _) -> si
+applyMods2 :: [BranchModification] -> Branch -> BranchInfo
+applyMods2 (hd:tl) br = case (applyMod hd br) of
+                         BranchOK br2         -> applyMods2 tl br2
+                         si@(BranchClash _ _) -> si
 
-applyMods2 [] sos = StructOK sos
+applyMods2 [] br = BranchOK br
 
 
-applyMod ::StructModification -> SetOfStructures -> StructInfo
-applyMod (SM_AddFormulas li) sos = addFormulas sos li
-applyMod (SM_AddAccFormula accFor) sos = StructOK (addAccFormula sos accFor)
-applyMod (SM_AddBoxRuleCheck li) sos = StructOK (addBoxRuleCheck sos li)
-applyMod (SM_IncLastPr) sos = StructOK (incLastPr sos)
-applyMod (SM_RemFormula f) sos = StructOK (remFormula sos f)
+applyMod :: BranchModification -> Branch -> BranchInfo
+applyMod (BM_AddFormulas li) br = addFormulas br li
+applyMod (BM_AddAccFormula accFor) br = BranchOK (addAccFormula br accFor)
+applyMod (BM_AddBoxRuleCheck li) br = BranchOK (addBoxRuleCheck br li)
+applyMod (BM_IncLastPr) br = BranchOK (incLastPr br)
+applyMod (BM_RemFormula f) br = BranchOK (remFormula br f)
 
 
 
@@ -96,9 +96,9 @@ applyMod (SM_RemFormula f) sos = StructOK (remFormula sos f)
 -- conjunction
 
 -- takes 1 argument, the formula to remove
-conjRule :: PrFormula -> SetOfStructures -> Rule
-conjRule f _ = ConjRule [(SM_RemFormula f),
-                         (SM_AddFormulas (breakConj f))]
+conjRule :: PrFormula -> Branch -> Rule
+conjRule f _ = ConjRule [(BM_RemFormula f),
+                         (BM_AddFormulas (breakConj f))]
 
 breakConj :: PrFormula -> [PrFormula]
 breakConj (PrFormula pr (Con formulaList)) = prefixList pr formulaList
@@ -106,31 +106,31 @@ breakConj _ = error $ "breakConj error"
 
 
 -- dia
-diaRule :: PrFormula -> SetOfStructures -> Rule
-diaRule f@(PrFormula pr (Dia r f2)) sos
-  = DiaRule [(SM_RemFormula f),
-             (SM_AddAccFormula (AccFormula r pr newPr)),
-             (SM_AddFormulas [(prefix newPr f2)]),
-                              (SM_IncLastPr)]
-            where newPr = getNewPr sos
+diaRule :: PrFormula -> Branch -> Rule
+diaRule f@(PrFormula pr (Dia r f2)) br
+  = DiaRule [(BM_RemFormula f),
+             (BM_AddAccFormula (AccFormula r pr newPr)),
+             (BM_AddFormulas [(prefix newPr f2)]),
+                              (BM_IncLastPr)]
+            where newPr = getNewPr br
 diaRule _ _ = error $ "diaRule"
 
-getNewPr :: SetOfStructures -> Prefix
-getNewPr sos = (lastPr sos)+1
+getNewPr :: Branch -> Prefix
+getNewPr br = (lastPr br)+1
 
 -- box
-boxRule :: PrFormula -> AccFormula -> SetOfStructures -> Rule
+boxRule :: PrFormula -> AccFormula -> Branch -> Rule
 boxRule bf@(PrFormula pr0 (Box r1 f2)) af@(AccFormula r2 pr1 pr2) _
- | (pr0 == pr1) && (r1 == r2) = BoxRule [(SM_AddFormulas [(prefix pr2 f2)]),
-                (SM_AddBoxRuleCheck (bf,af))]
+ | (pr0 == pr1) && (r1 == r2) = BoxRule [(BM_AddFormulas [(prefix pr2 f2)]),
+                (BM_AddBoxRuleCheck (bf,af))]
 
 boxRule _ _ _ = error $ "boxrule error"
 
 -- disjunction
 
-disjRule :: PrFormula -> SetOfStructures -> Rule
-disjRule df _ = DisjRule [[(SM_RemFormula df),
-                           (SM_AddFormulas [oneDisjointed])]
+disjRule :: PrFormula -> Branch -> Rule
+disjRule df _ = DisjRule [[(BM_RemFormula df),
+                           (BM_AddFormulas [oneDisjointed])]
                           | oneDisjointed <- disjointed]
                 where disjointed = (breakDisj df)
 

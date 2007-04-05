@@ -35,7 +35,7 @@ where
 
 import HyLoLexer(HyLoToken(..), FilePos, line, col)
 
-import Structures
+import Branch
 import Formula
 }
 
@@ -137,8 +137,8 @@ Formula :
 
 Formulas :
  Formula
-{let f = $1 in (addFormula emptyStructs (prefix 0 f))} -- prefix and add the
-                                                       -- main formula
+{let f = $1 in (addFormula emptyBranch (prefix 0 f))} -- prefix and add the
+                                                      -- main formula
 
 
 {
