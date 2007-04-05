@@ -7,10 +7,12 @@
 ----------------------------------------------------
 
 {-
+Copyright (C) htab 2007
+Guillaume Hoffmann - guillaumh@gmail.com
 Copyright (C) HyLoRes 2002-2006
-Carlos Areces     - areces@loria.fr      - http://www.loria.fr/~areces
-Daniel Gorin      - dgorin@dc.uba.ar
-Juan Heguiabehere - juanh@inf.unibz.it - http://www.inf.unibz.it/~juanh/
+Carlos Areces      - areces@loria.fr      - http://www.loria.fr/~areces
+Daniel Gorin       - dgorin@dc.uba.ar
+Juan Heguiabehere  - juanh@inf.unibz.it - http://www.inf.unibz.it/~juanh/
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License
@@ -127,6 +129,7 @@ getConf p =
 showHelp :: IO ()
 
 showHelp = putStrLn ("htab 0.01\n" ++
+     "G. Hoffmann (c) 2007.\n" ++
      "C. Areces, D.Gorin and J. Heguiabehere. (c) 2002-2005.\n\n" ++
      "Usage: htab -f file_name [-t <t>|-st <s>|-r|-s]\n\n" ++
      "-t secs   : Timeout in seconds.\n" ++
