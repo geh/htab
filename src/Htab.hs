@@ -71,7 +71,7 @@ algoLoopCount si depth nbClashed clp =
                                              return (SAT,nbClashed)
           BranchClash br pf -> do vPutStrLn (show br) showState
                                   vPutStrLn ("\nClasher : " ++ (show pf)) showState
-                                  vPutStrLn ("\n>> Closed branch") (showState || showRules)
+                                  vPutStrLn ("\n>> Closed branch #" ++ show (nbClashed+1)) (showState || showRules)
                                   return (UNSAT,nbClashed+1)
 
 
