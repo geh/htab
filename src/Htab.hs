@@ -17,6 +17,8 @@ import CommandLine
 import Structures
 import Rules
 
+type NbClash = Int
+
 data SatFlag = SAT | UNSAT
  deriving Show
 
@@ -34,10 +36,14 @@ main =
                  of {
                      structInfo ->
                         do {
-                                isSat <- algoLoop structInfo clp;
-                                case isSat of
-                                 SAT       -> putStrLn "SAT"
-                                 UNSAT     -> putStrLn "UNSAT"
+                                (isSat,nbClash) <- algoLoop structInfo clp;
+                                case isSat
+                                of {
+                                  SAT       -> putStrLn "SAT";
+                                  UNSAT     -> putStrLn "UNSAT";
+                                };
+
+                                putStrLn ("Closed branches " ++ (show nbClash));
                          };
                     }
                 }
@@ -45,16 +51,15 @@ main =
        }
 
 
-algoLoop :: StructInfo -> CmdLineParams -> IO (SatFlag)
+algoLoop :: StructInfo -> CmdLineParams -> IO ((SatFlag,NbClash))
 algoLoop si clp = do vPutStrLn ">> Starting rules application"
                                        ((logState clp)||(logRules clp));
-                     algoLoopCount si 0 clp
+                     algoLoopCount si 0 0 clp
 
-algoLoopCount :: StructInfo -> Int -> CmdLineParams -> IO (SatFlag)
-algoLoopCount si counter clp =
+algoLoopCount :: StructInfo -> Int -> Int -> CmdLineParams -> IO (SatFlag,NbClash)
+algoLoopCount si depth nbClashed clp =
       do let showState = (logState clp)
          let showRules = (logRules clp)
-         vPutStrLn ("\n>> Iteration #" ++ (show counter)) (showState || showRules)
          case si of
           StructOK sos -> do vPutStrLn (show sos) showState
                              let listOfRules = applicableRules sos
@@ -62,13 +67,13 @@ algoLoopCount si counter clp =
                              case r of
                               Just rule -> do vPutStrLn ("\n>> Rule : " ++ (show rule)) showRules
                                               let possibleStructures = applyRule rule sos
-                                              chooseStruct possibleStructures counter clp
+                                              chooseStruct possibleStructures depth 0 nbClashed clp
                               Nothing   -> do vPutStrLn "\n>> Saturated open branch" (showState || showRules)
-                                              return SAT
+                                              return (SAT,nbClashed)
           StructClash sos pf -> do vPutStrLn (show sos) showState
                                    vPutStrLn ("\nClasher : " ++ (show pf)) showState
-                                   vPutStrLn ("\n>> Closed branch") showState
-                                   return UNSAT
+                                   vPutStrLn ("\n>> Closed branch") (showState || showRules)
+                                   return (UNSAT,nbClashed+1)
 
 
 -- dumb rule-choosing strategy
@@ -77,15 +82,18 @@ chooseRule (hd:_)  = Just hd
 chooseRule [] = Nothing
 
 -- dumb depth-first strategy
-chooseStruct :: [StructInfo] -> Int -> CmdLineParams -> IO (SatFlag)
-chooseStruct (hd:tl) counter clp
-    = do isSat <- algoLoopCount hd (counter+1) clp
-         case (isSat) of
-          SAT       -> do return SAT               -- stop there and return SAT
-          UNSAT     -> chooseStruct tl counter clp -- examine next
-chooseStruct [] counter clp
-  = do vPutStrLn ("\n>> Stop width at level " ++ show counter) ((logState clp)||(logRules clp))
-       return UNSAT
+chooseStruct :: [StructInfo] -> Int -> Int -> Int -> CmdLineParams -> IO (SatFlag,NbClash)
+chooseStruct (hd:tl) depth width nbClashed clp
+    = do let showState = (logState clp)
+         let showRules = (logRules clp)
+         vPutStrLn ("\n>> Depth #" ++ (show depth) ++ " Width #" ++ (show width)) (showState || showRules)
+         alcRes <- algoLoopCount hd (depth+1) nbClashed clp
+         case (alcRes) of
+          (SAT,ncl)   -> do return (SAT,ncl)                         -- stop there and return SAT
+          (UNSAT,ncl) -> chooseStruct tl depth (width+1) (ncl) clp -- examine next
+chooseStruct [] depth width nbClashed clp
+  = do vPutStrLn ("\n>> Stop width at level " ++ show depth ++ " width " ++ show width) ((logState clp)||(logRules clp))
+       return (UNSAT,nbClashed)
 
 
 vPutStrLn :: String -> Bool -> IO ()
