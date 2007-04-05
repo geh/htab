@@ -55,10 +55,6 @@ instance Show Formula where
  show (Box r f)  = "[R" ++ (show r)  ++ "]" ++ (show f)
  show (Dia r f)  = "<R" ++ (show r)  ++ ">" ++ (show f)
 
---   show (Con tl)     = "(" ++ (showInfixOp " & " tl) ++ ")"
---   show (Dis tl)     = "(" ++ (showInfixOp " | " tl) ++ ")"
-
-
 
 {- showInfixOp: Given
 
@@ -94,11 +90,9 @@ taut :: Formula
 prop :: Prop -> Formula
 nom  :: Nominal -> Formula
 
-
 taut   = PosLit Taut
 prop p = PosLit (P p)
 nom  n = PosLit (N n)
-
 
 {- Modalities -}
 box, diamond :: Rel -> Formula -> Formula

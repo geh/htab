@@ -114,7 +114,6 @@ addFormula sos f@(PrFormula pr (NegLit a))
               Nothing -> StructClash sos f
 
 
-
 addFormula _ _ = error $ "unimplemented formula"
 
 
@@ -133,7 +132,7 @@ updateMap (Lit_structure m) (pre,atom) b
        Nothing -> Just (Lit_structure (Map.insert (pre,atom) b m))
 
 
-
+--
 
 addFormulas :: SetOfStructures -> [PrFormula] -> StructInfo
 addFormulas sos (hd:tl) = case (addFormula sos hd) of
@@ -147,21 +146,10 @@ addFormulas sos [] = StructOK sos
 addAccFormula :: SetOfStructures -> AccFormula -> SetOfStructures
 addAccFormula sos f = sos{accStr=(f:(accStr sos))}
 
-
--- not used:
-addAccFormulas :: SetOfStructures -> [AccFormula] -> StructInfo
-addAccFormulas sos (hd:tl) = addAccFormulas (addAccFormula sos hd) tl
-addAccFormulas sos [] = StructOK sos
-
 --
 
 addBoxRuleCheck :: SetOfStructures -> (PrFormula,AccFormula) -> SetOfStructures
 addBoxRuleCheck sos c = sos{boxRlCh=(c:(boxRlCh sos))}
-
--- not used
-addBoxRuleChecks :: SetOfStructures -> [(PrFormula,AccFormula)] -> StructInfo
-addBoxRuleChecks sos (hd:tl) = addBoxRuleChecks (addBoxRuleCheck sos hd) tl
-addBoxRuleChecks sos [] = StructOK sos
 
 --
 
