@@ -122,7 +122,7 @@ updateMap :: Lit_structure -> (Prefix,Atom) -> Bool -> Maybe Lit_structure
 updateMap (Lit_structure m) (pre,Taut) True
     = Just (Lit_structure (Map.insert (pre,Taut) True m))
 
-updateMap (Lit_structure m) (pre,Taut) False
+updateMap (Lit_structure _) (_,Taut) False
     = Nothing
 
 updateMap (Lit_structure m) (pre,atom) b
