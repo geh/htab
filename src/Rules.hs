@@ -54,12 +54,11 @@ applicableBoxRules br
 applicableDisjRules :: Branch -> [Rule]
 applicableDisjRules br = [disjRule f br | f <- (disjStr br)]
 
-
-unCheckedBoxPairs :: SetOfStructures -> [(PrFormula,AccFormula)]
-unCheckedBoxPairs sos
-  = [(boxF,accF) | boxF@(PrFormula p1 (Box r1 _)) <- (boxStr sos),
-                   accF@(AccFormula r2 p2 _) <- (accStr sos),
-                   notElem (boxF,accF) (boxRlCh sos),
+unCheckedBoxPairs :: Branch -> [(PrFormula,AccFormula)]
+unCheckedBoxPairs br
+  = [(boxF,accF) | boxF@(PrFormula p1 (Box r1 _)) <- (boxStr br),
+                   accF@(AccFormula r2 p2 _) <- (accStr br),
+                   notElem (boxF,accF) (boxRlCh br),
                    r1 == r2 , p1 == p2]
 
 --
@@ -138,4 +137,3 @@ disjRule df _ = DisjRule [[(BM_RemFormula df),
 breakDisj :: PrFormula -> [PrFormula]
 breakDisj (PrFormula pr (Dis formulaList)) = prefixList pr formulaList
 breakDisj _ = error $ "breakDisj error"
-
