@@ -16,9 +16,11 @@ import CommandLine
 import Branch
 import Rules
 
+import Timeout
+
 type NbClash = Int
 
-data SatFlag = SAT | UNSAT
+data SatFlag = SAT | UNSAT | TIMEOUT
  deriving Show
 
 main :: IO ()
@@ -35,11 +37,17 @@ main =
                  of {
                      branchInfo ->
                         do {
-                                (isSat,nbClash) <- algoLoop branchInfo clp;
+                                (isSat,nbClash) <- if (not ((maxtimeout clp) == 0))
+                                                      then timeout (maxtimeout clp)
+                                                                (algoLoop branchInfo clp)
+                                                                (return (TIMEOUT, 0))
+                                                      else (algoLoop branchInfo clp);
+
                                 case isSat
                                 of {
                                   SAT       -> putStrLn "SAT";
                                   UNSAT     -> putStrLn "UNSAT";
+                                  TIMEOUT   -> putStrLn "TIMEOUT"
                                 };
 
                                 putStrLn ("Closed branches " ++ (show nbClash));
@@ -90,6 +98,7 @@ chooseBranch (hd:tl) depth width nbClashed clp
          case (alcRes) of
           (SAT,ncl)   -> do return (SAT,ncl)                         -- stop there and return SAT
           (UNSAT,ncl) -> chooseBranch tl depth (width+1) (ncl) clp -- examine next
+          (TIMEOUT,_) -> error $ "shouldn't happen"
 chooseBranch [] depth width nbClashed clp
   = do vPutStrLn ("\n>> Stop width at level " ++ show depth ++ " width " ++ show width) ((logState clp)||(logRules clp))
        return (UNSAT,nbClashed)
