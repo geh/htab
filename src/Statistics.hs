@@ -167,10 +167,6 @@ recordClosedBranchM :: MetricModificator
 recordClosedBranchM (CB x) = CB (x+1)
 recordClosedBranchM m      = m
 
-ratio :: Int -> Int -> Float
-ratio x y = (fromIntegral x) / (fromIntegral y)
-
-
 ruleApplicationCount :: Metric
 ruleApplicationCount = RC  Map.empty
 
