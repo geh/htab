@@ -26,6 +26,10 @@ tokens :-
   [Ss]how[Ss]tate                { tok ShowS }
   [Ss]ave[Ss]at                  { tok SaveSat }
 
+  [Ss]tatistics                  { tok Stats }
+  [cr]+(\:[$digit]+\:[cr]+)?
+ |\:[$digit]+\:[cr]+             { \p s -> tok' (StatsValue s) p }
+
   [Ss]election[Ff]unction        { tok SFunction }
   [Lnaodb]+                      { \p s -> tok' (SFValue s) p }
 
@@ -38,7 +42,7 @@ tokens :-
 data Token =
     Eq | TF String | Num String | FileName String | File | Timeout |
     SFunction | SFValue String |
-    ShowR | ShowS | SaveSat
+    ShowR | ShowS | SaveSat | Stats | StatsValue String
   deriving (Eq, Show, Read)
 
 type PosToken = (Token, Int, Int)

@@ -63,7 +63,7 @@ initialParams = CLP {paramsOk = False,
                      logState = False,
                      logRules = False,
                      maxtimeout = 0,
-                     statsStr = "c:"}
+                     statsStr = ":0:c"}
 
 initialParamsStr :: String
 initialParamsStr = concat ["% This is the default configuration file for htab\n",

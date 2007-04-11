@@ -22,6 +22,8 @@ import Clexer (Token(..), PosToken)
     showrules                 {(ShowR,_,_)}
     showstate                 {(ShowS,_,_)}
     savesat                   {(SaveSat,_,_)}
+    statistics                {(Stats,_,_)}
+    statisticsValue           {(StatsValue $$,_,_)}
 %%
 
 Input : 
@@ -38,6 +40,8 @@ Input :
    {("ss",$3):$4}
  | savesat '=' bool Input
    {("savesat",$3):$4}
+ | statistics '=' statisticsValue Input
+   {("statistics",$3):$4}
 
 {
 happyError = parserError
