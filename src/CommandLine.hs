@@ -38,20 +38,23 @@ module CommandLine (
     paramsOk,
     filename,
     logState, logRules,
-    maxtimeout
+    maxtimeout, configureMetrics
 ) where
 
 -- import Char(isDigit)
 
 import Cparser(cParser)
 import Clexer(cLexer)
+import Statistics
+import Char(isDigit)
 
 data CmdLineParams = CLP {
            paramsOk      :: Bool,
            filename      :: String,
            logState      :: Bool,
            logRules      :: Bool,
-           maxtimeout    :: Integer
+           maxtimeout    :: Integer,
+           statsStr      :: String
          } deriving (Show)
 
 initialParams :: CmdLineParams
@@ -59,8 +62,8 @@ initialParams = CLP {paramsOk = False,
                      filename = "no file name",
                      logState = False,
                      logRules = False,
-                     maxtimeout = 0
-                    }
+                     maxtimeout = 0,
+                     statsStr = "c:"}
 
 initialParamsStr :: String
 initialParamsStr = concat ["% This is the default configuration file for htab\n",
@@ -69,10 +72,12 @@ initialParamsStr = concat ["% This is the default configuration file for htab\n"
                            "% Timeout = [in seconds, 0 = no timeout]\n",
                            "% Showrules = [Show rules during resolution, True | False]\n",
                            "% Showstate = [Show internal state during resolution, True | False]\n",
+                           "% statistics = [statistics to print]\n",
                            "\n",
                            "Timeout = ", show $ maxtimeout initialParams, " \n",
                            "Showrules = ", show $ logRules initialParams, "\n",
-                           "Showstate = ", show $ logState initialParams, "\n"]
+                           "Showstate = ", show $ logState initialParams, "\n",
+                           "Statistics = ", statsStr initialParams, "\n"]
 
 
 {- parseParams: Given
@@ -88,6 +93,10 @@ parseParams clp ("-t":[])    = clp{paramsOk = False}
 parseParams clp ("-t":t:xs)  = parseParams clp{maxtimeout = (read t)} xs
 parseParams clp ("-s":xs)    = parseParams clp{logState = True} xs
 parseParams clp ("-r":xs)    = parseParams clp{logRules = True} xs
+parseParams clp ("-st":[])   = clp{paramsOk = False}
+parseParams clp ("-st":s:xs) = if (validStats s)
+                                   then parseParams clp{statsStr=s} xs
+                                   else clp{paramsOk = False}
 parseParams clp ("-f":[])    = clp{paramsOk = False}
 parseParams clp ("-f":f:xs)  = parseParams clp{filename = f, paramsOk = True} xs
 parseParams clp  _           = clp{paramsOk = False}
@@ -104,6 +113,7 @@ defineParams p ((f,v):s) =
             "timeout"    ->  defineParams p{maxtimeout       = read v} s
             "sr"         ->  defineParams p{logRules      = read v} s
             "ss"         ->  defineParams p{logState      = read v } s
+            "statistics" ->  defineParams p{statsStr = v} s
             unknown      -> error ("Can't Happen!: Unknown configuration parameter " ++ show unknown ++ " \n")
 
 
@@ -133,6 +143,7 @@ showHelp = putStrLn ("htab 0.01\n" ++
      "C. Areces, D.Gorin and J. Heguiabehere. (c) 2002-2005.\n\n" ++
      "Usage: htab -f file_name [-t <t>|-st <s>|-r|-s]\n\n" ++
      "-t secs   : Timeout in seconds.\n" ++
+     "-st string: Configure statistics\n" ++
      "-r        : Prints rules.\n" ++
      "-s        : Prints the internal state of the tableaux.\n\n" ++
      "This program is distributed in the hope that it will be useful,\n" ++
@@ -142,3 +153,52 @@ showHelp = putStrLn ("htab 0.01\n" ++
 
 
 
+
+metrics :: [(Char,Metric)]
+metrics = [('c',closedBranches),
+           ('r',ruleApplicationCount)]
+
+parseStats :: String -> Maybe (String, Maybe (Int, String))
+parseStats s
+    | allMetricsExist fmIds &&
+      (null opIms ||
+       if (null inter)
+           then (null imIds)
+           else (all isDigit inter &&
+                 allMetricsExist imIds')) = Just (fmIds,inspectionStats)
+    -- | otherwise                           = Nothing
+    | otherwise                          = error (show (fmIds, opIms))
+    where (fmIds,opIms)   = break (== ':') s
+          (inter,imIds)   = break (== ':') (tail opIms)
+          imIds'          = tail imIds
+          allMetricsExist = (all (flip elem validMetrics))
+          validMetrics    = (fst . unzip) metrics
+          inspectionStats = if ( null inter )
+                                then Nothing
+                                else Just (read inter, imIds)
+
+
+{- validStats: says if a statatistics-configuration-string is valid.
+   The string is a sequence of chars that represent metrics, optionally
+   followed by a colon, a number, another colon, and the sequence of
+   inspection metrics -}
+validStats :: String -> Bool
+validStats = (Nothing /=) . parseStats
+
+{- statistics: Given
+    - a CmdLineParams clp with a valid statistics string
+  configures the proper metrics inside the StatisticsState -}
+configureMetrics :: CmdLineParams -> StatisticsState ()
+configureMetrics clp = do
+                           let Just (fmIds,ims) = parseStats (statsStr clp)
+                           let fms = filterMetrics fmIds
+                           mapM_ addMetric fms
+                           case ims of
+                               Nothing          -> return ()
+                               Just (i, ifmIds) -> do
+                                   let ifms = filterMetrics ifmIds
+                                   mapM_ addInspectionMetric ifms
+                                   setPrintOutInterval i
+
+filterMetrics :: String -> [Metric]
+filterMetrics s = map snd (filter ((flip elem s) . fst) metrics)
