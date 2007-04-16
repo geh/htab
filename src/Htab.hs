@@ -11,6 +11,7 @@ import Rules
 import Timeout
 import Statistics
 import Control.Monad.State
+import System.CPUTime(getCPUTime)
 
 data SatFlag = SAT | UNSAT | TIMEOUT
  deriving Show
@@ -24,27 +25,29 @@ main =
 
         if ( paramsOk clp )
         then do {
+                 start <- getCPUTime;
                  fstr <- readFile (filename clp);
                  case (parse . hyloLexer $ fstr)
                  of {
                      branchInfo ->
-                        do {
-                                result <- if (not ((maxtimeout clp) == 0))
-                                             then timeout (maxtimeout clp)
-                                                          (algoStart branchInfo clp)
-                                                          (return (TIMEOUT, Nothing))
-                                             else (algoStart branchInfo clp);
+                        do result <- if (not ((maxtimeout clp) == 0))
+                                        then timeout (maxtimeout clp)
+                                                     (algoStart branchInfo clp)
+                                                    (return (TIMEOUT, Nothing))
+                                        else (algoStart branchInfo clp);
 
-                                case result
-                                of {
-                                  (SAT, Just stats)    -> putStrLn "SAT" >>
-                                                          printOutAllMetrics' stats;
-                                  (UNSAT, Just stats)  -> putStrLn "UNSAT" >>
-                                                          printOutAllMetrics' stats;
-                                  (TIMEOUT, Nothing)   -> putStrLn "TIMEOUT";
-                                  _                    -> error ("Unexpected response: (" ++ show (fst result) ++ ", *)")
-                                };
-                         };
+                           case result of
+                               (SAT, Just stats)    -> (putStrLn "SAT" >>
+                                                       printOutAllMetrics' stats)
+                               (UNSAT, Just stats)  -> (putStrLn "UNSAT" >>
+                                                       printOutAllMetrics' stats)
+                               (TIMEOUT, Nothing)   -> (putStrLn "TIMEOUT")
+                               _                    -> error ("Unexpected response: (" ++ show (fst result) ++ ", *)")
+
+                           end <- getCPUTime
+                           putStr "Elapsed time: "
+                           print ((fromInteger (end - start)) / 1000000000000 :: Double)
+
                     }
                 }
         else showHelp;
