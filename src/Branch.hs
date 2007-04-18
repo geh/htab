@@ -21,14 +21,13 @@ module Branch where
 --          been treated, by storing it in a special list in the branch
 
 
-import Control.Monad.State(StateT, modify,MonadState)
-import Statistics(Statistics)
-
---
-
-import Formula
+import Control.Monad.State(StateT, modify,MonadState, get)
 import Data.List
 import qualified Data.Map as Map
+
+import Statistics(Statistics)
+import CommandLine(CmdLineParams)
+import Formula
 
 --
 
@@ -176,7 +175,7 @@ remFormula _ _ = error $ "Want to delete a formula that shouldn't"
     Monad related stuff
 -}
 
-type BranchMonad a = StateT BranchInfo (StateT Statistics IO) a
+type BranchMonad a = StateT (BranchInfo,CmdLineParams) (StateT Statistics IO) a
 
 
 mAddAccFormula :: AccFormula -> BranchMonad ()
@@ -193,15 +192,21 @@ mRemFormula pf = modifyIfOk ((flip remFormula) pf)
 
 modifyIfOk :: (Branch -> Branch) -> BranchMonad ()
 modifyIfOk f = modify (\bi -> case bi of
-                               BranchOK br -> BranchOK (f br)
-                               _           -> bi)     -- do nothing
+                               (BranchOK br,clp) -> (BranchOK (f br),clp)
+                               _               -> bi)     -- do nothing
 
 mAddFormulas ::  [PrFormula] -> BranchMonad ()
 mAddFormulas pfs = modify (\bi -> case bi of
-                                   BranchOK br -> addFormulas br pfs
-                                   _           -> bi)
+                                   (BranchOK br,clp) -> (addFormulas br pfs,clp)
+                                   _               -> bi)
 
 --
 
-initialBranchStateFor :: (MonadState BranchInfo m) =>  (m a -> BranchInfo -> b) -> BranchInfo -> m a -> b
-initialBranchStateFor f bi = flip f bi
+initialBranchStateFor :: (MonadState (BranchInfo,CmdLineParams) m) =>  (m a -> (BranchInfo,CmdLineParams) -> b) -> (BranchInfo,CmdLineParams) -> m a -> b
+initialBranchStateFor f bi_clp = flip f bi_clp
+
+--
+
+getCLParams :: BranchMonad CmdLineParams
+getCLParams = do (_,clp) <- get
+                 return clp

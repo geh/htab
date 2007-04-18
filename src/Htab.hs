@@ -7,7 +7,6 @@ import HyLoLexer(hyloLexer)
 import HyLoParse
 import CommandLine
 import Branch
-import Rules
 import Timeout
 import Statistics
 import Control.Monad.State(runStateT)
@@ -29,23 +28,23 @@ main =
                  case (parse . hyloLexer $ fstr)
                  of {
                      branchInfo ->
-                        do result <- if (not ((maxtimeout clp) == 0))
-                                        then timeout (maxtimeout clp)
-                                                     (tableauInit branchInfo clp)
-                                                    (return (TIMEOUT, Nothing))
-                                        else (tableauInit branchInfo clp);
+                      do result <- if (not ((maxtimeout clp) == 0))
+                                      then timeout (maxtimeout clp)
+                                                   (tableauInit branchInfo clp)
+                                                  (return (TIMEOUT, Nothing))
+                                      else (tableauInit branchInfo clp);
 
-                           case result of
-                               (SAT, Just stats)    -> (putStrLn "SAT" >>
-                                                       printOutAllMetrics' stats)
-                               (UNSAT, Just stats)  -> (putStrLn "UNSAT" >>
-                                                       printOutAllMetrics' stats)
-                               (TIMEOUT, Nothing)   -> (putStrLn "TIMEOUT")
-                               _                    -> error ("Unexpected response: (" ++ show (fst result) ++ ", *)")
+                         case result of
+                          (SAT, Just stats)    -> (putStrLn "SAT" >>
+                                                  printOutAllMetrics' stats)
+                          (UNSAT, Just stats)  -> (putStrLn "UNSAT" >>
+                                                  printOutAllMetrics' stats)
+                          (TIMEOUT, Nothing)   -> (putStrLn "TIMEOUT")
+                          _                    -> error ("Unexpected response: (" ++ show (fst result) ++ ", *)")
 
-                           end <- getCPUTime
-                           putStr "Elapsed time: "
-                           print ((fromInteger (end - start)) / 1000000000000 :: Double)
+                         end <- getCPUTime
+                         putStr "Elapsed time: "
+                         print ((fromInteger (end - start)) / 1000000000000 :: Double)
                     }
                 }
         else showHelp;
@@ -53,11 +52,12 @@ main =
 
 
 tableauInit :: BranchInfo -> CmdLineParams -> IO (SatFlag,Maybe Statistics)
-tableauInit bi clp = do vPutStrLn ">> Starting rules application"
-                                       ((logState clp)||(logRules clp))
-                        res <- initStatsState $ (initBranchState bi) $ tableauStart clp
-                        case res of
-                         ((satflag,branchInfo),stats) -> return (satflag, Just stats) -- for now, no useful stats
+tableauInit bi clp =
+        do vPutStrLn ">> Starting rules application"
+                      ((logState clp)||(logRules clp))
+           res <- initStatsState $ (initBranchState (bi,clp)) $ tableauStart clp
+           case res of
+            ((satflag,(_,_)),stats) -> return (satflag, Just stats)
  where initStatsState  = initialStatisticsStateFor runStateT
        initBranchState = initialBranchStateFor runStateT
 
@@ -65,6 +65,4 @@ tableauInit bi clp = do vPutStrLn ">> Starting rules application"
 tableauStart :: CmdLineParams -> BranchMonad SatFlag
 tableauStart clp =
  do liftStats $ configureMetrics clp    -- knows from the command line which statistics will be displayed
-    tableau 0 clp
-
-
+    tableau 0

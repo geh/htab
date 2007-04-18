@@ -190,15 +190,15 @@ validStats = (Nothing /=) . parseStats
   configures the proper metrics inside the StatisticsState -}
 configureMetrics :: CmdLineParams -> StatisticsState ()
 configureMetrics clp = do
-                           let Just (fmIds,ims) = parseStats (statsStr clp)
-                           let fms = filterMetrics fmIds
-                           mapM_ addMetric fms
-                           case ims of
-                               Nothing          -> return ()
-                               Just (i, ifmIds) -> do
-                                   let ifms = filterMetrics ifmIds
-                                   mapM_ addInspectionMetric ifms
-                                   setPrintOutInterval i
+                         let Just (fmIds,ims) = parseStats (statsStr clp)
+                         let fms = filterMetrics fmIds
+                         mapM_ addMetric fms
+                         case ims of
+                             Nothing          -> return ()
+                             Just (i, ifmIds) -> do
+                                 let ifms = filterMetrics ifmIds
+                                 mapM_ addInspectionMetric ifms
+                                 setPrintOutInterval i
 
 filterMetrics :: String -> [Metric]
 filterMetrics s = map snd (filter ((flip elem s) . fst) metrics)

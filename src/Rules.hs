@@ -159,5 +159,5 @@ breakDisj _ = error $ "breakDisj error"
 applyToMonad :: Rule -> BranchMonad ()
 applyToMonad r =
  modify (\bi -> case bi of
-                 BranchOK br -> applyMods2 (head (mods r)) br
-                 _           -> bi )
+                 (BranchOK br,clp) -> (applyMods2 (head (mods r)) br,clp)
+                 _                 -> bi )
