@@ -20,14 +20,21 @@ module Branch where
 -- for [] : we remember if a couple (accessibility formula, box formula) has
 --          been treated, by storing it in a special list in the branch
 
+
+import Control.Monad.State(StateT, modify,MonadState)
+import Statistics(Statistics)
+
+--
+
 import Formula
 import Data.List
 import qualified Data.Map as Map
 
+--
+
 type Clasher = PrFormula
 data BranchInfo = BranchOK Branch |
                   BranchClash Branch Clasher
-
 
 -- Lit structure is a Map, because it's easier to detect clashed
 -- by looking if there is already something at the (prefix, prop) place
@@ -163,3 +170,38 @@ remFormula br f@(PrFormula _ (Con _)) = br{conjStr=(delete f (conjStr br))}
 remFormula br f@(PrFormula _ (Dia _ _)) = br{diaStr=(delete f (diaStr br))}
 remFormula br f@(PrFormula _ (Dis _)) = br{disjStr=(delete f (disjStr br))}
 remFormula _ _ = error $ "Want to delete a formula that shouldn't"
+
+
+{-
+    Monad related stuff
+-}
+
+type BranchMonad a = StateT BranchInfo (StateT Statistics IO) a
+
+
+mAddAccFormula :: AccFormula -> BranchMonad ()
+mAddAccFormula accf = modifyIfOk ((flip addAccFormula) accf)
+
+mAddBoxRuleCheck :: (PrFormula,AccFormula) -> BranchMonad ()
+mAddBoxRuleCheck brc = modifyIfOk ((flip addBoxRuleCheck) brc)
+
+mIncLastPr :: BranchMonad ()
+mIncLastPr  = modifyIfOk incLastPr
+
+mRemFormula :: PrFormula -> BranchMonad ()
+mRemFormula pf = modifyIfOk ((flip remFormula) pf)
+
+modifyIfOk :: (Branch -> Branch) -> BranchMonad ()
+modifyIfOk f = modify (\bi -> case bi of
+                               BranchOK br -> BranchOK (f br)
+                               _           -> bi)     -- do nothing
+
+mAddFormulas ::  [PrFormula] -> BranchMonad ()
+mAddFormulas pfs = modify (\bi -> case bi of
+                                   BranchOK br -> addFormulas br pfs
+                                   _           -> bi)
+
+--
+
+initialBranchStateFor :: (MonadState BranchInfo m) =>  (m a -> BranchInfo -> b) -> BranchInfo -> m a -> b
+initialBranchStateFor f bi = flip f bi

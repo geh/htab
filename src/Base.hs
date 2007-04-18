@@ -143,3 +143,7 @@ printCommaSeparateHdr hdr l = do
 showListWith :: (a -> ShowS) -> ShowS -> [a] -> ShowS -> ShowS
 showListWith f open xs close = open . commaSep xs . close
     where commaSep = foldr1 (.) . intersperse (showString ", ") . map f
+
+vPutStrLn :: String -> Bool -> IO ()
+vPutStrLn s b = if b then putStrLn s
+                     else return ()

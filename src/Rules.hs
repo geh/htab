@@ -2,6 +2,8 @@ module Rules where
 
 import Formula
 import Branch
+import Control.Monad.State(modify)
+
 
 -- a "rule" is basically a list of modifications of the structures
 
@@ -29,6 +31,17 @@ instance Show Rule where
    show (BoxRule _) = "box"
    show (DisjRule (((BM_RemFormula f):_):_)) = "disjunction : " ++ (show f)
    show _ = error $ "show Rule"
+
+
+--
+
+howManyBranches :: Rule -> Int
+howManyBranches (ConjRule _) = 1
+howManyBranches (DiaRule  _) = 1
+howManyBranches (BoxRule  _) = 1
+howManyBranches (DisjRule l) = length l
+
+--
 
 -- is it a good idea to generate all the modifications done by each application of rule ??
 -- of is it better to just say : rule that there, rule that there .. yes!
@@ -137,3 +150,14 @@ disjRule df _ = DisjRule [[(BM_RemFormula df),
 breakDisj :: PrFormula -> [PrFormula]
 breakDisj (PrFormula pr (Dis formulaList)) = prefixList pr formulaList
 breakDisj _ = error $ "breakDisj error"
+
+
+{-
+        Monad-related stuff
+-}
+
+applyToMonad :: Rule -> BranchMonad ()
+applyToMonad r =
+ modify (\bi -> case bi of
+                 BranchOK br -> applyMods2 (head (mods r)) br
+                 _           -> bi )

@@ -43,7 +43,10 @@ module Statistics(Statistics, StatisticsState, StatisticsStateIO,
 
 ) where
 
-import Control.Monad.State
+import Control.Monad.State(MonadState , MonadIO, modify, unless,
+                           get, gets, guard, when)
+
+import qualified Control.Monad.State as State(liftIO)
 
 import Data.Map(Map)
 import qualified Data.Map as Map(insertWith, toList, empty)
@@ -172,3 +175,8 @@ ruleApplicationCount = RC  Map.empty
 
 closedBranches :: Metric
 closedBranches = CB 0
+
+--
+
+liftIO :: (MonadIO m) => IO a -> m a
+liftIO = State.liftIO
