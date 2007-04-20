@@ -19,14 +19,14 @@ tableau =
       do logMe
          bd <- get
          let clp = branch_clp bd
-         let showState = (logState clp)
-         let showRules = (logRules clp)
+         let showState = logState clp
+         let showRules = logRules clp
          let showSome = (showState || showRules)
          let depth = branch_depth bd
          let width = head $ branch_path bd
 
-         liftIO $ vPutStrLn ("\n>> Depth #" ++ (show $ depth) ++ " Width #" ++ (show width)
-                             ++ " path " ++ (show (branch_path bd)) )
+         liftIO $ vPutStrLn ("\n>> Depth #" ++ (show depth) ++ " Width #" ++ (show width)
+                              ++ " path " ++ (show $ branch_path bd) )
                             showSome
 
          case (branch_info bd) of
@@ -44,9 +44,13 @@ tableau =
                       then do let possibleBranches = applyRule rule br
                               modify (\bdata -> bdata{branch_path=(0:(branch_path bdata))})
                               chooseBranch possibleBranches
+                              -- when we want to keep information, modify the
+                              -- BranchData state before returning
                       else do applyToMonad rule
                               modify (\bdata -> bdata{branch_path=(0:(branch_path bdata))})
                               tableau
+                              -- when we want to keep information, modify the
+                              -- BranchData state before returning
                Nothing   ->
                 do liftIO $ vPutStrLn "\n>> Saturated open branch" showSome
                    return SAT
@@ -65,9 +69,9 @@ chooseBranch (hd:tl)
          res <- tableau
 
          case (res) of
-          SAT        -> do return SAT                   -- stop there and return SAT
+          SAT        -> do return SAT
           UNSAT      ->
-           do put bd{branch_path=(((head (branch_path bd))+1):(tail (branch_path bd)))}
+           do put bd{branch_path=(((head (branch_path bd))+1):(tail $ branch_path bd))}
               -- we re-put bd (branchdata as it was before branching)
               -- in order to retrieve the path at that stage
               -- the problem is that we forget all information about the branches
