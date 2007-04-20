@@ -1,7 +1,10 @@
 module Rules where
 
 import Formula
-import Branch
+import Branch(Branch, BranchMonad, lastPr, incLastPr, BranchInfo(..),
+              diaStr, boxStr, accStr, boxRlCh, conjStr, disjStr,
+              addFormulas, addAccFormula, remFormula, addBoxRuleCheck,
+              BranchData(..))
 import Control.Monad.State(modify)
 
 
@@ -40,8 +43,6 @@ howManyBranches (ConjRule _) = 1
 howManyBranches (DiaRule  _) = 1
 howManyBranches (BoxRule  _) = 1
 howManyBranches (DisjRule l) = length l
-
---
 
 -- is it a good idea to generate all the modifications done by each application of rule ??
 -- of is it better to just say : rule that there, rule that there .. yes!
@@ -158,6 +159,6 @@ breakDisj _ = error $ "breakDisj error"
 
 applyToMonad :: Rule -> BranchMonad ()
 applyToMonad r =
- modify (\bi -> case bi of
-                 (BranchOK br,clp) -> (applyMods2 (head (mods r)) br,clp)
-                 _                 -> bi )
+ modify (\bd -> case (branch_info bd) of
+                 (BranchOK br) -> bd{branch_info=(applyMods2 (head (mods r)) br)}
+                 _             -> bd )

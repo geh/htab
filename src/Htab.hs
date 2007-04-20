@@ -2,13 +2,15 @@ module Main (main)
 
 where
 
-import System.Environment
+import System.Environment(getArgs)
 import HyLoLexer(hyloLexer)
-import HyLoParse
-import CommandLine
-import Branch
-import Timeout
-import Statistics
+import HyLoParse(parse)
+import CommandLine(getConf,initialParams,paramsOk, filename, parseParams,
+                   maxtimeout, showHelp, CmdLineParams, logState, logRules,
+                   configureMetrics)
+import Branch(BranchInfo,initialBranchStateFor,BranchMonad, BranchData(..))
+import Timeout(timeout)
+import Statistics(Statistics, initialStatisticsStateFor, printOutAllMetrics')
 import Control.Monad.State(runStateT)
 import System.CPUTime(getCPUTime)
 import Base(vPutStrLn)
@@ -55,14 +57,17 @@ tableauInit :: BranchInfo -> CmdLineParams -> IO (SatFlag,Maybe Statistics)
 tableauInit bi clp =
         do vPutStrLn ">> Starting rules application"
                       ((logState clp)||(logRules clp))
-           res <- initStatsState $ (initBranchState (bi,clp)) $ tableauStart clp
+           res <- initStatsState $ initBranchState bd $ tableauStart clp
            case res of
-            ((satflag,(_,_)),stats) -> return (satflag, Just stats)
+            ((satflag,_),stats) -> return (satflag, Just stats)
  where initStatsState  = initialStatisticsStateFor runStateT
        initBranchState = initialBranchStateFor runStateT
-
+       bd              = BranchData
+                          { branch_info = bi,
+                            branch_clp  = clp,
+                            branch_path = [0]}
 
 tableauStart :: CmdLineParams -> BranchMonad SatFlag
 tableauStart clp =
  do liftStats $ configureMetrics clp    -- knows from the command line which statistics will be displayed
-    tableau 0
+    tableau

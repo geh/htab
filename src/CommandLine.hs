@@ -45,7 +45,9 @@ module CommandLine (
 
 import Cparser(cParser)
 import Clexer(cLexer)
-import Statistics
+import Statistics(Metric,closedBranches,StatisticsState,
+                  addMetric, addInspectionMetric, setPrintOutInterval,
+                  ruleApplicationCount)
 import Char(isDigit)
 
 data CmdLineParams = CLP {

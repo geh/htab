@@ -3,7 +3,7 @@ module Tableau where
 import Base(vPutStrLn)
 import Control.Monad.State(lift,modify, put, get)
 import Statistics(updateStep,printOutInspectionMetrics,recordClosedBranch)
-import Branch(BranchInfo(..),BranchMonad)
+import Branch(BranchInfo(..),BranchMonad, BranchData(..),branch_depth)
 import CommandLine(logRules,logState,CmdLineParams)
 import Rules(Rule,applyRule,applyToMonad, applicableRules, howManyBranches)
 
@@ -14,32 +14,39 @@ data SatFlag = SAT | UNSAT | TIMEOUT
 
 --
 
-tableau :: Int -> BranchMonad SatFlag
-tableau depth =
+tableau :: BranchMonad SatFlag
+tableau =
       do logMe
-         (bi,clp) <- get
+         bd <- get
+         let clp = branch_clp bd
          let showState = (logState clp)
          let showRules = (logRules clp)
          let showSome = (showState || showRules)
-         case bi of
+         let depth = branch_depth bd
+         let width = head $ branch_path bd
+
+         liftIO $ vPutStrLn ("\n>> Depth #" ++ (show $ depth) ++ " Width #" ++ (show width)
+                             ++ " path " ++ (show (branch_path bd)) )
+                            showSome
+
+         case (branch_info bd) of
           BranchClash br pf ->
-           do liftIO $ vPutStrLn (show br) showState
-              liftIO $ vPutStrLn ("\nClasher : " ++ (show pf)) showState
+           do liftIO $ vPutStrLn ((show br) ++ "\nClasher : " ++ (show pf)) showState
               liftStats $ recordClosedBranch
               return UNSAT
 
           BranchOK br ->
            do liftIO $ vPutStrLn (show br) showState
-              let listOfRules = applicableRules br
-              let r = chooseRule listOfRules
-              case r of
+              case (chooseRule $ applicableRules br) of
                Just rule ->
                 do liftIO $ vPutStrLn ("\n>> Rule : " ++ (show rule)) showRules
                    if (howManyBranches rule) > 1
                       then do let possibleBranches = applyRule rule br
-                              chooseBranch possibleBranches depth 0
+                              modify (\bdata -> bdata{branch_path=(0:(branch_path bdata))})
+                              chooseBranch possibleBranches
                       else do applyToMonad rule
-                              tableau (depth+1)
+                              modify (\bdata -> bdata{branch_path=(0:(branch_path bdata))})
+                              tableau
                Nothing   ->
                 do liftIO $ vPutStrLn "\n>> Saturated open branch" showSome
                    return SAT
@@ -51,25 +58,30 @@ chooseRule (hd:_)  = Just hd
 chooseRule [] = Nothing
 
 -- dumb depth-first strategy
-chooseBranch :: [BranchInfo] -> Int -> Int  -> BranchMonad SatFlag
-chooseBranch (hd:tl) depth width
-    = do (_,clp) <- get
-         let showState = (logState clp)
-         let showRules = (logRules clp)
-         let showSome = (showState || showRules)
-         liftIO $ vPutStrLn ("\n>> Depth #" ++ (show depth) ++ " Width #" ++ (show width))
-                            showSome
-         put (hd,clp)          -- overwrite the monad with the first branchinfo given  -- TODO use a more specialised function than put ?
-         res <- tableau (depth+1)
+chooseBranch :: [BranchInfo]  -> BranchMonad SatFlag
+chooseBranch (hd:tl)
+    = do bd <- get
+         put bd{branch_info=hd}
+         res <- tableau
+
          case (res) of
           SAT        -> do return SAT                   -- stop there and return SAT
-          UNSAT      -> chooseBranch tl depth (width+1) -- examine next
-
+          UNSAT      ->
+           do put bd{branch_path=(((head (branch_path bd))+1):(tail (branch_path bd)))}
+              -- we re-put bd (branchdata as it was before branching)
+              -- in order to retrieve the path at that stage
+              -- the problem is that we forget all information about the branches
+              -- explored
+              chooseBranch tl
 
           TIMEOUT    -> error $ "shouldn't happen"
-chooseBranch [] depth width
-  = do (_,clp) <- get
-       liftIO $ vPutStrLn ("\n>> Stop width at level " ++ show depth ++ " width " ++ show width)
+
+chooseBranch []
+  = do bd <- get
+       let clp = branch_clp bd
+       let depth = branch_depth bd
+       let width = head $ branch_path bd
+       liftIO $ vPutStrLn ("\n>> Stop at level " ++ show depth ++ " width " ++ show  (width-1))
                           ((logState clp)||(logRules clp))
        return UNSAT
 

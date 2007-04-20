@@ -22,7 +22,7 @@ module Branch where
 
 
 import Control.Monad.State(StateT, modify,MonadState, get)
-import Data.List
+import Data.List(delete)
 import qualified Data.Map as Map
 
 import Statistics(Statistics)
@@ -71,6 +71,10 @@ data Branch = Branch {  litStr :: Lit_structure,
 
 --
 
+branch_depth :: BranchData -> Int
+branch_depth b = length $ branch_path b
+
+--
 emptyBranch :: Branch
 emptyBranch = Branch
                 { litStr= Lit_structure (Map.empty::Map.Map (Prefix,Atom) Bool),
@@ -175,8 +179,11 @@ remFormula _ _ = error $ "Want to delete a formula that shouldn't"
     Monad related stuff
 -}
 
-type BranchMonad a = StateT (BranchInfo,CmdLineParams) (StateT Statistics IO) a
+data BranchData = BranchData { branch_info :: BranchInfo,
+                               branch_clp :: CmdLineParams,
+                               branch_path :: [Int]}
 
+type BranchMonad a = StateT BranchData (StateT Statistics IO) a
 
 mAddAccFormula :: AccFormula -> BranchMonad ()
 mAddAccFormula accf = modifyIfOk ((flip addAccFormula) accf)
@@ -191,22 +198,22 @@ mRemFormula :: PrFormula -> BranchMonad ()
 mRemFormula pf = modifyIfOk ((flip remFormula) pf)
 
 modifyIfOk :: (Branch -> Branch) -> BranchMonad ()
-modifyIfOk f = modify (\bi -> case bi of
-                               (BranchOK br,clp) -> (BranchOK (f br),clp)
-                               _               -> bi)     -- do nothing
+modifyIfOk f = modify (\bd -> case (branch_info bd) of
+                               (BranchOK br) -> bd{branch_info=(BranchOK (f br))}
+                               _             -> bd)     -- do nothing
 
 mAddFormulas ::  [PrFormula] -> BranchMonad ()
-mAddFormulas pfs = modify (\bi -> case bi of
-                                   (BranchOK br,clp) -> (addFormulas br pfs,clp)
-                                   _               -> bi)
+mAddFormulas pfs = modify (\bd -> case (branch_info bd) of
+                                   (BranchOK br) -> bd{branch_info=(addFormulas br pfs)}
+                                   _             -> bd)
 
 --
 
-initialBranchStateFor :: (MonadState (BranchInfo,CmdLineParams) m) =>  (m a -> (BranchInfo,CmdLineParams) -> b) -> (BranchInfo,CmdLineParams) -> m a -> b
-initialBranchStateFor f bi_clp = flip f bi_clp
+initialBranchStateFor :: (MonadState BranchData m) =>  (m a -> BranchData -> b) -> BranchData -> m a -> b
+initialBranchStateFor f bd = flip f bd
 
 --
 
 getCLParams :: BranchMonad CmdLineParams
-getCLParams = do (_,clp) <- get
-                 return clp
+getCLParams = do bd <- get
+                 return (branch_clp bd)
