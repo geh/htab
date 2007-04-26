@@ -27,6 +27,7 @@ tokens :-
   [Ss]ave[Ss]at                  { tok SaveSat }
 
   [Ss]tatistics                  { tok Stats }
+  [Ss]emantic[Bb]ranching        { tok SemBranch }
   [cr]+(\:[$digit]+\:[cr]+)?
  |\:[$digit]+\:[cr]+             { \p s -> tok' (StatsValue s) p }
 
@@ -42,7 +43,7 @@ tokens :-
 data Token =
     Eq | TF String | Num String | FileName String | File | Timeout |
     SFunction | SFValue String |
-    ShowR | ShowS | SaveSat | Stats | StatsValue String
+    ShowR | ShowS | SaveSat | Stats | SemBranch | StatsValue String
   deriving (Eq, Show, Read)
 
 type PosToken = (Token, Int, Int)

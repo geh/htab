@@ -37,7 +37,7 @@ tableau =
 
           BranchOK br ->
            do liftIO $ vPutStrLn (show br) showState
-              case (chooseRule $ applicableRules br) of
+              case (chooseRule $ applicableRules br clp) of
                Just rule ->
                 do liftIO $ vPutStrLn ("\n>> Rule : " ++ (show rule)) showRules
                    if (howManyBranches rule) > 1
@@ -61,7 +61,7 @@ chooseRule :: [Rule] -> Maybe Rule
 chooseRule (hd:_)  = Just hd
 chooseRule [] = Nothing
 
--- dumb depth-first strategy
+-- depth-first strategy
 chooseBranch :: [BranchInfo]  -> BranchMonad SatFlag
 chooseBranch (hd:tl)
     = do bd <- get

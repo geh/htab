@@ -37,7 +37,7 @@ module CommandLine (
 
     paramsOk,
     filename,
-    logState, logRules,
+    logState, logRules, semBranch,
     maxtimeout, configureMetrics
 ) where
 
@@ -56,7 +56,8 @@ data CmdLineParams = CLP {
            logState      :: Bool,
            logRules      :: Bool,
            maxtimeout    :: Integer,
-           statsStr      :: String
+           statsStr      :: String,
+           semBranch     :: Bool
          } deriving (Show)
 
 initialParams :: CmdLineParams
@@ -65,7 +66,8 @@ initialParams = CLP {paramsOk = False,
                      logState = False,
                      logRules = False,
                      maxtimeout = 0,
-                     statsStr = ":0:c"}
+                     statsStr = ":0:c",
+                     semBranch = True}
 
 initialParamsStr :: String
 initialParamsStr = concat ["% This is the default configuration file for htab\n",
@@ -79,7 +81,8 @@ initialParamsStr = concat ["% This is the default configuration file for htab\n"
                            "Timeout = ", show $ maxtimeout initialParams, " \n",
                            "Showrules = ", show $ logRules initialParams, "\n",
                            "Showstate = ", show $ logState initialParams, "\n",
-                           "Statistics = ", statsStr initialParams, "\n"]
+                           "Statistics = ", statsStr initialParams, "\n",
+                           "Semanticbranching = ", show $ semBranch initialParams,"\n"]
 
 
 {- parseParams: Given
@@ -99,6 +102,7 @@ parseParams clp ("-st":[])   = clp{paramsOk = False}
 parseParams clp ("-st":s:xs) = if (validStats s)
                                    then parseParams clp{statsStr=s} xs
                                    else clp{paramsOk = False}
+parseParams clp ("-sb":xs)   = parseParams clp{semBranch = True} xs
 parseParams clp ("-f":[])    = clp{paramsOk = False}
 parseParams clp ("-f":f:xs)  = parseParams clp{filename = f, paramsOk = True} xs
 parseParams clp  _           = clp{paramsOk = False}
@@ -114,8 +118,9 @@ defineParams p ((f,v):s) =
   case f of "file"       ->  defineParams p{filename      = v} s
             "timeout"    ->  defineParams p{maxtimeout       = read v} s
             "sr"         ->  defineParams p{logRules      = read v} s
-            "ss"         ->  defineParams p{logState      = read v } s
+            "ss"         ->  defineParams p{logState      = read v} s
             "statistics" ->  defineParams p{statsStr = v} s
+            "sembranch"  ->  defineParams p{semBranch = read v} s
             unknown      -> error ("Can't Happen!: Unknown configuration parameter " ++ show unknown ++ " \n")
 
 
@@ -147,7 +152,8 @@ showHelp = putStrLn ("htab 0.01\n" ++
      "-t secs   : Timeout in seconds.\n" ++
      "-st string: Configure statistics\n" ++
      "-r        : Prints rules.\n" ++
-     "-s        : Prints the internal state of the tableaux.\n\n" ++
+     "-s        : Prints the internal state of the tableaux.\n" ++
+     "-sb       : Use semantic branching.\n\n" ++
      "This program is distributed in the hope that it will be useful,\n" ++
      "but WITHOUT ANY WARRANTY; without even the implied warranty of\n" ++
      "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n" ++

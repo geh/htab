@@ -5,6 +5,7 @@ import Branch(Branch, BranchMonad, lastPr, incLastPr, BranchInfo(..),
               diaStr, boxStr, accStr, boxRlCh, conjStr, disjStr,
               addFormulas, addAccFormula, remFormula, addBoxRuleCheck,
               BranchData(..))
+import CommandLine(CmdLineParams, semBranch)
 import Control.Monad.State(modify)
 
 
@@ -47,11 +48,12 @@ howManyBranches (DisjRule l) = length l
 -- is it a good idea to generate all the modifications done by each application of rule ??
 -- of is it better to just say : rule that there, rule that there .. yes!
 
-applicableRules :: Branch -> [Rule]
-applicableRules br =    (applicableConjRules br)
-                     ++ (applicableDiaRules br)
-                     ++ (applicableBoxRules br)
-                     ++ (applicableDisjRules br)
+applicableRules :: Branch -> CmdLineParams -> [Rule]
+applicableRules br clp =   (applicableConjRules br)
+                        ++ (applicableDiaRules br)
+                        ++ (applicableBoxRules br)
+                        ++ if semBranch clp then (applicableSemBr br)
+                                            else (applicableDisjRules br)
 
 
 applicableConjRules :: Branch -> [Rule]
@@ -67,6 +69,10 @@ applicableBoxRules br
 
 applicableDisjRules :: Branch -> [Rule]
 applicableDisjRules br = [disjRule f br | f <- (disjStr br)]
+
+applicableSemBr :: Branch -> [Rule]
+applicableSemBr br = [semBr f br | f <- (disjStr br)]
+
 
 unCheckedBoxPairs :: Branch -> [(PrFormula,AccFormula)]
 unCheckedBoxPairs br
@@ -147,10 +153,23 @@ disjRule df _ = DisjRule [[(BM_RemFormula df),
                           | oneDisjointed <- disjointed]
                 where disjointed = (breakDisj df)
 
-
 breakDisj :: PrFormula -> [PrFormula]
 breakDisj (PrFormula pr (Dis formulaList)) = prefixList pr formulaList
 breakDisj _ = error $ "breakDisj error"
+
+-- disjunction with semantic branching
+
+semBr :: PrFormula -> Branch -> Rule
+semBr df _ = DisjRule (sbModList df disjointed [])
+              where disjointed = (breakDisj df)
+
+sbModList :: PrFormula -> [PrFormula] -> [PrFormula] -> [[BranchModification]]
+sbModList df (hd_disj:tl_disj) negated =  [(BM_RemFormula df),
+                                           (BM_AddFormulas [hd_disj]),
+                                           (BM_AddFormulas negated)]:(sbModList df tl_disj ((negPr hd_disj):negated))  -- la partie neg est a corriger
+
+                                          where negPr (PrFormula pr f) = PrFormula pr (neg f)
+sbModList _ [] _ = []
 
 
 {-
