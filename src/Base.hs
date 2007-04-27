@@ -147,3 +147,7 @@ showListWith f open xs close = open . commaSep xs . close
 vPutStrLn :: String -> Bool -> IO ()
 vPutStrLn s b = if b then putStrLn s
                      else return ()
+
+intToBool :: Int -> Bool
+intToBool i | i == 0 = False
+intToBool _          = True

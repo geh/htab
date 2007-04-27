@@ -49,6 +49,7 @@ import Statistics(Metric,closedBranches,StatisticsState,
                   addMetric, addInspectionMetric, setPrintOutInterval,
                   ruleApplicationCount)
 import Char(isDigit)
+import Base(intToBool)
 
 data CmdLineParams = CLP {
            paramsOk      :: Bool,
@@ -102,7 +103,8 @@ parseParams clp ("-st":[])   = clp{paramsOk = False}
 parseParams clp ("-st":s:xs) = if (validStats s)
                                    then parseParams clp{statsStr=s} xs
                                    else clp{paramsOk = False}
-parseParams clp ("-sb":xs)   = parseParams clp{semBranch = True} xs
+parseParams clp ("-sb":b:xs)   = parseParams clp{semBranch = (intToBool $ read b)} xs
+parseParams clp ("-sb":[])    = clp{paramsOk = False}
 parseParams clp ("-f":[])    = clp{paramsOk = False}
 parseParams clp ("-f":f:xs)  = parseParams clp{filename = f, paramsOk = True} xs
 parseParams clp  _           = clp{paramsOk = False}
@@ -153,7 +155,8 @@ showHelp = putStrLn ("htab 0.01\n" ++
      "-st string: Configure statistics\n" ++
      "-r        : Prints rules.\n" ++
      "-s        : Prints the internal state of the tableaux.\n" ++
-     "-sb       : Use semantic branching.\n\n" ++
+     "-sb 0     : Don't use semantic branching.\n" ++
+     "-sb 1     : Use semantic branching.\n\n" ++
      "This program is distributed in the hope that it will be useful,\n" ++
      "but WITHOUT ANY WARRANTY; without even the implied warranty of\n" ++
      "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n" ++
