@@ -7,7 +7,7 @@ import Branch(Branch, BranchMonad, lastPr, incLastPr, BranchInfo(..),
               BranchData(..))
 import CommandLine(CmdLineParams, semBranch)
 import Control.Monad.State(modify)
-
+import RuleMetadata(RuleId(..))
 
 -- a "rule" is basically a list of modifications of the structures
 
@@ -17,10 +17,11 @@ data BranchModification =    BM_AddFormulas   [PrFormula]
                            | BM_RemFormula PrFormula
                            | BM_IncLastPr
 
-data Rule =  ConjRule [BranchModification]
-           | DiaRule  [BranchModification]
-           | BoxRule  [BranchModification]
-           | DisjRule [[BranchModification]]
+data Rule =  ConjRule  [BranchModification]
+           | DiaRule   [BranchModification]
+           | BoxRule   [BranchModification]
+           | DisjRule  [[BranchModification]]
+           | SemBrRule [[BranchModification]]
 
 
 mods :: Rule -> [[BranchModification]]
@@ -28,15 +29,25 @@ mods (ConjRule setOfMods) = [setOfMods]
 mods (DiaRule setOfMods) = [setOfMods]
 mods (BoxRule setOfMods) = [setOfMods]
 mods (DisjRule setOfSetOfMods) = setOfSetOfMods
+mods (SemBrRule setOfSetOfMods) = setOfSetOfMods
 
 instance Show Rule where
    show (ConjRule ((BM_RemFormula f):_)) = "conjunction : " ++ (show f)
    show (DiaRule ((BM_RemFormula f):_)) = "diamond : " ++ (show f)
    show (BoxRule _) = "box"
    show (DisjRule (((BM_RemFormula f):_):_)) = "disjunction : " ++ (show f)
+   show (SemBrRule (((BM_RemFormula f):_):_)) = "semantic branching : " ++ (show f)
    show _ = error $ "show Rule"
 
 
+--
+ruleToId :: Rule -> RuleId
+ruleToId r = case r of
+              (ConjRule _)  -> R_ConjRule
+              (DiaRule _)   -> R_DiaRule
+              (BoxRule _)   -> R_BoxRule
+              (DisjRule _)  -> R_DisjRule
+              (SemBrRule _) -> R_SemBrRule
 --
 
 howManyBranches :: Rule -> Int
@@ -44,6 +55,7 @@ howManyBranches (ConjRule _) = 1
 howManyBranches (DiaRule  _) = 1
 howManyBranches (BoxRule  _) = 1
 howManyBranches (DisjRule l) = length l
+howManyBranches (SemBrRule l) = length l
 
 -- is it a good idea to generate all the modifications done by each application of rule ??
 -- of is it better to just say : rule that there, rule that there .. yes!
@@ -160,7 +172,7 @@ breakDisj _ = error $ "breakDisj error"
 -- disjunction with semantic branching
 
 semBr :: PrFormula -> Branch -> Rule
-semBr df _ = DisjRule (sbModList df disjointed [])
+semBr df _ = SemBrRule (sbModList df disjointed [])
               where disjointed = (breakDisj df)
 
 sbModList :: PrFormula -> [PrFormula] -> [PrFormula] -> [[BranchModification]]

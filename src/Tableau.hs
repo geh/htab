@@ -2,10 +2,12 @@ module Tableau where
 
 import Base(vPutStrLn)
 import Control.Monad.State(lift,modify, put, get)
-import Statistics(updateStep,printOutInspectionMetrics,recordClosedBranch)
+import Statistics(updateStep,printOutInspectionMetrics,
+                  recordClosedBranch,recordFiredRule)
 import Branch(BranchInfo(..),BranchMonad, BranchData(..),branch_depth)
 import CommandLine(logRules,logState,CmdLineParams)
-import Rules(Rule,applyRule,applyToMonad, applicableRules, howManyBranches)
+import Rules(Rule,applyRule,applyToMonad, applicableRules,
+             howManyBranches,ruleToId)
 
 --
 
@@ -40,6 +42,7 @@ tableau =
               case (chooseRule $ applicableRules br clp) of
                Just rule ->
                 do liftIO $ vPutStrLn ("\n>> Rule : " ++ (show rule)) showRules
+                   liftStats $ recordFiredRule $ ruleToId rule
                    if (howManyBranches rule) > 1
                       then do let possibleBranches = applyRule rule br
                               modify (\bdata -> bdata{branch_path=(0:(branch_path bdata))})

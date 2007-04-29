@@ -39,5 +39,5 @@ data RuleId = R_ConjRule    -- Conjunction
             | R_DiaRule     -- Diamond <r>
             | R_BoxRule     -- Box  [r]
             | R_DisjRule    -- Disjunction
+            | R_SemBrRule   -- Semantic Branching
         deriving(Eq, Ord, Ix, Show)
-
