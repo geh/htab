@@ -22,6 +22,7 @@ import Clexer (Token(..), PosToken)
     showrules                 {(ShowR,_,_)}
     showstate                 {(ShowS,_,_)}
     semanticbranching         {(SemBranch,_,_)}
+    fullclash                 {(FullClash,_,_)}
     savesat                   {(SaveSat,_,_)}
     statistics                {(Stats,_,_)}
     statisticsValue           {(StatsValue $$,_,_)}
@@ -45,6 +46,8 @@ Input :
    {("statistics",$3):$4}
  | semanticbranching '=' bool Input
    {("sembranch",$3):$4}
+ | fullclash '=' bool Input
+   {("fullclash",$3):$4}
 
 
 {

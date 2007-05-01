@@ -37,7 +37,7 @@ module CommandLine (
 
     paramsOk,
     filename,
-    logState, logRules, semBranch,
+    logState, logRules, semBranch, fullClash,
     maxtimeout, configureMetrics
 ) where
 
@@ -58,7 +58,8 @@ data CmdLineParams = CLP {
            logRules      :: Bool,
            maxtimeout    :: Integer,
            statsStr      :: String,
-           semBranch     :: Bool
+           semBranch     :: Bool,
+           fullClash     :: Bool
          } deriving (Show)
 
 initialParams :: CmdLineParams
@@ -68,22 +69,26 @@ initialParams = CLP {paramsOk = False,
                      logRules = False,
                      maxtimeout = 0,
                      statsStr = ":0:c",
-                     semBranch = True}
+                     semBranch = True,
+                     fullClash = True}
 
 initialParamsStr :: String
 initialParamsStr = concat ["% This is the default configuration file for htab\n",
                            "% Possible valriables to set are:\n",
                            "% Filename = [file of the formula to resolve]\n",
                            "% Timeout = [in seconds, 0 = no timeout]\n",
-                           "% Showrules = [Show rules during resolution, True | False]\n",
-                           "% Showstate = [Show internal state during resolution, True | False]\n",
+                           "% Showrules = [Show rules during calculus, True | False]\n",
+                           "% Showstate = [Show internal state during calculus, True | False]\n",
                            "% statistics = [statistics to print]\n",
+                           "% Semanticbranching = [Use semantic branching instead of disjunction rule, True | False]\n",
+                           "% Fullclash = [Detect full clashes instead of working with negative normal form\n",
                            "\n",
                            "Timeout = ", show $ maxtimeout initialParams, " \n",
                            "Showrules = ", show $ logRules initialParams, "\n",
                            "Showstate = ", show $ logState initialParams, "\n",
                            "Statistics = ", statsStr initialParams, "\n",
-                           "Semanticbranching = ", show $ semBranch initialParams,"\n"]
+                           "Semanticbranching = ", show $ semBranch initialParams,"\n",
+                           "Fullclash = ", show $ fullClash initialParams,"\n"]
 
 
 {- parseParams: Given
@@ -105,6 +110,8 @@ parseParams clp ("-st":s:xs) = if (validStats s)
                                    else clp{paramsOk = False}
 parseParams clp ("-sb":b:xs)   = parseParams clp{semBranch = (intToBool $ read b)} xs
 parseParams clp ("-sb":[])    = clp{paramsOk = False}
+parseParams clp ("-fc":b:xs)   = parseParams clp{fullClash = (intToBool $ read b)} xs
+parseParams clp ("-fc":[])    = clp{paramsOk = False}
 parseParams clp ("-f":[])    = clp{paramsOk = False}
 parseParams clp ("-f":f:xs)  = parseParams clp{filename = f, paramsOk = True} xs
 parseParams clp  _           = clp{paramsOk = False}
@@ -123,6 +130,7 @@ defineParams p ((f,v):s) =
             "ss"         ->  defineParams p{logState      = read v} s
             "statistics" ->  defineParams p{statsStr = v} s
             "sembranch"  ->  defineParams p{semBranch = read v} s
+            "fullclash"  ->  defineParams p{fullClash = read v} s
             unknown      -> error ("Can't Happen!: Unknown configuration parameter " ++ show unknown ++ " \n")
 
 
@@ -156,7 +164,9 @@ showHelp = putStrLn ("htab 0.01\n" ++
      "-r        : Prints rules.\n" ++
      "-s        : Prints the internal state of the tableaux.\n" ++
      "-sb 0     : Don't use semantic branching.\n" ++
-     "-sb 1     : Use semantic branching.\n\n" ++
+     "-sb 1     : Use semantic branching.\n" ++
+     "-fc 0     : Don't use full clashes.\n" ++
+     "-fc 1     : Use full clashes.\n\n" ++
      "This program is distributed in the hope that it will be useful,\n" ++
      "but WITHOUT ANY WARRANTY; without even the implied warranty of\n" ++
      "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n" ++

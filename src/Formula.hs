@@ -6,17 +6,12 @@
 --                                                --
 ----------------------------------------------------
 
-
--- different from Formula.hs because we don't handle down-arrows
 -- plan:
 -- 0) Nothing works
 -- 1) ML                  <- current stage
 -- 2) HL(@)
 -- 3) HL(@,A)
 -- 4) HL(@,A,<>¯)
-
--- no multimodality support is planned
-
 
 module Formula where
 
@@ -44,16 +39,18 @@ data Formula
      | At     Nominal Formula
      | Box    Rel     Formula
      | Dia    Rel     Formula
+     | Neg Formula
   deriving (Eq, Ord)
 
 instance Show Formula where
  show (PosLit a) = show a
- show (NegLit a) = "!" ++ show a
+ show (NegLit a) = "!(" ++ show a ++ ")"
  show (Con fs)   = "^" ++ (show fs)
  show (Dis fs)   = "v" ++ (show fs)
  show (At n f)   = "@" ++ (show n)  ++ (show f)
  show (Box r f)  = "[R" ++ (show r)  ++ "]" ++ (show f)
  show (Dia r f)  = "<R" ++ (show r)  ++ ">" ++ (show f)
+ show (Neg f)    = "!" ++ show f
 
 
 {- showInfixOp: Given
@@ -173,16 +170,16 @@ sortAndNub2 x y = case compare x y of
 
 
 {- Negation -}
+
 neg :: Formula -> Formula
+-- zero-step negation
 
 neg (PosLit a)   = (NegLit a)
 neg (NegLit a)   = (PosLit a)
-neg (Con l)      = Dis (map neg l)
-neg (Dis l)      = Con (map neg l)
-neg (At n f)     = at n (neg f)
-neg (Box r f)    = Dia r (neg f)
-neg (Dia r f)    = Box r (neg f)
+neg (Neg f)      = f             -- avoids Neg Neg f
+neg f            = Neg f
 
+--
 
 {- Prefixes for externalised calculus -}
 
@@ -237,3 +234,30 @@ isComplementaryLiteralOf (At n (NegLit a)) (At n' (PosLit a')) = (n == n') && (a
 isComplementaryLiteralOf (At n (PosLit a)) (At n' (NegLit a')) = (n == n') && (a == a')
 isComplementaryLiteralOf  _                 _                  = False
 
+
+{-
+ Put a formula into negative normal form
+-}
+-- negative normal form negation
+
+nnf :: Formula -> Formula
+nnf (Neg f) = nnf (neg2 f)
+nnf (Con l) = Con (map nnf l)
+nnf (Dis l) = Dis (map nnf l)
+nnf (At n f) = At n (nnf f)
+nnf (Box r f) = Box r (nnf f)
+nnf (Dia r f) = Dia r (nnf f)
+nnf (PosLit a) = PosLit a
+nnf (NegLit a) = NegLit a
+
+-- deep negation
+-- digs until it finds another negation, or an atom
+neg2 :: Formula -> Formula
+neg2 (Con l)      = Dis (map neg2 l)
+neg2 (Dis l)      = Con (map neg2 l)
+neg2 (At n f)     = At n (neg2 f)
+neg2 (Box r f)    = Dia r (neg2 f)
+neg2 (Dia r f)    = Box r (neg2 f)
+neg2 (PosLit a)   = (NegLit a)       --
+neg2 (NegLit a)   = (PosLit a)       -- cases where it doesn't go deeper
+neg2 (Neg f)      = f                --

@@ -40,4 +40,5 @@ data RuleId = R_ConjRule    -- Conjunction
             | R_BoxRule     -- Box  [r]
             | R_DisjRule    -- Disjunction
             | R_SemBrRule   -- Semantic Branching
+            | R_NegRule     -- Negation rule
         deriving(Eq, Ord, Ix, Show)

@@ -137,9 +137,7 @@ Formula :
 
 Formulas :
  Formula
-{let f = $1 in (addFormula emptyBranch (prefix 0 f))} -- prefix and add the
-                                                      -- main formula
-
+{ $1 }
 
 {
 happyError :: [(HyLoToken, FilePos)] -> a

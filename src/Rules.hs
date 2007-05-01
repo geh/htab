@@ -1,11 +1,10 @@
 module Rules where
 
 import Formula
-import Branch(Branch, BranchMonad, lastPr, incLastPr, BranchInfo(..),
-              diaStr, boxStr, accStr, boxRlCh, conjStr, disjStr,
+import Branch(Branch(..), BranchMonad, incLastPr, BranchInfo(..),
               addFormulas, addAccFormula, remFormula, addBoxRuleCheck,
               BranchData(..))
-import CommandLine(CmdLineParams, semBranch)
+import CommandLine(CmdLineParams, semBranch, fullClash)
 import Control.Monad.State(modify)
 import RuleMetadata(RuleId(..))
 
@@ -22,7 +21,7 @@ data Rule =  ConjRule  [BranchModification]
            | BoxRule   [BranchModification]
            | DisjRule  [[BranchModification]]
            | SemBrRule [[BranchModification]]
-
+           | NegRule   [BranchModification]
 
 mods :: Rule -> [[BranchModification]]
 mods (ConjRule setOfMods) = [setOfMods]
@@ -30,6 +29,7 @@ mods (DiaRule setOfMods) = [setOfMods]
 mods (BoxRule setOfMods) = [setOfMods]
 mods (DisjRule setOfSetOfMods) = setOfSetOfMods
 mods (SemBrRule setOfSetOfMods) = setOfSetOfMods
+mods (NegRule setOfMods) = [setOfMods]
 
 instance Show Rule where
    show (ConjRule ((BM_RemFormula f):_)) = "conjunction : " ++ (show f)
@@ -37,8 +37,8 @@ instance Show Rule where
    show (BoxRule _) = "box"
    show (DisjRule (((BM_RemFormula f):_):_)) = "disjunction : " ++ (show f)
    show (SemBrRule (((BM_RemFormula f):_):_)) = "semantic branching : " ++ (show f)
+   show (NegRule ((BM_RemFormula f):_)) = "negation : " ++ (show f)
    show _ = error $ "show Rule"
-
 
 --
 ruleToId :: Rule -> RuleId
@@ -48,24 +48,27 @@ ruleToId r = case r of
               (BoxRule _)   -> R_BoxRule
               (DisjRule _)  -> R_DisjRule
               (SemBrRule _) -> R_SemBrRule
+              (NegRule _)   -> R_NegRule
 --
 
 howManyBranches :: Rule -> Int
-howManyBranches (ConjRule _) = 1
-howManyBranches (DiaRule  _) = 1
-howManyBranches (BoxRule  _) = 1
-howManyBranches (DisjRule l) = length l
+howManyBranches (ConjRule _)  = 1
+howManyBranches (DiaRule  _)  = 1
+howManyBranches (BoxRule  _)  = 1
+howManyBranches (NegRule _)   = 1
+howManyBranches (DisjRule l)  = length l
 howManyBranches (SemBrRule l) = length l
 
--- is it a good idea to generate all the modifications done by each application of rule ??
--- of is it better to just say : rule that there, rule that there .. yes!
 
 applicableRules :: Branch -> CmdLineParams -> [Rule]
-applicableRules br clp =   (applicableConjRules br)
+applicableRules br clp =  ( if fullClash clp then (applicableNegRules br)
+                                            else [] )
+                        ++ (applicableConjRules br)
                         ++ (applicableDiaRules br)
                         ++ (applicableBoxRules br)
-                        ++ if semBranch clp then (applicableSemBr br)
+                        ++ if semBranch clp then (applicableSemBrRules br)
                                             else (applicableDisjRules br)
+
 
 
 applicableConjRules :: Branch -> [Rule]
@@ -82,8 +85,11 @@ applicableBoxRules br
 applicableDisjRules :: Branch -> [Rule]
 applicableDisjRules br = [disjRule f br | f <- (disjStr br)]
 
-applicableSemBr :: Branch -> [Rule]
-applicableSemBr br = [semBr f br | f <- (disjStr br)]
+applicableSemBrRules :: Branch -> [Rule]
+applicableSemBrRules br = [semBrRule f br | f <- (disjStr br)]
+
+applicableNegRules :: Branch -> [Rule]
+applicableNegRules br = [negRule f br | f <- (negStr br)]
 
 
 unCheckedBoxPairs :: Branch -> [(PrFormula,AccFormula)]
@@ -171,17 +177,37 @@ breakDisj _ = error $ "breakDisj error"
 
 -- disjunction with semantic branching
 
-semBr :: PrFormula -> Branch -> Rule
-semBr df _ = SemBrRule (sbModList df disjointed [])
-              where disjointed = (breakDisj df)
+semBrRule :: PrFormula -> Branch -> Rule
+semBrRule df _ = SemBrRule (sbModList df disjointed [])
+                  where disjointed = (breakDisj df)
 
 sbModList :: PrFormula -> [PrFormula] -> [PrFormula] -> [[BranchModification]]
 sbModList df (hd_disj:tl_disj) negated =  [(BM_RemFormula df),
                                            (BM_AddFormulas [hd_disj]),
-                                           (BM_AddFormulas negated)]:(sbModList df tl_disj ((negPr hd_disj):negated))  -- la partie neg est a corriger
+                                           (BM_AddFormulas negated)]:(sbModList df tl_disj ((negPr hd_disj):negated))
 
                                           where negPr (PrFormula pr f) = PrFormula pr (neg f)
 sbModList _ [] _ = []
+
+
+
+-- negation
+negRule :: PrFormula -> Branch -> Rule
+negRule nf@(PrFormula pr (Neg f)) _ = NegRule [(BM_RemFormula nf),
+                                               (BM_AddFormulas [PrFormula pr (neg1 f)])]
+
+negRule _ _ = error $ "negRule error"
+
+-- one-step negation
+neg1 :: Formula -> Formula
+neg1 (Con l)    = Dis (map neg l)
+neg1 (Dis l)    = Con (map neg l)
+neg1 (At n f)   = At n (neg f)
+neg1 (Box n f)  = Dia n (neg f)
+neg1 (Dia n f)  = Box n (neg f)
+neg1 (Neg f)    = f
+neg1 (PosLit a) = NegLit a
+neg1 (NegLit a) = PosLit a
 
 
 {-

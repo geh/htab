@@ -7,14 +7,16 @@ import HyLoLexer(hyloLexer)
 import HyLoParse(parse)
 import CommandLine(getConf,initialParams,paramsOk, filename, parseParams,
                    maxtimeout, showHelp, CmdLineParams, logState, logRules,
-                   configureMetrics)
-import Branch(BranchInfo,initialBranchStateFor,BranchMonad, BranchData(..))
+                   configureMetrics,fullClash)
+import Branch(BranchInfo,initialBranchStateFor,BranchMonad, BranchData(..),
+              addFormula,emptyBranch)
 import Timeout(timeout)
 import Statistics(Statistics, initialStatisticsStateFor, printOutAllMetrics')
 import Control.Monad.State(runStateT)
 import System.CPUTime(getCPUTime)
 import Base(vPutStrLn)
 import Tableau(liftStats, tableau, SatFlag(..))
+import Formula(nnf,prefix)
 
 main :: IO ()
 main =
@@ -28,8 +30,11 @@ main =
                start <- getCPUTime;
                fstr <- readFile (filename clp);
                case (parse . hyloLexer $ fstr) of
-                 branchInfo ->
-                   do result <- if (not ((maxtimeout clp) == 0))
+                 f ->
+                   do let f2 = if (fullClash clp) then f
+                                                  else nnf f
+                      let branchInfo = addFormula emptyBranch (prefix 0 f2)
+                      result <- if (not ((maxtimeout clp) == 0))
                                    then timeout (maxtimeout clp)
                                                (tableauInit branchInfo clp)
                                                (return (TIMEOUT, Nothing))
