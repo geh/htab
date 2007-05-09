@@ -25,22 +25,22 @@ GHCINCLUDE      = -i$(SRC_HYLORES)
 GHCPACKAGES     = 
 GHC             = ghc $(GHCFLAGS) $(GHCINCLUDE)
 
-SOFTWARE        = HyLoRes
+SOFTWARE        = HTab
 VERSION         = 2.0
-VERSIONTAG      = hylores-2-00  # use: make tagVersion for creating cvs tag
+VERSIONTAG      = htab-1-00  # use: make tagVersion for creating cvs tag
 SOFTVERS        = $(SOFTWARE)-$(VERSION)
 
 # You should replace the value of this variable with your project
 # directory name.  The default assumption is that the project name
 # is the same as the directory name.
-MYDIR = HyLoRes
+MYDIR = HTab
 DATE:=$(shell date +%Y-%m-%d)
 
 # Add here any files that you want to compile.  For example:
 #   MAKE_DOCS=foo/bar.pdf foo/other.pdf baz/filename.pdf
 # If you are making slides instead of documents, you should
 # uncomment and modify the MAKE_SLIDES variable.
-MAKE_DOCS = src/hylores/hyloresdoc.pdf
+MAKE_DOCS = src/htab/htabdoc.pdf
 
 # -- Latex or Pdflatex? (pdflatex by default) --
 # If you use latex instead of pdflatex, you should change the line
@@ -66,7 +66,7 @@ LATEX2HTML = latex2html -math -math_parsing -local_icons -noimages -split 5
 # If you want to use latex2html you should uncomment this line
 # and add here any tex files you want compiled to html; for
 # example, if you have foo.tex, you should add foo-html
-MAKE_HTML = src/hylores/hyloresdoc-html
+MAKE_HTML = src/htab/htabdoc-html
 
 # --------------------------------------------------------------------
 # source stuff
@@ -135,8 +135,7 @@ static: $(LEXERS) $(PARSERS)
 	$(GHC) $(GHCFLAGSSTATIC) --make $(GHCPACKAGES) $(IFILE).hs -o $(OFILE)
 
 
-#prof: $(LEXERS) $(PARSERS)
-prof: $(PARSERS)
+prof: $(LEXERS) $(PARSERS)
 	$(GHC) -prof -auto-all --make $(GHCPACKAGES) $(DIFILE).hs -o $(DOFILE)
 
 # --------------------------------------------------------------------
