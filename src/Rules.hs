@@ -43,12 +43,12 @@ instance Show Rule where
 --
 ruleToId :: Rule -> RuleId
 ruleToId r = case r of
-              (ConjRule _)  -> R_ConjRule
-              (DiaRule _)   -> R_DiaRule
-              (BoxRule _)   -> R_BoxRule
-              (DisjRule _)  -> R_DisjRule
-              (SemBrRule _) -> R_SemBrRule
-              (NegRule _)   -> R_NegRule
+              (ConjRule _)  -> R_Conj
+              (DiaRule _)   -> R_Dia
+              (BoxRule _)   -> R_Box
+              (DisjRule _)  -> R_Disj
+              (SemBrRule _) -> R_SemBr
+              (NegRule _)   -> R_Neg
 --
 
 howManyBranches :: Rule -> Int
@@ -120,10 +120,10 @@ applyMods _ [] br = BranchOK br
 
 applyMod :: CmdLineParams -> BranchModification -> Branch -> BranchInfo
 applyMod clp (BM_AddFormulas li) br = addFormulas clp br li
-applyMod clp (BM_AddAccFormula accFor) br = BranchOK (addAccFormula br accFor)
-applyMod clp (BM_AddBoxRuleCheck li) br = BranchOK (addBoxRuleCheck br li)
-applyMod clp (BM_IncLastPr) br = BranchOK (incLastPr br)
-applyMod clp (BM_RemFormula f) br = BranchOK (remFormula br f)
+applyMod  _ (BM_AddAccFormula accFor) br = BranchOK (addAccFormula br accFor)
+applyMod  _ (BM_AddBoxRuleCheck li) br = BranchOK (addBoxRuleCheck br li)
+applyMod  _ (BM_IncLastPr) br = BranchOK (incLastPr br)
+applyMod  _ (BM_RemFormula f) br = BranchOK (remFormula br f)
 
 
 

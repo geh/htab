@@ -35,10 +35,10 @@ where
 
 import Data.Ix
 
-data RuleId = R_ConjRule    -- Conjunction
-            | R_DiaRule     -- Diamond <r>
-            | R_BoxRule     -- Box  [r]
-            | R_DisjRule    -- Disjunction
-            | R_SemBrRule   -- Semantic Branching
-            | R_NegRule     -- Negation rule
+data RuleId = R_Conj    -- Conjunction
+            | R_Dia     -- Diamond <r>
+            | R_Box     -- Box  [r]
+            | R_Disj    -- Disjunction
+            | R_SemBr   -- Semantic Branching
+            | R_Neg     -- Negation rule
         deriving(Eq, Ord, Ix, Show)
