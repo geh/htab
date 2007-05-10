@@ -6,8 +6,8 @@ import Statistics(updateStep,printOutInspectionMetrics,
                   recordClosedBranch,recordFiredRule)
 import Branch(BranchInfo(..),BranchMonad, BranchData(..),branch_depth)
 import CommandLine(logRules,logState,CmdLineParams)
-import Rules(Rule,applyRule,applyToMonad, applicableRules,
-             howManyBranches,ruleToId)
+import Rules(Rule,applyRule,applyNonBranchingRuleToMonad,
+             applicableRules, howManyBranches,ruleToId)
 
 --
 
@@ -44,12 +44,12 @@ tableau =
                 do liftIO $ vPutStrLn ("\n>> Rule : " ++ (show rule)) showRules
                    liftStats $ recordFiredRule $ ruleToId rule
                    if (howManyBranches rule) > 1
-                      then do let possibleBranches = applyRule rule br
+                      then do let possibleBranches = applyRule clp rule br
                               modify (\bdata -> bdata{branch_path=(0:(branch_path bdata))})
                               chooseBranch possibleBranches
                               -- when we want to keep information, modify the
                               -- BranchData state before returning
-                      else do applyToMonad rule
+                      else do applyNonBranchingRuleToMonad rule
                               modify (\bdata -> bdata{branch_path=(0:(branch_path bdata))})
                               tableau
                               -- when we want to keep information, modify the

@@ -2,6 +2,7 @@ module Main (main)
 
 where
 
+
 import System.Environment(getArgs)
 import HyLoLexer(hyloLexer)
 import HyLoParse(parse)
@@ -33,7 +34,7 @@ main =
                  f ->
                    do let f2 = if (fullClash clp) then f
                                                   else nnf f
-                      let branchInfo = addFormula emptyBranch (prefix 0 f2)
+                      let branchInfo = addFormula clp emptyBranch (prefix 0 f2)
                       result <- if (not ((maxtimeout clp) == 0))
                                    then timeout (maxtimeout clp)
                                                (tableauInit branchInfo clp)

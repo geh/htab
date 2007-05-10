@@ -29,7 +29,7 @@ import Data.List(delete)
 import qualified Data.Map as Map
 
 import Statistics(Statistics)
-import CommandLine(CmdLineParams)
+import CommandLine(CmdLineParams, fullClash)
 import Formula
 
 --
@@ -106,41 +106,47 @@ instance Show Branch where
 
 
 -- takes a formula, looks what kind it is, put it in the right sub-structure
-addFormula :: Branch -> PrFormula -> BranchInfo
+addFormula :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
 
-addFormula br f@(PrFormula pr f2@(Con _))
-           = case (addAndUpdateMap br pr f f2 True) of
-              BranchOK bok       -> BranchOK bok{conjStr = (f:(conjStr bok))}
-              bc@(BranchClash _ _) -> bc
+addFormula clp br f@(PrFormula pr f2@(Con _))
+           = if (fullClash clp) then  case (addAndUpdateMap br pr f f2 True) of
+                                        BranchOK bok       -> BranchOK bok{conjStr = (f:(conjStr bok))}
+                                        bc@(BranchClash _ _) -> bc
+                                else  BranchOK br{conjStr = (f:(conjStr br))}
 
-addFormula br f@(PrFormula pr f2@(Dis _))
-           = case (addAndUpdateMap br pr f f2 True) of
-              BranchOK bok       -> BranchOK bok{disjStr = (f:(disjStr bok))}
-              bc@(BranchClash _ _) -> bc
+addFormula clp br f@(PrFormula pr f2@(Dis _))
+           = if (fullClash clp) then  case (addAndUpdateMap br pr f f2 True) of
+                                        BranchOK bok       -> BranchOK bok{disjStr = (f:(disjStr bok))}
+                                        bc@(BranchClash _ _) -> bc
+                                else  BranchOK br{disjStr = (f:(disjStr br))}
+                                
+                                
+addFormula clp br f@(PrFormula pr f2@(Box _ _))
+           = if (fullClash clp) then  case (addAndUpdateMap br pr f f2 True) of
+                                        BranchOK bok       -> BranchOK bok{boxStr = (f:(boxStr bok))}
+                                        bc@(BranchClash _ _) -> bc
+                                else  BranchOK br{boxStr = (f:(boxStr br))}
 
-addFormula br f@(PrFormula pr f2@(Box _ _))
-           = case (addAndUpdateMap br pr f f2 True) of
-              BranchOK bok       -> BranchOK bok{boxStr = (f:(boxStr bok))}
-              bc@(BranchClash _ _) -> bc
+addFormula clp br f@(PrFormula pr f2@(Dia _ _))
+           = if (fullClash clp) then  case (addAndUpdateMap br pr f f2 True) of
+                                        BranchOK bok       -> BranchOK bok{diaStr = (f:(diaStr bok))}
+                                        bc@(BranchClash _ _) -> bc
+                                else  BranchOK br{diaStr = (f:(diaStr br))}
 
-addFormula br f@(PrFormula pr f2@(Dia _ _))
-           = case (addAndUpdateMap br pr f f2 True) of
-              BranchOK bok       -> BranchOK bok{diaStr = (f:(diaStr bok))}
-              bc@(BranchClash _ _) -> bc
+addFormula clp br f@(PrFormula pr (Neg f2))
+           = if (fullClash clp) then  case (addAndUpdateMap br pr f f2 False) of
+                                        BranchOK bok       -> BranchOK bok{negStr = (f:(negStr bok))}
+                                        bc@(BranchClash _ _) -> bc
+                                else  BranchOK br{negStr = (f:(negStr br))}
 
-addFormula br f@(PrFormula pr (Neg f2))
-           = case (addAndUpdateMap br pr f f2 False) of
-              BranchOK bok       -> BranchOK bok{negStr = (f:(negStr bok))}
-              bc@(BranchClash _ _) -> bc
-
-addFormula br f@(PrFormula pr (PosLit a))
+addFormula _ br f@(PrFormula pr (PosLit a))
            = addAndUpdateMap br pr f (PosLit a) True
 
-addFormula br f@(PrFormula pr (NegLit a))
+addFormula _ br f@(PrFormula pr (NegLit a))
            = addAndUpdateMap br pr f (PosLit a) False
 
 
-addFormula _ _ = error $ "unimplemented formula"
+addFormula _ _ _ = error $ "unimplemented formula"
 
 --
 
@@ -173,12 +179,12 @@ updateMap (Seen_structure m) (pre,f) b           -- Conj, Disj , Box, Dia, At
 
 --
 
-addFormulas :: Branch -> [PrFormula] -> BranchInfo
-addFormulas br (hd:tl) = case (addFormula br hd) of
-                          BranchOK br2         -> addFormulas br2 tl
-                          bi@(BranchClash _ _) -> bi
+addFormulas :: CmdLineParams -> Branch -> [PrFormula] -> BranchInfo
+addFormulas clp br (hd:tl) = case (addFormula clp br hd) of
+                              BranchOK br2         -> addFormulas clp br2 tl
+                              bi@(BranchClash _ _) -> bi
 
-addFormulas br [] = BranchOK br
+addFormulas _ br [] = BranchOK br
 
 --
 
@@ -234,7 +240,7 @@ modifyIfOk f = modify (\bd -> case (branch_info bd) of
 
 mAddFormulas ::  [PrFormula] -> BranchMonad ()
 mAddFormulas pfs = modify (\bd -> case (branch_info bd) of
-                                   (BranchOK br) -> bd{branch_info=(addFormulas br pfs)}
+                                   (BranchOK br) -> bd{branch_info=(addFormulas (branch_clp bd) br pfs)}
                                    _             -> bd)
 
 --

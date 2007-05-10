@@ -101,30 +101,29 @@ unCheckedBoxPairs br
 
 --
 
-applyRule :: Rule -> Branch -> [BranchInfo]
-applyRule rule br = applyMods (mods rule) br
+applyRule :: CmdLineParams -> Rule -> Branch -> [BranchInfo]
+applyRule clp rule br = applySetOfMods clp (mods rule) br
 
 
--- the functions names really suck here :
-applyMods :: [[BranchModification]] -> Branch -> [BranchInfo]
-applyMods (hd:tl) br = (applyMods2 hd br):(applyMods tl br)
-applyMods [] _ = []
+applySetOfMods :: CmdLineParams -> [[BranchModification]] -> Branch -> [BranchInfo]
+applySetOfMods clp (hd:tl) br = (applyMods clp hd br):(applySetOfMods clp tl br)
+applySetOfMods _ [] _ = []
 
 
-applyMods2 :: [BranchModification] -> Branch -> BranchInfo
-applyMods2 (hd:tl) br = case (applyMod hd br) of
-                         BranchOK br2         -> applyMods2 tl br2
-                         si@(BranchClash _ _) -> si
+applyMods :: CmdLineParams -> [BranchModification] -> Branch -> BranchInfo
+applyMods clp (hd:tl) br = case (applyMod clp hd br) of
+                            BranchOK br2         -> applyMods clp tl br2
+                            si@(BranchClash _ _) -> si
 
-applyMods2 [] br = BranchOK br
+applyMods _ [] br = BranchOK br
 
 
-applyMod :: BranchModification -> Branch -> BranchInfo
-applyMod (BM_AddFormulas li) br = addFormulas br li
-applyMod (BM_AddAccFormula accFor) br = BranchOK (addAccFormula br accFor)
-applyMod (BM_AddBoxRuleCheck li) br = BranchOK (addBoxRuleCheck br li)
-applyMod (BM_IncLastPr) br = BranchOK (incLastPr br)
-applyMod (BM_RemFormula f) br = BranchOK (remFormula br f)
+applyMod :: CmdLineParams -> BranchModification -> Branch -> BranchInfo
+applyMod clp (BM_AddFormulas li) br = addFormulas clp br li
+applyMod clp (BM_AddAccFormula accFor) br = BranchOK (addAccFormula br accFor)
+applyMod clp (BM_AddBoxRuleCheck li) br = BranchOK (addBoxRuleCheck br li)
+applyMod clp (BM_IncLastPr) br = BranchOK (incLastPr br)
+applyMod clp (BM_RemFormula f) br = BranchOK (remFormula br f)
 
 
 
@@ -214,8 +213,8 @@ neg1 (NegLit a) = PosLit a
         Monad-related stuff
 -}
 
-applyToMonad :: Rule -> BranchMonad ()
-applyToMonad r =
+applyNonBranchingRuleToMonad :: Rule -> BranchMonad ()
+applyNonBranchingRuleToMonad r =
  modify (\bd -> case (branch_info bd) of
-                 (BranchOK br) -> bd{branch_info=(applyMods2 (head (mods r)) br)}
+                 (BranchOK br) -> bd{branch_info=(applyMods (branch_clp bd) (head (mods r)) br)}
                  _             -> bd )
