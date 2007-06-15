@@ -6,14 +6,9 @@
 --                                                --
 ----------------------------------------------------
 
--- plan:
--- 0) Nothing works
--- 1) ML                  <- current stage
--- 2) HL(@)
--- 3) HL(@,A)
--- 4) HL(@,A,<>¯)
-
 module Formula where
+
+import LatexOutputHelper
 
 type Prop = Int
 type Rel  = Int
@@ -30,7 +25,12 @@ instance Show Atom where
  show (N n) = "N"++(show n)
  show (P p) = "P"++(show p)
 
-{- Only formulas in negated normal form can be built with these constructors -}
+instance ShowLatex Atom where
+ showLatex (Taut) = "T"
+ showLatex (N n) = "N_{" ++(show n) ++ "}"
+ showLatex (P p) = "P_{" ++(show p) ++ "}"
+
+
 data Formula
      = PosLit Atom
      | NegLit Atom
@@ -53,6 +53,21 @@ instance Show Formula where
  show (Neg f)    = "!" ++ show f
 
 
+instance ShowLatex Formula where
+   showLatex (PosLit a) = showLatex a
+   showLatex (NegLit a) = "\\neg(" ++ showLatex a ++ ")"
+   showLatex (Con fs)   = "(" ++ (separate "\\wedge" fs) ++ ")"
+   showLatex (Dis fs)   = "(" ++ (separate "\\vee" fs) ++ ")"
+   showLatex (At n f)   = "@_{" ++ (show n) ++ "}"  ++ (showLatex f)
+   showLatex (Box r f)  = "\\square_{" ++ (show r)  ++ "}" ++ (showLatex f)
+   showLatex (Dia r f)  = "\\lozenge_{" ++ (show r)  ++ "}" ++ (showLatex f)
+   showLatex (Neg f)    = "\\neg" ++ showLatex f
+
+
+instance ShowLatex (PrFormula, AccFormula) where
+ showLatex (pr,acc) = "(" ++ (math $ showLatex pr) ++ "," ++ (math $ showLatex acc) ++ ")"
+
+
 {- showInfixOp: Given
 
    - a string for an infix operator
@@ -73,6 +88,9 @@ data PrFormula = PrFormula Prefix Formula
 
 instance Show PrFormula where
  show (PrFormula pr f) = (show pr)++":"++(show f)
+
+instance ShowLatex PrFormula where
+ showLatex (PrFormula pr f) = (show pr)++"{:}"++(showLatex f)
 
 prefix :: Prefix -> Formula -> PrFormula
 prefix p f = PrFormula p f
@@ -190,8 +208,11 @@ data AccFormula = AccFormula Rel Prefix Prefix
      deriving (Eq, Ord)
 
 instance Show AccFormula where
- show (AccFormula r p1 p2) = "@"++(show p1)++"[R"++(show r)++"]"++(show p2)
+ show (AccFormula r p1 p2) = (show p1)++"<R"++(show r)++">"++(show p2)
 
+
+instance ShowLatex AccFormula where
+ showLatex (AccFormula r p1 p2) = (show p1)++"\\lozenge_{"++(show r)++"}"++(show p2)
 
 
 {- isTrue: Given

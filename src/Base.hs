@@ -151,3 +151,7 @@ vPutStrLn s b = if b then putStrLn s
 intToBool :: Int -> Bool
 intToBool i | i == 0 = False
 intToBool _          = True
+
+
+flatten :: [[a]] -> [a]
+flatten = foldl (++) []

@@ -41,4 +41,6 @@ data RuleId = R_Conj    -- Conjunction
             | R_Disj    -- Disjunction
             | R_SemBr   -- Semantic Branching
             | R_Neg     -- Negation rule
+            | R_At      -- Satisfaction operator (@) rule
+            | R_NegNom  -- Negation before nominal rule
         deriving(Eq, Ord, Ix, Show)

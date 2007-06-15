@@ -8,6 +8,8 @@ import Branch(BranchInfo(..),BranchMonad, BranchData(..),branch_depth)
 import CommandLine(logRules,logState,CmdLineParams)
 import Rules(Rule,applyRule,applyNonBranchingRuleToMonad,
              applicableRules, howManyBranches,ruleToId)
+import LatexOutput
+import LatexOutputHelper
 
 --
 
@@ -27,21 +29,25 @@ tableau =
          let depth = branch_depth bd
          let width = head $ branch_path bd
 
-         liftIO $ vPutStrLn ("\n>> Depth #" ++ (show depth) ++ " Width #" ++ (show width)
-                              ++ " path " ++ (show $ branch_path bd) )
-                            showSome
+         let traceMsg = ("Depth " ++ (show depth) ++ " Width " ++ (show width)
+                            ++ " path " ++ (show $ branch_path bd) )
+         liftIO $ vPutStrLn ("\n>> " ++ traceMsg) showSome
+         latexPut $ section traceMsg
 
          case (branch_info bd) of
           BranchClash br pf ->
            do liftIO $ vPutStrLn ((show br) ++ "\nClasher : " ++ (show pf)) showState
+              latexPut $ (showLatex br) ++ "\n\nClasher : " ++ (math $ showLatex pf) ++ "\n\n"
               liftStats $ recordClosedBranch
               return UNSAT
 
           BranchOK br ->
            do liftIO $ vPutStrLn (show br) showState
+              latexPut $ (showLatex br) ++ "\n"
               case (chooseRule $ applicableRules br clp) of
                Just rule ->
                 do liftIO $ vPutStrLn ("\n>> Rule : " ++ (show rule)) showRules
+                   latexPut $ ("Rule : " ++ (showLatex rule))
                    liftStats $ recordFiredRule $ ruleToId rule
                    if (howManyBranches rule) > 1
                       then do let possibleBranches = applyRule clp rule br
@@ -55,7 +61,9 @@ tableau =
                               -- when we want to keep information, modify the
                               -- BranchData state before returning
                Nothing   ->
-                do liftIO $ vPutStrLn "\n>> Saturated open branch" showSome
+                do let traceMsg4 = "Saturated open branch"
+                   liftIO $ vPutStrLn ("\n>> " ++ traceMsg4) showSome
+                   latexPut $ traceMsg4
                    return SAT
 
 
@@ -88,8 +96,9 @@ chooseBranch []
        let clp = branch_clp bd
        let depth = branch_depth bd
        let width = head $ branch_path bd
-       liftIO $ vPutStrLn ("\n>> Stop at level " ++ show depth ++ " width " ++ show  (width-1))
-                          ((logState clp)||(logRules clp))
+       let traceMsg5 = "Stop at level " ++ show depth ++ " width " ++ show  (width-1)
+       liftIO $ vPutStrLn ("\n>> " ++ traceMsg5) ((logState clp)||(logRules clp))
+       latexPut $ ("\n\n" ++ traceMsg5)
        return UNSAT
 
 -- like hylores' logstate. will be more developped.
@@ -101,3 +110,11 @@ logMe = do liftStats $ printOutInspectionMetrics
 
 liftStats  = lift
 liftIO = lift . lift
+
+--
+
+
+latexPut :: String -> BranchMonad ()
+latexPut input = do bd <- get
+                    let clp = branch_clp bd
+                    latexPutCLP clp input

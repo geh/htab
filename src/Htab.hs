@@ -2,7 +2,6 @@ module Main (main)
 
 where
 
-
 import System.Environment(getArgs)
 import HyLoLexer(hyloLexer)
 import HyLoParse(parse)
@@ -18,6 +17,8 @@ import System.CPUTime(getCPUTime)
 import Base(vPutStrLn)
 import Tableau(liftStats, tableau, SatFlag(..))
 import Formula(nnf,prefix)
+import LatexOutput
+
 
 main :: IO ()
 main =
@@ -32,7 +33,8 @@ main =
                fstr <- readFile (filename clp);
                case (parse . hyloLexer $ fstr) of
                  f ->
-                   do let f2 = if (fullClash clp) then f
+                   do latexInit clp
+                      let f2 = if (fullClash clp) then f
                                                   else nnf f
                       let branchInfo = addFormula clp emptyBranch (prefix 0 f2)
                       result <- if (not ((maxtimeout clp) == 0))
@@ -54,6 +56,8 @@ main =
                       end <- getCPUTime
                       putStr "Elapsed time: "
                       print ((fromInteger (end - start)) / 1000000000000 :: Double)
+                      latexEnd
+                       clp
 
         else showHelp
 

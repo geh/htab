@@ -31,14 +31,11 @@ USA.
 -}
 
 module CommandLine (
-    CmdLineParams,
+    CmdLineParams(..),
 
     showHelp, parseParams, getConf, initialParams,
 
-    paramsOk,
-    filename,
-    logState, logRules, semBranch, fullClash,
-    maxtimeout, configureMetrics
+    configureMetrics
 ) where
 
 -- import Char(isDigit)
@@ -59,7 +56,9 @@ data CmdLineParams = CLP {
            maxtimeout    :: Integer,
            statsStr      :: String,
            semBranch     :: Bool,
-           fullClash     :: Bool
+           fullClash     :: Bool,
+           latexOutput   :: Bool,
+           latexName   :: String
          } deriving (Show)
 
 initialParams :: CmdLineParams
@@ -70,7 +69,9 @@ initialParams = CLP {paramsOk = False,
                      maxtimeout = 0,
                      statsStr = ":0:c",
                      semBranch = True,
-                     fullClash = True}
+                     fullClash = True,
+                     latexOutput = False,
+                     latexName = "htab_out.tex"}
 
 initialParamsStr :: String
 initialParamsStr = concat ["% This is the default configuration file for htab\n",
@@ -81,14 +82,18 @@ initialParamsStr = concat ["% This is the default configuration file for htab\n"
                            "% Showstate = [Show internal state during calculus, True | False]\n",
                            "% statistics = [statistics to print]\n",
                            "% Semanticbranching = [Use semantic branching instead of disjunction rule, True | False]\n",
-                           "% Fullclash = [Detect full clashes instead of working with negative normal form\n",
+                           "% Fullclash = [Detect full clashes instead of working with negative normal form]\n",
+                           "% LatexOutput = [Do a LaTeX output of calculus]\n",
+                           "% LatexName = [name for LaTeX output file]\n",
                            "\n",
                            "Timeout = ", show $ maxtimeout initialParams, " \n",
                            "Showrules = ", show $ logRules initialParams, "\n",
                            "Showstate = ", show $ logState initialParams, "\n",
                            "Statistics = ", statsStr initialParams, "\n",
                            "Semanticbranching = ", show $ semBranch initialParams,"\n",
-                           "Fullclash = ", show $ fullClash initialParams,"\n"]
+                           "Fullclash = ", show $ fullClash initialParams,"\n",
+                           "LatexOutput = ", show $ latexOutput initialParams,"\n",
+                           "LatexName = ", show $ latexName initialParams,"\n"]
 
 
 {- parseParams: Given
@@ -104,6 +109,9 @@ parseParams clp ("-t":[])    = clp{paramsOk = False}
 parseParams clp ("-t":t:xs)  = parseParams clp{maxtimeout = (read t)} xs
 parseParams clp ("-s":xs)    = parseParams clp{logState = True} xs
 parseParams clp ("-r":xs)    = parseParams clp{logRules = True} xs
+parseParams clp ("-l":xs)    = parseParams clp{latexOutput = True} xs
+parseParams clp ("-lo":[])   = clp{paramsOk = False}
+parseParams clp ("-lo":s:xs) = parseParams clp{latexName= s} xs
 parseParams clp ("-st":[])   = clp{paramsOk = False}
 parseParams clp ("-st":s:xs) = if (validStats s)
                                    then parseParams clp{statsStr=s} xs
