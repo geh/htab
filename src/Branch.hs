@@ -148,8 +148,7 @@ instance ShowLatex Branch where
               "\nBiggest prefix: " ++ (putEol $ show $ lastPr br) ++
               "\nNominal to earliest prefix: "  ++ (putEol $ showLatex $ nomToPref br)   ++
               "\nPrefix to formulas: \\\\"      ++ (putEol $ math $ showLatex $ prefToForms br) ++
-              "\nPrefix-Nominal matrix : " ++ (verbatim $ showLatex $ nomPrefMatrix br) ++
-              "\n ..."
+              "\nPrefix-Nominal matrix : " ++ (verbatim $ showLatex $ nomPrefMatrix br)
 
 instance ShowLatex NomToEarliestPref where
  showLatex ntep = show $ Map.toList ntep
@@ -199,7 +198,7 @@ addFormula clp br f@(PrFormula pr (PosLit (N n)))  -- p : a (a nominal)
            updatedNomToPref = Map.union (Map.fromList $ zip updatedNominals $ repeat newUrfather) (nomToPref br) -- update urfather(s)
            oldUrfathers = elems $ urfathersOfNominals (nomToPref br) (singleton pr::Set Int) updatedNominals
            urfathersToRetrieveFormulasFrom = delete newUrfather oldUrfathers -- avoid copying into the same prefix
-           formulasToCopy = trace ("utrff : " ++ (show urfathersToRetrieveFormulasFrom) ++ " oldur: " ++ (show oldUrfathers) ++ " newur : " ++ (show newUrfather)) $ flatten $ map (getFormulas br) urfathersToRetrieveFormulasFrom
+           formulasToCopy = flatten $ map (getFormulas br) urfathersToRetrieveFormulasFrom
            newFormulas = map (PrFormula newUrfather) formulasToCopy
     -- we don't test if the new urfather is really new or the same as current one, hoping duplication will be avoided later
            brUpdated = br{nomPrefMatrix = newMatrix, nomToPref=updatedNomToPref}

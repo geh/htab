@@ -139,6 +139,8 @@ defineParams p ((f,v):s) =
             "statistics" ->  defineParams p{statsStr = v} s
             "sembranch"  ->  defineParams p{semBranch = read v} s
             "fullclash"  ->  defineParams p{fullClash = read v} s
+            "latexoutput"->  defineParams p{latexOutput = read v} s
+            "latexname"  ->  defineParams p{latexName = v} s
             unknown      -> error ("Can't Happen!: Unknown configuration parameter " ++ show unknown ++ " \n")
 
 

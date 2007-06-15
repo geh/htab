@@ -1,18 +1,18 @@
 {
 {-# OPTIONS_GHC -w #-}
 module Cparser
- 
-where 
+
+where
 
 import Clexer (Token(..), PosToken)
 }
 %name cParser
 %tokentype { PosToken }
 
-%token 
-    '='                       {(Eq,          _, _)} 
+%token
+    '='                       {(Eq,          _, _)}
     bool                      {(TF $$,_,_)}
-    number                    {(Num $$,    _, _)} 
+    number                    {(Num $$,    _, _)}
 
     filename                  {(FileName $$,_,_)}
     file                      {(File,_,_)}
@@ -23,12 +23,14 @@ import Clexer (Token(..), PosToken)
     showstate                 {(ShowS,_,_)}
     semanticbranching         {(SemBranch,_,_)}
     fullclash                 {(FullClash,_,_)}
+    latexoutput               {(LatexOutput,_,_)}
+    latexname                 {(LatexName,_,_)}
     savesat                   {(SaveSat,_,_)}
     statistics                {(Stats,_,_)}
     statisticsValue           {(StatsValue $$,_,_)}
 %%
 
-Input : 
+Input :
    {[]}
  | file '=' filename Input
    {("file",$3):$4}
@@ -48,6 +50,10 @@ Input :
    {("sembranch",$3):$4}
  | fullclash '=' bool Input
    {("fullclash",$3):$4}
+ | latexoutput '=' bool Input
+   {("latexoutput",$3):$4}
+ | latexname '=' filename Input
+   {("latexname",$3):$4}
 
 
 {

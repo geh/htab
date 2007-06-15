@@ -29,6 +29,8 @@ tokens :-
   [Ss]tatistics                  { tok Stats }
   [Ss]emantic[Bb]ranching        { tok SemBranch }
   [Ff]ull[Cc]lash                { tok FullClash }
+  [Ll]atex[Oo]utput              { tok LatexOutput }
+  [Ll]atex[Nn]ame                { tok LatexName }
   [cr]+(\:[$digit]+\:[cr]+)?
  |\:[$digit]+\:[cr]+             { \p s -> tok' (StatsValue s) p }
 
@@ -37,15 +39,13 @@ tokens :-
 
   [$digit]+                      { \p s -> tok' (Num s) p }
 
-  [!$white]+                     { \p s -> tok' (FileName s) p }
-
+  \".+\"                         { \p s -> tok' (FileName . init . tail $ s) p }
 
 {
 data Token =
     Eq | TF String | Num String | FileName String | File | Timeout |
-    SFunction | SFValue String |
-    ShowR | ShowS | SaveSat | Stats | SemBranch | FullClash |
-    StatsValue String
+    SFunction | SFValue String | ShowR | ShowS | SaveSat | Stats |
+    SemBranch | FullClash | LatexOutput | LatexName | StatsValue String
   deriving (Eq, Show, Read)
 
 type PosToken = (Token, Int, Int)
