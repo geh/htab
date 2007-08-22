@@ -56,8 +56,8 @@ instance Show Formula where
 instance ShowLatex Formula where
    showLatex (PosLit a) = showLatex a
    showLatex (NegLit a) = "\\neg(" ++ showLatex a ++ ")"
-   showLatex (Con fs)   = "(" ++ (separate "\\wedge" fs) ++ ")"
-   showLatex (Dis fs)   = "(" ++ (separate "\\vee" fs) ++ ")"
+   showLatex (Con fs)   = "(" ++ (separate "\\wedge " fs) ++ ")"
+   showLatex (Dis fs)   = "(" ++ (separate "\\vee " fs) ++ ")"
    showLatex (At n f)   = "@_{" ++ (show n) ++ "}"  ++ (showLatex f)
    showLatex (Box r f)  = "\\square_{" ++ (show r)  ++ "}" ++ (showLatex f)
    showLatex (Dia r f)  = "\\lozenge_{" ++ (show r)  ++ "}" ++ (showLatex f)

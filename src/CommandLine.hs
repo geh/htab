@@ -168,7 +168,7 @@ showHelp :: IO ()
 showHelp = putStrLn ("htab 0.01\n" ++
      "G. Hoffmann (c) 2007.\n" ++
      "C. Areces, D.Gorin and J. Heguiabehere. (c) 2002-2005.\n\n" ++
-     "Usage: htab -f file_name [-t <t>|-st <s>|-r|-s]\n\n" ++
+     "Usage: htab -f file_name [-t <t>|-st <s>|-r|-s|-l|-lo file_name]\n\n" ++
      "-t secs   : Timeout in seconds.\n" ++
      "-st string: Configure statistics\n" ++
      "-r        : Prints rules.\n" ++
@@ -176,7 +176,9 @@ showHelp = putStrLn ("htab 0.01\n" ++
      "-sb 0     : Don't use semantic branching.\n" ++
      "-sb 1     : Use semantic branching.\n" ++
      "-fc 0     : Don't use full clashes.\n" ++
-     "-fc 1     : Use full clashes.\n\n" ++
+     "-fc 1     : Use full clashes.\n" ++
+     "-l        : Enable LaTeX output.\n" ++
+     "-lo file  : Specify LaTeX output file (default: htab_out.tex).\n\n" ++
      "This program is distributed in the hope that it will be useful,\n" ++
      "but WITHOUT ANY WARRANTY; without even the implied warranty of\n" ++
      "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n" ++
