@@ -117,9 +117,8 @@ unCheckedBoxPairs :: Branch -> [(PrFormula,AccFormula)]
 unCheckedBoxPairs br
   = [(boxF,accF) | boxF@(PrFormula p1 (Box r1 _)) <- (boxStr br),
                    accF@(AccFormula r2 p2 _) <- (accStr br),
-                   notElem (boxF,accF) (boxRlCh br),
-                   r1 == r2 , p1 == p2]
-
+                   p1 == p2 , r1 == r2,
+                   notElem (boxF,accF) (boxRlCh br)]
 --
 
 applyRule :: CmdLineParams -> Rule -> Branch -> [BranchInfo]
