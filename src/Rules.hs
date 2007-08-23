@@ -74,17 +74,6 @@ ruleToId r = case r of
               (NegNomRule _) -> R_NegNom
 --
 
-howManyBranches :: Rule -> Int
-howManyBranches (ConjRule _)  = 1
-howManyBranches (DiaRule  _)  = 1
-howManyBranches (BoxRule  _)  = 1
-howManyBranches (NegRule _)   = 1
-howManyBranches (AtRule _)   = 1
-howManyBranches (NegNomRule _)   = 1
-howManyBranches (DisjRule l)  = length l
-howManyBranches (SemBrRule l) = length l
-
-
 applicableRules :: Branch -> CmdLineParams -> [Rule]
 applicableRules br clp =  ( if fullClash clp then (applicableNegRules br)
                                             else [] )
@@ -261,13 +250,3 @@ neg1 (Neg f)    = f
 neg1 (PosLit a) = NegLit a
 neg1 (NegLit a) = PosLit a
 
-
-{-
-        Monad-related stuff
--}
-
-applyNonBranchingRuleToMonad :: Rule -> BranchMonad ()
-applyNonBranchingRuleToMonad r =
- modify (\bd -> case (branch_info bd) of
-                 (BranchOK br) -> bd{branch_info=(applyMods (branch_clp bd) (head (mods r)) br)}
-                 _             -> bd )
