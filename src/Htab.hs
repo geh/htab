@@ -47,9 +47,9 @@ main =
                                    else (tableauInit branchInfo clp)
 
                       case result of
-                       (SAT, Just stats)    -> (putStrLn "SAT" >>
+                       (SAT, Just stats)    -> (putStrLn "The formula is satisfiable." >>
                                                printOutAllMetrics' stats)
-                       (UNSAT, Just stats)  -> (putStrLn "UNSAT" >>
+                       (UNSAT, Just stats)  -> (putStrLn "The formula is unsatisfiable." >>
                                                printOutAllMetrics' stats)
                        (TIMEOUT, Nothing)   -> (putStrLn "TIMEOUT")
                        _                    -> error ("Unexpected response: ("
