@@ -93,7 +93,8 @@ data Branch = Branch { seenStr :: Seen_structure,
                         lastPr :: Prefix,
                      nomToPref :: NomToEarliestPref,
                    prefToForms :: PrefToFormulas,
-                 nomPrefMatrix :: Matrix }
+                 nomPrefMatrix :: Matrix,
+                 inputLanguage :: Int }
 
 --
 
@@ -101,8 +102,9 @@ branch_depth :: BranchData -> Int
 branch_depth b = length $ branch_path b
 
 --
-emptyBranch :: Branch
-emptyBranch = Branch
+emptyBranch :: LanguageInfo -> Branch
+emptyBranch l =
+                Branch
                 { seenStr= Map.empty::Map.Map PrFormula Bool,
                   conjStr=[],
                   disjStr=[],
@@ -114,13 +116,20 @@ emptyBranch = Branch
                   boxRlCh=[],
                   negNomStr=[],
                   lastPr=0,
-                  nomToPref= Map.empty::Map.Map Nominal Prefix,     -- always defined if a nominal is in the branch
-                  prefToForms= Map.empty::Map.Map Prefix [Formula], -- always defined if a prefix is in the branch
-                  nomPrefMatrix = newUArray ((0,0),(500,3)) -- HARCODED -- hope it's big enough for the input formula :)
+                  nomToPref= Map.empty::Map.Map Nominal Prefix,
+                  prefToForms= Map.empty::Map.Map Prefix [Formula],
+                  nomPrefMatrix = npMatrix,
+                  inputLanguage = l
                 }
+ where
+   npMatrix = if l == 0
+               then newUArray ((1,1),(0,0))     -- empty array
+               else newUArray ((0,0),(500,l-1)) -- HARDCODED number of rows ...
+
 
 instance Show Branch where
-    show br = "Seen formulas:"     ++ show (Map.toList $ seenStr br)   ++
+    show br = "Input language: " ++ show (inputLanguage br) ++
+              "\nSeen formulas: "  ++ show (Map.toList $ seenStr br)   ++
               "\nConjunctions: "   ++ show (conjStr br)  ++
               "\nDisjunctions: "   ++ show (disjStr br)  ++
               "\nDiamonds: "       ++ show (diaStr br)   ++
@@ -135,7 +144,8 @@ instance Show Branch where
               "\nPrefix to formulas: "  ++ show (Map.toList $ prefToForms br)
 
 instance ShowLatex Branch where
- showLatex br =  "Seen formulas:"     ++ (putEol $ math $ showLatex $ seenStr br)   ++
+ showLatex br = "Input language: " ++ (putEol $ math $ show $ inputLanguage br)   ++ 
+              "\nSeen formulas: "     ++ (putEol $ math $ showLatex $ seenStr br)   ++
               "\nConjunctions: "   ++ (putEol $ math $ separate ", " $ conjStr br)  ++
               "\nDisjunctions: "   ++ (putEol $ math $ separate ", " $ disjStr br)  ++
               "\nDiamonds: "       ++ (putEol $ math $ separate ", " $ diaStr br)   ++
@@ -191,7 +201,9 @@ addFormulas _ br [] = BranchOK br
 
 
 addFormula :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
-addFormula clp br f@(PrFormula pr (PosLit (N n)))  -- p : a (a nominal)
+-- Case 1 :
+-- p : a (a nominal)
+addFormula clp br f@(PrFormula pr (PosLit (N n)))
   = addFormulas2 clp brUpdated (f:newFormulas)
      where matrix = (nomPrefMatrix br)
            (newMatrix,updatedNominals,newUrfather) = addElement_ matrix (pr,n)
@@ -204,7 +216,14 @@ addFormula clp br f@(PrFormula pr (PosLit (N n)))  -- p : a (a nominal)
            brUpdated = br{nomPrefMatrix = newMatrix, nomToPref=updatedNomToPref}
 
 
-addFormula clp br f@(PrFormula pr f2)   --  p : phi (not nominal)
+-- Case 2
+-- p : phi (not nominal)
+
+-- if we work with the modal language
+addFormula clp br f | isModal br =  addFormula2 clp br f
+
+-- if we work with the hybrid language
+addFormula clp br f@(PrFormula pr f2) 
  = addFormulas2 clp newBr (f:newFormula)
     where newBr      = addToPrefToForms br f
           m_urfather   = getUrfather br pr
@@ -464,3 +483,8 @@ updateMap ss (pre,f) b           -- Conj, Disj , Box, Dia, At
        Just b2 -> if b == b2 then Just ss
                              else Nothing                   -- clash!
        Nothing -> Just (Map.insert (PrFormula pre f) b ss)
+
+
+isModal :: Branch -> Bool
+-- True if we are in the modal language
+isModal br = (inputLanguage br) == 0

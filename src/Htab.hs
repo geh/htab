@@ -16,7 +16,7 @@ import Control.Monad.State(runStateT)
 import System.CPUTime(getCPUTime)
 import Base(vPutStrLn)
 import Tableau(liftStats, tableau, SatFlag(..))
-import Formula(nnf,prefix)
+import Formula(nnf,prefix,formulaLanguageInfo,renameNominals)
 import LatexOutput
 
 
@@ -33,10 +33,13 @@ main =
                fstr <- readFile (filename clp);
                case (parse . hyloLexer $ fstr) of
                  f ->
-                   do latexInit clp
-                      let f2 = if (fullClash clp) then f
-                                                  else nnf f
-                      let branchInfo = addFormula clp emptyBranch (prefix 0 f2)
+                   do let fLang = formulaLanguageInfo f
+                      latexInit clp
+                      let f2 = renameNominals $ if (fullClash clp) then f else nnf f
+                      putStr ("\nInput:\n" ++ (show f2) ++" \nEnd of input\n\n");
+                      let branchInfo = addFormula clp
+                                                  (emptyBranch fLang)
+                                                  (prefix 0 f2)
                       result <- if (not ((maxtimeout clp) == 0))
                                    then timeout (maxtimeout clp)
                                                (tableauInit branchInfo clp)

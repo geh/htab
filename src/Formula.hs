@@ -9,6 +9,8 @@
 module Formula where
 
 import LatexOutputHelper
+import qualified Data.Set as Set
+import Data.List(elemIndex)
 
 type Prop = Int
 type Rel  = Int
@@ -155,10 +157,6 @@ disj    f          f'
     | otherwise            = skipSingleton Dis (sortAndNub2 f f')
 
 
-
-
--- the following functions are taken from hylores but with the sorting stuff
--- removed -->
 skipSingleton :: ([Formula] -> Formula) -> [Formula] -> Formula
 skipSingleton _ [x] = x
 skipSingleton c xs  = c xs
@@ -183,8 +181,6 @@ sortAndNub2 x y = case compare x y of
                     LT -> [x,y]
                     EQ -> [x]
                     GT -> [y,x]
-
--- <--
 
 
 {- Negation -}
@@ -282,3 +278,72 @@ neg2 (Dia r f)    = Box r (neg2 f)
 neg2 (PosLit a)   = (NegLit a)       --
 neg2 (NegLit a)   = (PosLit a)       -- cases where it doesn't go deeper
 neg2 (Neg f)      = f                --
+
+
+
+type LanguageInfo = Int
+
+-- currently : how many nominals has the formula
+-- api may evolve ... (does it have past modalities ?...)
+formulaLanguageInfo :: Formula -> LanguageInfo
+formulaLanguageInfo = countNominals
+
+
+countNominals :: Formula -> Int
+countNominals f = Set.size $ extractNominals f 
+
+extractNominals :: Formula -> Set.Set Nominal
+extractNominals (PosLit (N n)) = Set.singleton n
+extractNominals (NegLit (N n)) = Set.singleton n
+extractNominals (Con fs) = Set.unions $ map extractNominals fs
+extractNominals (Dis fs) = Set.unions $ map extractNominals fs
+extractNominals (Dia _ f) = extractNominals f
+extractNominals (Box _ f) = extractNominals f
+extractNominals (Neg f) = extractNominals f
+extractNominals (At n f) = Set.insert n $ extractNominals f
+extractNominals _ = Set.empty
+
+--
+
+
+renameNominals :: Formula -> Formula
+renameNominals f = fst $ renameNominals_ f []
+
+-- scans the whole formula, building a list of Nominals in the order of which they
+-- have been found, and replace each nominal by its place in the list
+
+renameNominals_ :: Formula -> [Nominal] -> (Formula,[Nominal])
+renameNominals_ (PosLit (N n)) l = (PosLit (N newN),newL)
+      where (newN,newL) = case (elemIndex n l) of
+                           Just i  -> (i,l)
+                           Nothing -> (length l, l++[n])
+renameNominals_ (NegLit (N n)) l = (NegLit (N newN),newL)
+      where (newN,newL) = case (elemIndex n l) of
+                           Just i  -> (i,l)
+                           Nothing -> (length l, l++[n])
+renameNominals_ (At n f) l = ((At newN newF),newNewL)
+      where (newN,newL) = case (elemIndex n l) of
+                           Just i  -> (i,l)
+                           Nothing -> (length l, l++[n])
+            (newF,newNewL) = renameNominals_ f newL
+
+renameNominals_ (Dia r f) l = (Dia r newF,newL)
+      where (newF,newL) = renameNominals_ f l
+renameNominals_ (Box r f) l = (Box r newF,newL)
+      where (newF,newL) = renameNominals_ f l
+renameNominals_ (Neg f)  l = (Neg newF,newL)
+      where (newF,newL) = renameNominals_ f l
+renameNominals_ (Con fs) l = (Con newFs,newL)
+      where (newFs,newL) =  (renameNominals_formulas fs l)
+renameNominals_ (Dis fs) l = (Dis newFs,newL)
+      where (newFs,newL) =  (renameNominals_formulas fs l)
+renameNominals_ f l = (f,l)
+
+
+renameNominals_formulas :: [Formula] -> [Nominal] -> ([Formula],[Nominal])
+renameNominals_formulas (hd:tl) l = ((newHd:newTl),newDeepL)
+      where (newHd,newL) = (renameNominals_ hd l)
+            (newTl,newDeepL) =  renameNominals_formulas tl newL
+
+renameNominals_formulas [] l = ([],l)
+
