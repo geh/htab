@@ -54,8 +54,6 @@ import LatexOutput
 import LatexOutputHelper
 import Ix(range)
 
-import Debug.Trace(trace)
-
 type Clasher = PrFormula
 data BranchInfo = BranchOK Branch |
                   BranchClash Branch Clasher
@@ -118,14 +116,9 @@ emptyBranch l =
                   lastPr=0,
                   nomToPref= Map.empty::Map.Map Nominal Prefix,
                   prefToForms= Map.empty::Map.Map Prefix [Formula],
-                  nomPrefMatrix = npMatrix,
+                  nomPrefMatrix = newUArray ((1,1),(0,0)),
                   inputLanguage = l
                 }
- where
-   npMatrix = if l == 0
-               then newUArray ((1,1),(0,0))     -- empty array
-               else newUArray ((0,0),(500,l-1)) -- HARDCODED number of rows ...
-
 
 instance Show Branch where
     show br = "Input language: " ++ show (inputLanguage br) ++
@@ -178,7 +171,10 @@ instance ShowLatex (PrFormula,Bool) where
 
 --type Matrix = UArray.UArray (Int,Int) Bool
 instance ShowLatex Matrix where
- showLatex m = foldr insertEol "" $ map (separate " " . (getLineT m)) (range (0,5))
+ showLatex m = foldr insertEol "" $ map (separate " " . (getLineT m)) (range (firstRow,lastDisplayedRow))
+                  where firstRow = fst $ fst $ UArray.bounds m
+                        lastRow  = fst $ snd $ UArray.bounds m
+                        lastDisplayedRow = min lastRow 5
 
 instance ShowLatex Bool where
  showLatex b = if b then "1"
@@ -205,8 +201,11 @@ addFormula :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
 -- p : a (a nominal)
 addFormula clp br f@(PrFormula pr (PosLit (N n)))
   = addFormulas2 clp brUpdated (f:newFormulas)
-     where matrix = (nomPrefMatrix br)
-           (newMatrix,updatedNominals,newUrfather) = addElement_ matrix (pr,n)
+     where oldMatrixData = UArray.assocs $ nomPrefMatrix br
+           newMRowLength = (lastPr br) + 1             -- 1 unit longer because in between, we may have created a new prefix
+           newMColLength = (inputLanguage br) - 1
+           biggerOldMatrix = newUArray ((0,0),(newMRowLength,newMColLength)) UArray.// oldMatrixData  -- make a (possibily) bigger matrix
+           (newMatrix,updatedNominals,newUrfather) = addElement_ biggerOldMatrix (pr,n)
            updatedNomToPref = Map.union (Map.fromList $ zip updatedNominals $ repeat newUrfather) (nomToPref br) -- update urfather(s)
            oldUrfathers = elems $ urfathersOfNominals (nomToPref br) (singleton pr::Set Int) updatedNominals
            urfathersToRetrieveFormulasFrom = delete newUrfather oldUrfathers -- avoid copying into the same prefix
@@ -255,11 +254,15 @@ urfathersOfNominals ntp s (hd:tl) = case (Map.lookup hd ntp) of
 urfathersOfNominals _   s [] = s
 
 getUrfather :: Branch -> Prefix -> Maybe Prefix
+-- check if matrix size not enough for this urfather (eg when the prefix is created from the <> rule) -> return Nothing
 getUrfather br pr = case m_idx1 of
                       Just idx1 -> indexOfEarliest $ (getColumn mat idx1)
                       Nothing -> Nothing
                      where mat = (nomPrefMatrix br)
-                           m_idx1 = indexOfEarliest $ getLineT mat pr
+                           maxPrefixInMatrix = fst $ snd $ UArray.bounds mat
+                           m_idx1 = if maxPrefixInMatrix < pr
+                                      then Nothing 
+                                      else indexOfEarliest $ getLineT mat pr
 
 {-
    Functions to read and write the prefix<->nominal array
@@ -280,6 +283,7 @@ getLineT t lineNum = getLine' t lineNum 0 width
 
 getLine' :: Matrix -> Int -> Int -> Int -> [Bool]
 getLine' _ _ _ (-1) = []
+getLine' m _ _ _ | matrixIsEmpty m = []
 getLine' t lineNum colNum remainder = (hd:tl)
                                       where hd = t UArray.! (lineNum,colNum)
                                             tl = getLine' t lineNum (colNum+1) (remainder-1)
@@ -291,6 +295,7 @@ getColumn t column = getColumn' t column 0 height
 
 getColumn' :: Matrix -> Int -> Int -> Int -> [Bool]
 getColumn' _ _ _ (-1) = []
+getColumn' m _ _ _ | matrixIsEmpty m = []
 getColumn' t colNum lineNum remainder = (hd:tl)
                                         where hd = t UArray.! (lineNum,colNum)
                                               tl = getColumn' t colNum (lineNum+1) (remainder-1)
@@ -488,3 +493,7 @@ updateMap ss (pre,f) b           -- Conj, Disj , Box, Dia, At
 isModal :: Branch -> Bool
 -- True if we are in the modal language
 isModal br = (inputLanguage br) == 0
+
+matrixIsEmpty :: Matrix -> Bool
+matrixIsEmpty m = (fst $ fst $ b) > (fst $ snd $ b)
+    where b = (UArray.bounds m)       
