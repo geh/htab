@@ -212,7 +212,8 @@ addFormula clp br f@(PrFormula pr (PosLit (N n)))
            formulasToCopy = flatten $ map (getFormulas br) urfathersToRetrieveFormulasFrom
            newFormulas = map (PrFormula newUrfather) formulasToCopy
     -- we don't test if the new urfather is really new or the same as current one, hoping duplication will be avoided later
-           brUpdated = br{nomPrefMatrix = newMatrix, nomToPref=updatedNomToPref}
+           brUpdated0 = br{nomPrefMatrix = newMatrix, nomToPref=updatedNomToPref}
+           brUpdated  = addToPrefToForms brUpdated0 f
 
 
 -- Case 2
@@ -225,7 +226,7 @@ addFormula clp br f | isModal br =  addFormula2 clp br f
 addFormula clp br f@(PrFormula pr f2) 
  = addFormulas2 clp newBr (f:newFormula)
     where newBr      = addToPrefToForms br f
-          m_urfather   = getUrfather br pr
+          m_urfather = getUrfather br pr
           newFormula = case m_urfather of
                         Just urfather -> [PrFormula urfather f2]
                         Nothing -> []
