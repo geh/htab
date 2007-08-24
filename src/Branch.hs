@@ -199,9 +199,10 @@ addFormulas _ br [] = BranchOK br
 addFormula :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
 -- Case 1 :
 -- p : a (a nominal)
-addFormula clp br f@(PrFormula pr (PosLit (N n)))
+addFormula clp br0 f@(PrFormula pr (PosLit (N n)))
   = addFormulas2 clp brUpdated (f:newFormulas)
-     where oldMatrixData = UArray.assocs $ nomPrefMatrix br
+     where br = addToPrefToForms br0 f
+           oldMatrixData = UArray.assocs $ nomPrefMatrix br
            newMRowLength = (lastPr br) + 1             -- 1 unit longer because in between, we may have created a new prefix
            newMColLength = (inputLanguage br) - 1
            biggerOldMatrix = newUArray ((0,0),(newMRowLength,newMColLength)) UArray.// oldMatrixData  -- make a (possibily) bigger matrix
@@ -212,8 +213,7 @@ addFormula clp br f@(PrFormula pr (PosLit (N n)))
            formulasToCopy = flatten $ map (getFormulas br) urfathersToRetrieveFormulasFrom
            newFormulas = map (PrFormula newUrfather) formulasToCopy
     -- we don't test if the new urfather is really new or the same as current one, hoping duplication will be avoided later
-           brUpdated0 = br{nomPrefMatrix = newMatrix, nomToPref=updatedNomToPref}
-           brUpdated  = addToPrefToForms brUpdated0 f
+           brUpdated = br{nomPrefMatrix = newMatrix, nomToPref=updatedNomToPref}
 
 
 -- Case 2
