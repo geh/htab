@@ -222,11 +222,9 @@ addFormula clp br f | isModal br =  addFormula2 clp br f
 
 -- if we work with the hybrid language
 addFormula clp br f@(PrFormula pr f2) 
- = addFormulas2 clp newBr (f:newFormula)
-    where newBr      = addToPrefToForms br f
-          m_urfather = getUrfather br pr
-          newFormula = case m_urfather of
-                        Just urfather -> [PrFormula urfather f2]
+ = addFormulas2 clp br (f:newFormula)
+    where newFormula = case (getUrfather br pr) of
+                        Just urfather -> if urfather == pr then [] else [PrFormula urfather f2]
                         Nothing -> []
 
 {-
