@@ -173,6 +173,7 @@ instance ShowLatex Matrix where
                         lastDisplayedRow = min lastRow 5
 
 genericSeparate :: (a -> String) ->  String -> [a] -> String
+genericSeparate _ _ [] = ""
 genericSeparate f s os = foldl1 (\a1 a2 -> (a1 ++ s ++ a2)) $ map f os
 
 --

@@ -8,6 +8,7 @@ instance ShowLatex Bool where
 
 
 separate :: ShowLatex a => String -> [a] -> String
+separate _ [] = ""
 separate s os = foldl1 (\a1 a2 -> (a1 ++ s ++ a2)) $ map showLatex os
 
 math :: String -> String
