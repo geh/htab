@@ -3,15 +3,15 @@ module LatexOutputHelper where
 class ShowLatex a where
  showLatex :: a -> String
 
-separate :: ShowLatex a => String -> [a] -> String
-separate s (hd:tl1@(hd2:tl2)) = (showLatex hd) ++ s ++ (separate s tl1)
-separate s (hd:[]) = (showLatex hd)
-separate s [] = ""
+instance ShowLatex Bool where
+ showLatex b = if b then "1" else "."
 
+
+separate :: ShowLatex a => String -> [a] -> String
+separate s os = foldl1 (\a1 a2 -> (a1 ++ s ++ a2)) $ map showLatex os
 
 math :: String -> String
-math s = if (length s) > 0 then "$" ++ s ++ "$"
-                           else ""
+math s = if (length s) > 0 then ("$" ++ s ++ "$") else ""
 
 bold :: String -> String
 bold s = "\\textbf{" ++ s ++ "}"

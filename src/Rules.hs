@@ -1,13 +1,11 @@
 module Rules where
 
 import Formula
-import Branch(Branch(..), BranchMonad, incLastPr, BranchInfo(..),
-              addFormulas, addAccFormula, remFormula, addBoxRuleCheck,
-              BranchData(..))
+import Branch(Branch(..), incLastPr, BranchInfo(..),
+              addFormulas, addAccFormula, remFormula, addBoxRuleCheck)
 import CommandLine(CmdLineParams, semBranch, fullClash)
-import Control.Monad.State(modify)
 import RuleMetadata(RuleId(..))
-import LatexOutput
+import LatexOutput()
 import LatexOutputHelper
 
 -- a "rule" is basically a list of modifications of the structures
@@ -211,7 +209,7 @@ sbModList _ [] _ = []
 
 -- @
 atRule :: PrFormula -> Branch -> Rule
-atRule af@(PrFormula pr (At n f)) br
+atRule af@(PrFormula _ (At n f)) br
  = AtRule [(BM_RemFormula af),
            (BM_AddFormulas [(prefix newPr (PosLit (N n))),
                             (prefix newPr f)]),
@@ -222,7 +220,7 @@ atRule _ _ = error "atRule error"
 
 -- ¬a
 negNomRule :: PrFormula -> Branch -> Rule
-negNomRule f@(PrFormula pr (NegLit n@(N _))) br
+negNomRule f@(PrFormula _ (NegLit n@(N _))) br
  = NegNomRule [(BM_RemFormula f),
                (BM_AddFormulas [(prefix newPr (PosLit n))]),
                (BM_IncLastPr)]

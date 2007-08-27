@@ -1,13 +1,14 @@
 module Tableau where
 
 import Base(vPutStrLn)
-import Control.Monad.State(lift,modify, put, get)
+import Control.Monad.State(StateT,lift,modify, put, get)
 import Statistics(updateStep,printOutInspectionMetrics,
                   recordClosedBranch,recordFiredRule)
 import Branch(BranchInfo(..),BranchMonad, BranchData(..),branch_depth)
 import CommandLine(logRules,logState,CmdLineParams)
 import Rules(Rule,applyRule,
              applicableRules,ruleToId)
+import Statistics(Statistics)
 import LatexOutput
 import LatexOutputHelper
 
@@ -93,8 +94,11 @@ logMe = do liftStats $ printOutInspectionMetrics
            liftStats $ modify updateStep  -- not very elegant to call it explicitely and here
 
 --
-
+liftStats :: Control.Monad.State.StateT Statistics.Statistics IO a
+             -> Control.Monad.State.StateT Branch.BranchData (Control.Monad.State.StateT Statistics.Statistics IO) a
 liftStats  = lift
+
+liftIO :: IO a -> Control.Monad.State.StateT Branch.BranchData (Control.Monad.State.StateT Statistics.Statistics IO) a
 liftIO = lift . lift
 
 --

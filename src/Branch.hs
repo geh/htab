@@ -32,7 +32,7 @@ emptyBranch,initialBranchStateFor,getCLParams
 --          been treated, by storing it in a special list in the branch
 
 
-import Control.Monad.State(StateT, modify,MonadState, get)
+import Control.Monad.State(StateT, MonadState, get)
 import Data.List(delete)
 import qualified Data.Map as Map
 
@@ -42,15 +42,14 @@ import Formula
 
 import qualified Data.Array.Unboxed as UArray
 import SpecialMatrix(addElement,newUArray,
-                     indexOfEarliest,Column,Line)
+                     indexOfEarliest,Column,Row)
 
 import Control.Monad.ST(runST)
 import Data.Array.MArray(thaw,freeze)
-import Data.Set(Set,insert,empty,elems,singleton)
+import Data.Set(Set,insert,elems,singleton)
 
 import Base(flatten)
 
-import LatexOutput
 import LatexOutputHelper
 import Ix(range)
 
@@ -157,28 +156,24 @@ instance ShowLatex NomToEarliestPref where
  showLatex ntep = show $ Map.toList ntep
 
 instance ShowLatex PrefToFormulas where
- showLatex ptf = separate "\\\\" $ Map.toList ptf
-
-instance  ShowLatex (Prefix,[Formula]) where
- showLatex (p,fs)  = (bold $ show p) ++ ":" ++ ("[" ++ (separate ", " fs) ++ "]")
+ showLatex ptf =
+   (genericSeparate showLat) "\\\\" $ Map.toList ptf
+    where showLat (p,fs)  = (bold $ show p) ++ ":" ++ ("[" ++ (separate ", " fs) ++ "]")
 
 instance ShowLatex Seen_structure where
- showLatex ss  = "[" ++ (separate ", " $ Map.toList ss) ++ "]"
+ showLatex ss  = 
+   "[" ++ ((genericSeparate showLat) ", " $ Map.toList ss) ++ "]"
+    where showLat (pf,b)  = if b then "" ++ "(" ++ (showLatex pf) ++ ")"
+                                 else "\\neg" ++ "(" ++ (showLatex pf) ++ ")"
 
-instance ShowLatex (PrFormula,Bool) where
- showLatex (pf,b)  = if b then "" ++ "(" ++ (showLatex pf) ++ ")"
-                          else "\\neg" ++ "(" ++ (showLatex pf) ++ ")"
-
---type Matrix = UArray.UArray (Int,Int) Bool
 instance ShowLatex Matrix where
- showLatex m = foldr insertEol "" $ map (separate " " . (getLineT m)) (range (firstRow,lastDisplayedRow))
+ showLatex m = foldr insertEol "" $ map (separate " " . (getRow m)) (range (firstRow,lastDisplayedRow))
                   where firstRow = fst $ fst $ UArray.bounds m
                         lastRow  = fst $ snd $ UArray.bounds m
                         lastDisplayedRow = min lastRow 5
 
-instance ShowLatex Bool where
- showLatex b = if b then "1"
-                    else "."
+genericSeparate :: (a -> String) ->  String -> [a] -> String
+genericSeparate f s os = foldl1 (\a1 a2 -> (a1 ++ s ++ a2)) $ map f os
 
 --
 
@@ -259,7 +254,7 @@ getUrfather br pr = case m_idx1 of
                            maxPrefixInMatrix = fst $ snd $ UArray.bounds mat
                            m_idx1 = if maxPrefixInMatrix < pr
                                       then Nothing 
-                                      else indexOfEarliest $ getLineT mat pr
+                                      else indexOfEarliest $ getRow mat pr
 
 {-
    Functions to read and write the prefix<->nominal array
@@ -274,16 +269,16 @@ addElement_ m (p,n) = runST (do tmp <- thaw m
                                 res <- freeze tmp
                                 return (res,colIdxs,newUr))
 
-getLineT :: Matrix -> Int -> Line
-getLineT t lineNum = getLine' t lineNum 0 width
-                     where width = (snd $ snd $ UArray.bounds t)
+getRow :: Matrix -> Int -> Row
+getRow t rowNum = getRow' t rowNum 0 width
+                   where width = (snd $ snd $ UArray.bounds t)
 
-getLine' :: Matrix -> Int -> Int -> Int -> [Bool]
-getLine' _ _ _ (-1) = []
-getLine' m _ _ _ | matrixIsEmpty m = []
-getLine' t lineNum colNum remainder = (hd:tl)
-                                      where hd = t UArray.! (lineNum,colNum)
-                                            tl = getLine' t lineNum (colNum+1) (remainder-1)
+getRow' :: Matrix -> Int -> Int -> Int -> [Bool]
+getRow' _ _ _ (-1) = []
+getRow' m _ _ _ | matrixIsEmpty m = []
+getRow' t rowNum colNum remainder = (hd:tl)
+                                      where hd = t UArray.! (rowNum,colNum)
+                                            tl = getRow' t rowNum (colNum+1) (remainder-1)
 
 
 getColumn :: Matrix -> Int -> Column
@@ -293,9 +288,9 @@ getColumn t column = getColumn' t column 0 height
 getColumn' :: Matrix -> Int -> Int -> Int -> [Bool]
 getColumn' _ _ _ (-1) = []
 getColumn' m _ _ _ | matrixIsEmpty m = []
-getColumn' t colNum lineNum remainder = (hd:tl)
-                                        where hd = t UArray.! (lineNum,colNum)
-                                              tl = getColumn' t colNum (lineNum+1) (remainder-1)
+getColumn' t colNum rowNum remainder = (hd:tl)
+                                        where hd = t UArray.! (rowNum,colNum)
+                                              tl = getColumn' t colNum (rowNum+1) (remainder-1)
 
 
 
@@ -393,11 +388,11 @@ remFormula br f@(PrFormula _ (Con _))        = br{conjStr=(delete f (conjStr br)
 remFormula br f@(PrFormula _ (Dia _ _))      = br{diaStr=(delete f (diaStr br))}
 remFormula br f@(PrFormula _ (Dis _))        = br{disjStr=(delete f (disjStr br))}
 remFormula br f@(PrFormula _ (Neg _))        = br{negStr=(delete f (negStr br))}
-remFormula br f@(PrFormula _ (Box _ _))      = error "that formula should never be deleted"
+remFormula _    (PrFormula _ (Box _ _))      = error "that formula should never be deleted"
 remFormula br f@(PrFormula _ (At _ _))       = br{atStr=(delete f (atStr br))}
-remFormula br f@(PrFormula _ (PosLit _))     = error "that formula should never be deleted"
+remFormula _    (PrFormula _ (PosLit _))     = error "that formula should never be deleted"
 remFormula br f@(PrFormula _ (NegLit (N _))) = br{negNomStr=(delete f (negNomStr br))}
-remFormula br f@(PrFormula _ (NegLit _))     = error "that formula should never be deleted"
+remFormula _    (PrFormula _ (NegLit _))     = error "that formula should never be deleted"
 
 
 {-
@@ -410,27 +405,6 @@ data BranchData = BranchData { branch_info :: BranchInfo,
 
 type BranchMonad a = StateT BranchData (StateT Statistics IO) a
 
-mAddAccFormula :: AccFormula -> BranchMonad ()
-mAddAccFormula accf = modifyIfOk ((flip addAccFormula) accf)
-
-mAddBoxRuleCheck :: (PrFormula,AccFormula) -> BranchMonad ()
-mAddBoxRuleCheck brc = modifyIfOk ((flip addBoxRuleCheck) brc)
-
-mIncLastPr :: BranchMonad ()
-mIncLastPr  = modifyIfOk incLastPr
-
-mRemFormula :: PrFormula -> BranchMonad ()
-mRemFormula pf = modifyIfOk ((flip remFormula) pf)
-
-modifyIfOk :: (Branch -> Branch) -> BranchMonad ()
-modifyIfOk f = modify (\bd -> case (branch_info bd) of
-                               (BranchOK br) -> bd{branch_info=(BranchOK (f br))}
-                               _             -> bd)     -- do nothing
-
-mAddFormulas ::  [PrFormula] -> BranchMonad ()
-mAddFormulas pfs = modify (\bd -> case (branch_info bd) of
-                                   (BranchOK br) -> bd{branch_info=(addFormulas (branch_clp bd) br pfs)}
-                                   _             -> bd)
 
 --
 

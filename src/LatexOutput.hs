@@ -1,7 +1,6 @@
 module LatexOutput where
 
 
-import LatexOutputHelper
 import CommandLine
 import Control.Monad.State(lift,StateT)
 
