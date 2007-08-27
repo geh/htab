@@ -11,8 +11,8 @@ module Branch
 Branch(..), BranchMonad, incLastPr, BranchInfo(..),
 addFormulas, addFormula, addAccFormula, remFormula,
 addBoxRuleCheck, BranchData(..),branch_depth,
-emptyBranch,initialBranchStateFor,getCLParams
-
+emptyBranch,initialBranchStateFor,getCLParams,
+addZeroInPath,incPathHead
 
 ) where
 
@@ -357,7 +357,6 @@ addFormula2 _ br f@(PrFormula _ (NegLit (N _)))
                BranchOK bok         -> BranchOK bok{negNomStr = (f:(negNomStr bok))}
                bc@(BranchClash _ _) -> bc
 
--- then these 2 must be at the end
 addFormula2 _ br f@(PrFormula _ (PosLit _))
            = addAndUpdateMap br f
 
@@ -396,27 +395,6 @@ remFormula br f@(PrFormula _ (NegLit (N _))) = br{negNomStr=(delete f (negNomStr
 remFormula _    (PrFormula _ (NegLit _))     = error "that formula should never be deleted"
 
 
-{-
-    Monad related stuff
--}
-
-data BranchData = BranchData { branch_info :: BranchInfo,
-                               branch_clp :: CmdLineParams,
-                               branch_path :: [Int]}
-
-type BranchMonad a = StateT BranchData (StateT Statistics IO) a
-
-
---
-
-initialBranchStateFor :: (MonadState BranchData m) =>  (m a -> BranchData -> b) -> BranchData -> m a -> b
-initialBranchStateFor f bd = flip f bd
-
---
-
-getCLParams :: BranchMonad CmdLineParams
-getCLParams = do bd <- get
-                 return (branch_clp bd)
 
 {-
   Functions to update the "seen structures" map
@@ -441,8 +419,8 @@ addAndUpdateMap br prf@(PrFormula pr f)
 
 
 updateMap :: Seen_structure -> (Prefix,Formula) -> Bool -> Maybe Seen_structure
-updateMap ss (pre,PosLit Taut) True
-    = Just (Map.insert (PrFormula pre (PosLit Taut)) True ss) -- TODO no need to do anything -> return seen_structure
+updateMap ss (_,PosLit Taut) True
+    = Just ss  -- no useful information to add
 
 updateMap _ ( _ ,PosLit Taut) False
     = Nothing
@@ -470,4 +448,39 @@ isModal br = (inputLanguage br) == 0
 
 matrixIsEmpty :: Matrix -> Bool
 matrixIsEmpty m = (fst $ fst $ b) > (fst $ snd $ b)
-    where b = (UArray.bounds m)       
+    where b = (UArray.bounds m)
+
+{-
+    Monad related stuff
+-}
+
+data BranchData = BranchData { branch_info :: BranchInfo,
+                               branch_clp :: CmdLineParams,
+                               branch_path :: [Int]}
+
+type BranchMonad a = StateT BranchData (StateT Statistics IO) a
+
+
+--
+
+initialBranchStateFor :: (MonadState BranchData m) =>  (m a -> BranchData -> b) -> BranchData -> m a -> b
+initialBranchStateFor f bd = flip f bd
+
+--
+
+getCLParams :: BranchMonad CmdLineParams
+getCLParams = do bd <- get
+                 return (branch_clp bd)
+
+
+-- functions to be used with " modify "
+
+
+addZeroInPath :: BranchData -> BranchData
+addZeroInPath bd = bd{branch_path=(0:(branch_path bd))}
+
+incPathHead :: BranchData -> BranchData
+incPathHead bd = bd{branch_path=(((head (branch_path bd))+1):(tail $ branch_path bd))}
+
+
+

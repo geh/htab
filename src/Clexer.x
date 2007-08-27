@@ -22,7 +22,6 @@ tokens :-
 
   [Ff]ile                        { tok File }
   [Tt]imeout                     { tok Timeout }
-  [Ss]how[Rr]ules                { tok ShowR }
   [Ss]how[Ss]tate                { tok ShowS }
   [Ss]ave[Ss]at                  { tok SaveSat }
 
@@ -44,7 +43,7 @@ tokens :-
 {
 data Token =
     Eq | TF String | Num String | FileName String | File | Timeout |
-    SFunction | SFValue String | ShowR | ShowS | SaveSat | Stats |
+    SFunction | SFValue String | ShowS | SaveSat | Stats |
     SemBranch | FullClash | LatexOutput | LatexName | StatsValue String
   deriving (Eq, Show, Read)
 

@@ -4,107 +4,128 @@ import Base(vPutStrLn)
 import Control.Monad.State(StateT,lift,modify, put, get)
 import Statistics(updateStep,printOutInspectionMetrics,
                   recordClosedBranch,recordFiredRule)
-import Branch(BranchInfo(..),BranchMonad, BranchData(..),branch_depth)
-import CommandLine(logRules,logState,CmdLineParams)
+import Branch(BranchInfo(..),Branch,BranchMonad, BranchData(..),branch_depth,
+              addZeroInPath, incPathHead)
+import CommandLine(logState,CmdLineParams)
 import Rules(Rule,applyRule,
              applicableRules,ruleToId)
 import Statistics(Statistics)
+import Formula(PrFormula)
 import LatexOutput
 import LatexOutputHelper
 
 --
 
-data SatFlag = SAT | UNSAT | TIMEOUT
- deriving Show
+data OpenFlag = OPEN | CLOSED
 
 --
 
-tableau :: BranchMonad SatFlag
+tableau :: BranchMonad OpenFlag
 tableau =
       do logMe
          bd <- get
          let clp = branch_clp bd
-         let showState = logState clp
-         let showRules = logRules clp
-         let showSome = (showState || showRules)
-         let depth = branch_depth bd
-         let width = head $ branch_path bd
-
-         let traceMsg = ("Depth " ++ (show depth) ++ " Width " ++ (show width)
-                            ++ " path " ++ (show $ branch_path bd) )
-         liftIO $ vPutStrLn ("\n>> " ++ traceMsg) showSome
-         latexPut $ section traceMsg
+         debugMsg_NewSection
 
          case (branch_info bd) of
           BranchClash br pf ->
-           do liftIO $ vPutStrLn ((show br) ++ "\nClasher : " ++ (show pf)) showState
-              latexPut $ (showLatex br) ++ "\n\nClasher : " ++ (math $ showLatex pf) ++ "\n\n"
+           do debugMsg_BranchClash br pf
               liftStats $ recordClosedBranch
-              return UNSAT
+              return CLOSED
 
           BranchOK br ->
-           do liftIO $ vPutStrLn (show br) showState
-              latexPut $ (showLatex br) ++ "\n"
+           do debugMsg_BranchOK br
               case (chooseRule $ applicableRules br clp) of
                Just rule ->
-                do liftIO $ vPutStrLn ("\n>> Rule : " ++ (show rule)) showRules
-                   latexPut $ ("Rule : " ++ (showLatex rule))
+                do debugMsg_BranchOK_applicableRule rule
                    liftStats $ recordFiredRule $ ruleToId rule
                    let possibleBranches = applyRule clp rule br
-                   modify (\bdata -> bdata{branch_path=(0:(branch_path bdata))})
+                   modify addZeroInPath
                    chooseBranch possibleBranches
                    -- when we want to keep information, modify the
                    -- BranchData state before returning
                Nothing   ->
-                do let traceMsg4 = "Saturated open branch"
-                   liftIO $ vPutStrLn ("\n>> " ++ traceMsg4) showSome
-                   latexPut $ traceMsg4
-                   return SAT
+                do debugMsg_BranchOK_saturated
+                   return OPEN
 
 
--- dumb rule-choosing strategy
+-- simple rule-choosing strategy
 chooseRule :: [Rule] -> Maybe Rule
 chooseRule (hd:_)  = Just hd
 chooseRule [] = Nothing
 
--- depth-first strategy
-chooseBranch :: [BranchInfo]  -> BranchMonad SatFlag
-chooseBranch (hd:tl)
-    = do bd <- get
-         put bd{branch_info=hd}
-         res <- tableau
+-- depth-first branch-choosing strategy
+chooseBranch :: [BranchInfo]  -> BranchMonad OpenFlag
+chooseBranch (hd:tl) =
+ do bd <- get
+    put bd{branch_info=hd}
+    res <- tableau
 
-         case (res) of
-          SAT        -> do return SAT
-          UNSAT      ->
-           do put bd{branch_path=(((head (branch_path bd))+1):(tail $ branch_path bd))}
-              -- we re-put bd (branchdata as it was before branching)
-              -- in order to retrieve the path at that stage
-              -- the problem is that we forget all information about the branches
-              -- explored
-              chooseBranch tl
+    case (res) of
+     OPEN     -> return OPEN
+     CLOSED   -> do put $ incPathHead bd
+                    -- put bd (BranchData) as it was before branching
+                    -- in order to retrieve the path at that stage
+                    chooseBranch tl
 
-          TIMEOUT    -> error $ "shouldn't happen"
+chooseBranch [] = return CLOSED
 
-chooseBranch [] = return UNSAT
-
--- like hylores' logstate. will be more developped.
+-- like hylores' logstate
 logMe :: BranchMonad ()
 logMe = do liftStats $ printOutInspectionMetrics
            liftStats $ modify updateStep  -- not very elegant to call it explicitely and here
 
 --
-liftStats :: Control.Monad.State.StateT Statistics.Statistics IO a
-             -> Control.Monad.State.StateT Branch.BranchData (Control.Monad.State.StateT Statistics.Statistics IO) a
+liftStats :: StateT Statistics IO a -> BranchMonad a
 liftStats  = lift
 
-liftIO :: IO a -> Control.Monad.State.StateT Branch.BranchData (Control.Monad.State.StateT Statistics.Statistics IO) a
+liftIO :: IO a -> BranchMonad a
 liftIO = lift . lift
 
---
+-- STDout and LateX debug messages
 
+debugMsg_NewSection :: BranchMonad ()
+debugMsg_NewSection =  
+ do bd <- get
+    let showState = logState $ branch_clp bd
+    let path = branch_path bd
+    let depth = branch_depth bd
+    let width = head path 
+    let traceMsg = ("Depth " ++ (show depth) ++ " Width " ++ (show width) ++ " path " ++ (show path) )
+    liftIO $ vPutStrLn ("\n>> " ++ traceMsg) showState
+    latexPut $ section traceMsg
+
+debugMsg_BranchClash :: Branch -> PrFormula -> BranchMonad ()
+debugMsg_BranchClash br pf =
+ do bd <- get
+    let showState = logState $ branch_clp bd
+    liftIO $ vPutStrLn ((show br) ++ "\nClasher : " ++ (show pf)) showState
+    latexPut $ (showLatex br) ++ "\n\nClasher : " ++ (math $ showLatex pf) ++ "\n\n"
+
+debugMsg_BranchOK :: Branch -> BranchMonad ()
+debugMsg_BranchOK br =
+ do bd <- get
+    let showState = logState $ branch_clp bd
+    liftIO $ vPutStrLn (show br) showState
+    latexPut $ (showLatex br) ++ "\n"
+
+debugMsg_BranchOK_applicableRule :: Rule -> BranchMonad ()
+debugMsg_BranchOK_applicableRule rule =
+ do bd <- get
+    let showState = logState $ branch_clp bd
+    liftIO $ vPutStrLn ("\n>> Rule : " ++ (show rule)) showState
+    latexPut $ ("Rule : " ++ (showLatex rule))
+
+debugMsg_BranchOK_saturated :: BranchMonad ()
+debugMsg_BranchOK_saturated =
+ do bd <- get
+    let showState = logState $ branch_clp bd
+    let traceMsg = "Saturated open branch"
+    liftIO $ vPutStrLn ("\n>> " ++ traceMsg) showState
+    latexPut $ traceMsg
 
 latexPut :: String -> BranchMonad ()
 latexPut input = do bd <- get
                     let clp = branch_clp bd
                     latexPutCLP clp input
+

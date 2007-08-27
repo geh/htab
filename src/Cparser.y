@@ -19,7 +19,6 @@ import Clexer (Token(..), PosToken)
     timeout                   {(Timeout,_,_)}
     selectionfunction         {(SFunction,_,_)}
     selectionfunctionvalue    {(SFValue $$,_,_)}
-    showrules                 {(ShowR,_,_)}
     showstate                 {(ShowS,_,_)}
     semanticbranching         {(SemBranch,_,_)}
     fullclash                 {(FullClash,_,_)}
@@ -38,8 +37,6 @@ Input :
    {("timeout",$3):$4}
  | selectionfunction '=' selectionfunctionvalue  Input
    {("sf",$3):$4}
- | showrules '=' bool Input
-   {("sr",$3):$4}
  | showstate '=' bool Input
    {("ss",$3):$4}
  | savesat '=' bool Input

@@ -52,7 +52,6 @@ data CmdLineParams = CLP {
            paramsOk      :: Bool,
            filename      :: String,
            logState      :: Bool,
-           logRules      :: Bool,
            maxtimeout    :: Integer,
            statsStr      :: String,
            semBranch     :: Bool,
@@ -65,7 +64,6 @@ initialParams :: CmdLineParams
 initialParams = CLP {paramsOk = False,
                      filename = "no file name",
                      logState = False,
-                     logRules = False,
                      maxtimeout = 0,
                      statsStr = ":0:c",
                      semBranch = True,
@@ -78,7 +76,6 @@ initialParamsStr = concat ["% This is the default configuration file for htab\n"
                            "% Possible valriables to set are:\n",
                            "% Filename = [file of the formula to resolve]\n",
                            "% Timeout = [in seconds, 0 = no timeout]\n",
-                           "% Showrules = [Show rules during calculus, True | False]\n",
                            "% Showstate = [Show internal state during calculus, True | False]\n",
                            "% statistics = [statistics to print]\n",
                            "% Semanticbranching = [Use semantic branching instead of disjunction rule, True | False]\n",
@@ -87,7 +84,6 @@ initialParamsStr = concat ["% This is the default configuration file for htab\n"
                            "% LatexName = [name for LaTeX output file]\n",
                            "\n",
                            "Timeout = ", show $ maxtimeout initialParams, " \n",
-                           "Showrules = ", show $ logRules initialParams, "\n",
                            "Showstate = ", show $ logState initialParams, "\n",
                            "Statistics = ", statsStr initialParams, "\n",
                            "Semanticbranching = ", show $ semBranch initialParams,"\n",
@@ -108,7 +104,6 @@ parseParams clp  []          = clp
 parseParams clp ("-t":[])    = clp{paramsOk = False}
 parseParams clp ("-t":t:xs)  = parseParams clp{maxtimeout = (read t)} xs
 parseParams clp ("-s":xs)    = parseParams clp{logState = True} xs
-parseParams clp ("-r":xs)    = parseParams clp{logRules = True} xs
 parseParams clp ("-l":xs)    = parseParams clp{latexOutput = True} xs
 parseParams clp ("-lo":[])   = clp{paramsOk = False}
 parseParams clp ("-lo":s:xs) = parseParams clp{latexName= s} xs
@@ -134,7 +129,6 @@ defineParams p [] = p
 defineParams p ((f,v):s) =
   case f of "file"       ->  defineParams p{filename      = v} s
             "timeout"    ->  defineParams p{maxtimeout       = read v} s
-            "sr"         ->  defineParams p{logRules      = read v} s
             "ss"         ->  defineParams p{logState      = read v} s
             "statistics" ->  defineParams p{statsStr = v} s
             "sembranch"  ->  defineParams p{semBranch = read v} s
@@ -171,7 +165,6 @@ showHelp = putStrLn ("htab 0.01\n" ++
      "Usage: htab -f file_name [-t <t>|-st <s>|-r|-s|-l|-lo file_name]\n\n" ++
      "-t secs   : Timeout in seconds.\n" ++
      "-st string: Configure statistics\n" ++
-     "-r        : Prints rules.\n" ++
      "-s        : Prints the internal state of the tableaux.\n" ++
      "-sb 0     : Don't use semantic branching.\n" ++
      "-sb 1     : Use semantic branching.\n" ++

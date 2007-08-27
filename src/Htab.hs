@@ -6,7 +6,7 @@ import System.Environment(getArgs)
 import HyLoLexer(hyloLexer)
 import HyLoParse(parse)
 import CommandLine(getConf,initialParams,paramsOk, filename, parseParams,
-                   maxtimeout, showHelp, CmdLineParams, logState, logRules,
+                   maxtimeout, showHelp, CmdLineParams, logState,
                    configureMetrics,fullClash)
 import Branch(BranchInfo,initialBranchStateFor,BranchMonad, BranchData(..),
               addFormula,emptyBranch)
@@ -15,10 +15,12 @@ import Statistics(Statistics, initialStatisticsStateFor, printOutAllMetrics')
 import Control.Monad.State(runStateT)
 import System.CPUTime(getCPUTime)
 import Base(vPutStrLn)
-import Tableau(liftStats, tableau, SatFlag(..))
+import Tableau(liftStats, tableau, OpenFlag(..))
 import Formula(nnf,prefix,formulaLanguageInfo,renameNominals)
 import LatexOutput
 
+
+data SatFlagAndStats = SAT Statistics | UNSAT Statistics | TIMEOUT
 
 main :: IO ()
 main =
@@ -43,35 +45,31 @@ main =
                       result <- if (not ((maxtimeout clp) == 0))
                                    then timeout (maxtimeout clp)
                                                (tableauInit branchInfo clp)
-                                               (return (TIMEOUT, Nothing))
+                                               (return TIMEOUT)
                                    else (tableauInit branchInfo clp)
 
                       case result of
-                       (SAT, Just stats)    -> (putStrLn "The formula is satisfiable." >>
-                                               printOutAllMetrics' stats)
-                       (UNSAT, Just stats)  -> (putStrLn "The formula is unsatisfiable." >>
-                                               printOutAllMetrics' stats)
-                       (TIMEOUT, Nothing)   -> (putStrLn "TIMEOUT")
-                       _                    -> error ("Unexpected response: ("
-                                                      ++ show (fst result)
-                                                      ++ ", *)")
+                       SAT stats   -> (putStrLn "The formula is satisfiable." >>
+                                       printOutAllMetrics' stats)
+                       UNSAT stats -> (putStrLn "The formula is unsatisfiable." >>
+                                       printOutAllMetrics' stats)
+                       TIMEOUT     -> (putStrLn "TIMEOUT")
 
                       end <- getCPUTime
                       putStr "Elapsed time: "
                       print ((fromInteger (end - start)) / 1000000000000 :: Double)
-                      latexEnd
-                       clp
+                      latexEnd clp
 
         else showHelp
 
 
-tableauInit :: BranchInfo -> CmdLineParams -> IO (SatFlag,Maybe Statistics)
+tableauInit :: BranchInfo -> CmdLineParams -> IO (SatFlagAndStats)
 tableauInit bi clp =
-        do vPutStrLn ">> Starting rules application"
-                      ((logState clp)||(logRules clp))
+        do vPutStrLn ">> Starting rules application" (logState clp)
            res <- initStatsState $ initBranchState bd $ tableauStart clp
            case res of
-            ((satflag,_),stats) -> return (satflag, Just stats)
+            ((OPEN,_),stats)   -> return $ SAT stats
+            ((CLOSED,_),stats) -> return $ UNSAT stats
  where initStatsState  = initialStatisticsStateFor runStateT
        initBranchState = initialBranchStateFor runStateT
        bd              = BranchData
@@ -79,7 +77,8 @@ tableauInit bi clp =
                             branch_clp  = clp,
                             branch_path = [0]}
 
-tableauStart :: CmdLineParams -> BranchMonad SatFlag
+tableauStart :: CmdLineParams -> BranchMonad OpenFlag
 tableauStart clp =
  do liftStats $ configureMetrics clp    -- knows from the command line which statistics will be displayed
     tableau
+
