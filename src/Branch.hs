@@ -400,11 +400,6 @@ addAndUpdateMap br prf@(PrFormula pr (Neg f))
      Just m  -> BranchOK br{seenStr = m}
      Nothing -> BranchClash br prf
 
-addAndUpdateMap br prf@(PrFormula pr (NegLit a))
-  = case (updateMap (seenStr br) (pr,(PosLit a)) False) of
-     Just m  -> BranchOK br{seenStr = m}
-     Nothing -> BranchClash br prf
-
 addAndUpdateMap br prf@(PrFormula pr f)
   = case (updateMap (seenStr br) (pr,f) True) of
      Just m  -> BranchOK br{seenStr = m}
@@ -412,12 +407,9 @@ addAndUpdateMap br prf@(PrFormula pr f)
 
 
 updateMap :: Seen_structure -> (Prefix,Formula) -> Bool -> Maybe Seen_structure
-updateMap ss (_,PosLit Taut) True
-    = Just ss  -- no useful information to add
+updateMap ss (_,PosLit Taut) True = Just ss
 
-updateMap _ ( _ ,PosLit Taut) False
-    = Nothing
-
+updateMap _ (_,PosLit Taut) False = Nothing
 
 updateMap ss (pre,PosLit a) b
   = case (Map.lookup (PrFormula pre (PosLit a)) ss) of
@@ -425,8 +417,8 @@ updateMap ss (pre,PosLit a) b
                              else Nothing                   -- clash!
        Nothing -> Just (Map.insert (PrFormula pre (PosLit a)) b ss)
 
-updateMap _ (_,NegLit _) _
-    = error $ "shouldn't happen"
+updateMap ss (pre,NegLit a) b
+    = updateMap ss (pre,PosLit a) (not b)
 
 updateMap ss (pre,f) b           -- Conj, Disj , Box, Dia, At
     = case (Map.lookup (PrFormula pre f) ss) of
