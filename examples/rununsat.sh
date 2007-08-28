@@ -1,6 +1,6 @@
 #!/bin/bash
 
-HTABPATH="../bin/htab"    # path to HTab
+HTABPATH="../dist/build/htab/htab"    # path to HTab
 UNSATPATH="unsat"            # directory where examples are
 
 for file in `ls ${UNSATPATH}/*.frm`;
