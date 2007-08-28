@@ -1,13 +1,17 @@
 Name:                htab
-Version:             0.01
-Description:         Theorem prover for hybrid logics
+Version:             0.2
+Description:         Tableau based theorem prover for hybrid logics
 License:             GPL
 License-file:        COPYING
-Author:              Guillaume Hoffmann, Carlos Areces, Daniel Gorin, Juan Heguiabehere
-Maintainer:          guillaumh@gmail.com
-Build-Depends:       base
+Author:              Guillaume Hoffmann, Carlos Areces, Daniel Gorín, Juan Heguiabehere
+Maintainer:          guillaume.hoffmann@loria.fr
+Build-Depends:       base, haskell98, mtl
  
 Executable:          htab
 Main-is:             Htab.hs
+other-modules:       Clexer
+                     Cparser
+		     HyLoLexer
+		     HyLoParse
 Hs-Source-Dirs:      src
-ghc-options:         
+ghc-options:         -Wall -fglasgow-exts 
