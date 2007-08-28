@@ -66,10 +66,6 @@ instance ShowLatex Formula where
    showLatex (Neg f)    = "\\neg" ++ showLatex f
 
 
-instance ShowLatex (PrFormula, AccFormula) where
- showLatex (pr,acc) = "(" ++ (math $ showLatex pr) ++ "," ++ (math $ showLatex acc) ++ ")"
-
-
 {- showInfixOp: Given
 
    - a string for an infix operator

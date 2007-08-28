@@ -50,7 +50,8 @@ instance Show Rule where
 instance ShowLatex Rule where
    showLatex (ConjRule ((BM_RemFormula f):_)) = "conjunction : " ++ (math $ showLatex f)
    showLatex (DiaRule ((BM_RemFormula f):_)) = "diamond : " ++ ( math $ showLatex f)
-   showLatex (BoxRule ((BM_AddBoxRuleCheck f):_)) = "box : " ++ ( showLatex f)
+   showLatex (BoxRule ((BM_AddBoxRuleCheck f):_)) = "box : " ++ ( showLat f)
+    where showLat (pr,acc) = "(" ++ (math $ showLatex pr) ++ "," ++ (math $ showLatex acc) ++ ")"
    showLatex (DisjRule (((BM_RemFormula f):((BM_AddFormulas l):_)):_)) = "disjunction : " ++ (math $ showLatex f) ++ " ,  " ++ (math $ show l)
    showLatex (SemBrRule (((BM_RemFormula f):_):_)) = "semantic branching : " ++ (math $ showLatex f)
    showLatex (NegRule ((BM_RemFormula f):_)) = "negation : " ++ (math $ showLatex f)

@@ -146,11 +146,14 @@ instance ShowLatex Branch where
               "\nAts: "            ++ (putEol $ math $ separate ", " $ atStr br)   ++
               "\nNeg noms: "       ++ (putEol $ math $ separate ", " $ negNomStr br)   ++
               "\nAccesibility: "   ++ (putEol $ math $ separate ", " $ accStr br)   ++
-              "\nBox rule chart: " ++ (putEol $ separate ", " $ boxRlCh br)  ++
+              "\nBox rule chart: " ++ (putEol $ (genericSeparate showLat) ", " $ boxRlCh br)  ++
               "\nBiggest prefix: " ++ (putEol $ show $ lastPr br) ++
               "\nNominal to earliest prefix: "  ++ (putEol $ showLatex $ nomToPref br)   ++
               "\nPrefix to formulas: \\\\"      ++ (putEol $ math $ showLatex $ prefToForms br) ++
               "\nPrefix-Nominal matrix : " ++ (verbatim $ showLatex $ nomPrefMatrix br)
+  where showLat (pr,acc) = "(" ++ (math $ showLatex pr) ++ "," ++ (math $ showLatex acc) ++ ")"
+
+
 
 instance ShowLatex NomToEarliestPref where
  showLatex ntep = show $ Map.toList ntep
