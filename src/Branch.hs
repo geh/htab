@@ -317,49 +317,27 @@ addFormulas2 _ br [] = BranchOK br
 
 
 addFormula2 :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
-addFormula2 clp br f@(PrFormula _ (Con _))
-           = if (fullClash clp) then  case (addAndUpdateMap br f) of
-                                        BranchOK bok       -> BranchOK bok{conjStr = (f:(conjStr bok))}
-                                        bc@(BranchClash _ _) -> bc
-                                else  BranchOK br{conjStr = (f:(conjStr br))}
+addFormula2 clp br pf@(PrFormula _ (Con _))
+           = modBranchCaseFC clp br pf $ \b f -> b{conjStr = f:(conjStr b)}
 
-addFormula2 clp br f@(PrFormula _ (Dis _))
-           = if (fullClash clp) then  case (addAndUpdateMap br f) of
-                                        BranchOK bok       -> BranchOK bok{disjStr = (f:(disjStr bok))}
-                                        bc@(BranchClash _ _) -> bc
-                                else  BranchOK br{disjStr = (f:(disjStr br))}
+addFormula2 clp br pf@(PrFormula _ (Dis _))
+           = modBranchCaseFC clp br pf $ \b f -> b{disjStr = f:(disjStr b)}
 
+addFormula2 clp br pf@(PrFormula _ (Box _ _))
+           = modBranchCaseFC clp br pf $ \b f -> b{boxStr  = f:(boxStr b) }
 
-addFormula2 clp br f@(PrFormula _ (Box _ _))
-           = if (fullClash clp) then  case (addAndUpdateMap br f) of
-                                        BranchOK bok       -> BranchOK bok{boxStr = (f:(boxStr bok))}
-                                        bc@(BranchClash _ _) -> bc
-                                else  BranchOK br{boxStr = (f:(boxStr br))}
+addFormula2 clp br pf@(PrFormula _ (Dia _ _))
+           = modBranchCaseFC clp br pf $ \b f -> b{diaStr  = f:(diaStr b) }
 
-addFormula2 clp br f@(PrFormula _ (Dia _ _))
-           = if (fullClash clp) then  case (addAndUpdateMap br f) of
-                                        BranchOK bok       -> BranchOK bok{diaStr = (f:(diaStr bok))}
-                                        bc@(BranchClash _ _) -> bc
-                                else  BranchOK br{diaStr = (f:(diaStr br))}
+addFormula2 clp br pf@(PrFormula _ (At _ _))
+           = modBranchCaseFC clp br pf $ \b f -> b{atStr   = f:(atStr b)  }
 
-
-addFormula2 clp br f@(PrFormula _ (At _ _))
-           = if (fullClash clp) then  case (addAndUpdateMap br f) of
-                                        BranchOK bok       -> BranchOK bok{atStr = (f:(atStr bok))}
-                                        bc@(BranchClash _ _) -> bc
-                                else  BranchOK br{atStr = (f:(atStr br))}
-
-
-addFormula2 clp br f@(PrFormula _ (Neg _))
-           = if (fullClash clp) then  case (addAndUpdateMap br f) of
-                                        BranchOK bok       -> BranchOK bok{negStr = (f:(negStr bok))}
-                                        bc@(BranchClash _ _) -> bc
-                                else  BranchOK br{negStr = (f:(negStr br))}
-
+addFormula2 clp br pf@(PrFormula _ (Neg _))
+           = modBranchCaseFC clp br pf $ \b f -> b{negStr  = f:(negStr b) }
 
 addFormula2 _ br f@(PrFormula _ (NegLit (N _)))
            = case (addAndUpdateMap br f) of
-               BranchOK bok         -> BranchOK bok{negNomStr = (f:(negNomStr bok))}
+               BranchOK bok         -> BranchOK bok{negNomStr = f:(negNomStr bok)}
                bc@(BranchClash _ _) -> bc
 
 addFormula2 _ br f@(PrFormula _ (PosLit _))
@@ -367,6 +345,16 @@ addFormula2 _ br f@(PrFormula _ (PosLit _))
 
 addFormula2 _ br f@(PrFormula _ (NegLit _))
            = addAndUpdateMap br f
+
+modBranchCaseFC :: CmdLineParams -> Branch -> PrFormula
+                   -> (Branch -> PrFormula -> Branch)
+                   -> BranchInfo
+modBranchCaseFC clp br f modBr =
+ if (fullClash clp) then case (addAndUpdateMap br f) of
+                          BranchOK bok         -> BranchOK $ modBr bok f
+                          bc@(BranchClash _ _) -> bc
+                    else  BranchOK $ modBr br f
+
 
 {-
    other modifications that can be done by a rule application
