@@ -66,21 +66,6 @@ instance ShowLatex Formula where
    showLatex (Neg f)    = "\\neg" ++ showLatex f
 
 
-{- showInfixOp: Given
-
-   - a string for an infix operator
-   - a list of formulas corresponding to n succesive
-     applications of the infix operator
-
-  returns a string for that formula
--}
-
-showInfixOp :: String -> [Formula] -> String
-
-showInfixOp _ []            = ""
-showInfixOp op (h1:(h2:tl)) = (show h1) ++ op ++ (showInfixOp op (h2:tl))
-showInfixOp _ [h]           = show h
-
 data PrFormula = PrFormula Prefix Formula
  deriving (Eq, Ord)
 
@@ -233,21 +218,6 @@ isFalse (NegLit Taut)         = True
 isFalse  _                    = False
 
 
-{- isComplementaryLiteralOf: Given
-
-  - a @-formula f
-  - a @-formula g
-
-  returns True iff f is of the form @_n -a and g is of the form @_n a or
-  viceversa. The name of this function makes more sense when used as an
-  infix operator :)
--}
-isComplementaryLiteralOf :: Formula -> Formula -> Bool
-isComplementaryLiteralOf (At n (NegLit a)) (At n' (PosLit a')) = (n == n') && (a == a')
-isComplementaryLiteralOf (At n (PosLit a)) (At n' (NegLit a')) = (n == n') && (a == a')
-isComplementaryLiteralOf  _                 _                  = False
-
-
 {-
  Put a formula into negative normal form
 -}
@@ -276,7 +246,6 @@ neg2 (NegLit a)   = (PosLit a)       -- cases where it doesn't go deeper
 neg2 (Neg f)      = f                --
 
 
-
 type LanguageInfo = Int
 
 -- currently : how many nominals has the formula
@@ -301,7 +270,6 @@ extractNominals _ = Set.empty
 
 --
 
-
 renameNominals :: Formula -> Formula
 renameNominals f = fst $ renameNominals_ f []
 
@@ -310,19 +278,12 @@ renameNominals f = fst $ renameNominals_ f []
 
 renameNominals_ :: Formula -> [Nominal] -> (Formula,[Nominal])
 renameNominals_ (PosLit (N n)) l = (PosLit (N newN),newL)
-      where (newN,newL) = case (elemIndex n l) of
-                           Just i  -> (i,l)
-                           Nothing -> (length l, l++[n])
+      where (newN,newL) = indexInNominalList n l
 renameNominals_ (NegLit (N n)) l = (NegLit (N newN),newL)
-      where (newN,newL) = case (elemIndex n l) of
-                           Just i  -> (i,l)
-                           Nothing -> (length l, l++[n])
+      where (newN,newL) = indexInNominalList n l
 renameNominals_ (At n f) l = ((At newN newF),newNewL)
-      where (newN,newL) = case (elemIndex n l) of
-                           Just i  -> (i,l)
-                           Nothing -> (length l, l++[n])
+      where (newN,newL) = indexInNominalList n l
             (newF,newNewL) = renameNominals_ f newL
-
 renameNominals_ (Dia r f) l = (Dia r newF,newL)
       where (newF,newL) = renameNominals_ f l
 renameNominals_ (Box r f) l = (Box r newF,newL)
@@ -335,6 +296,10 @@ renameNominals_ (Dis fs) l = (Dis newFs,newL)
       where (newFs,newL) =  (renameNominals_formulas fs l)
 renameNominals_ f l = (f,l)
 
+indexInNominalList :: Nominal -> [Nominal] -> (Nominal,[Nominal])
+indexInNominalList n l =  case (elemIndex n l) of
+                           Just i  -> (i,l)
+                           Nothing -> (length l, l++[n])
 
 renameNominals_formulas :: [Formula] -> [Nominal] -> ([Formula],[Nominal])
 renameNominals_formulas (hd:tl) l = ((newHd:newTl),newDeepL)

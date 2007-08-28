@@ -10,7 +10,7 @@ module Branch
 (
 Branch(..), BranchMonad, incLastPr, BranchInfo(..),
 addFormulas, addFormula, addAccFormula, remFormula,
-addBoxRuleCheck, BranchData(..),branch_depth,
+addBoxRuleCheck, BoxRuleCheck, BranchData(..),branch_depth,
 emptyBranch,initialBranchStateFor,getCLParams,
 addZeroInPath,incPathHead
 
@@ -70,12 +70,14 @@ type Neg_structure    = [PrFormula]
 type At_structure     = [PrFormula]
 type NegNom_structure = [PrFormula]
 type Acc_structure    = [AccFormula]             -- accessibility relations
-type Box_rule_chart   = [(PrFormula,AccFormula)]
+type Box_rule_chart   = [BoxRuleCheck]
 
 type NomToEarliestPref = Map.Map Nominal Prefix
 type PrefToFormulas    = Map.Map Prefix [Formula]
 
 type Matrix = UArray.UArray (Int,Int) Bool
+
+type BoxRuleCheck = (PrFormula,AccFormula)
 
 data Branch = Branch { seenStr :: Seen_structure,
                        conjStr :: Conj_structure,
@@ -137,7 +139,7 @@ instance Show Branch where
 
 instance ShowLatex Branch where
  showLatex br = "Input language: " ++ (putEol $ math $ show $ inputLanguage br)   ++ 
-              "\nSeen formulas: "     ++ (putEol $ math $ showLatex $ seenStr br)   ++
+              "\nSeen formulas: "  ++ (putEol $ math $ showLatex $ seenStr br)   ++
               "\nConjunctions: "   ++ (putEol $ math $ separate ", " $ conjStr br)  ++
               "\nDisjunctions: "   ++ (putEol $ math $ separate ", " $ disjStr br)  ++
               "\nDiamonds: "       ++ (putEol $ math $ separate ", " $ diaStr br)   ++

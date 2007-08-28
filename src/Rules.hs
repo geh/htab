@@ -2,7 +2,7 @@ module Rules where
 
 import Formula
 import Branch(Branch(..), incLastPr, BranchInfo(..),
-              addFormulas, addAccFormula, remFormula, addBoxRuleCheck)
+              addFormulas, addAccFormula, remFormula, addBoxRuleCheck, BoxRuleCheck)
 import CommandLine(CmdLineParams, semBranch, fullClash)
 import RuleMetadata(RuleId(..))
 import LatexOutput()
@@ -16,61 +16,76 @@ data BranchModification =    BM_AddFormulas   [PrFormula]
                            | BM_RemFormula PrFormula
                            | BM_IncLastPr
 
-data Rule =  ConjRule   [BranchModification]
-           | DiaRule    [BranchModification]
-           | BoxRule    [BranchModification]
-           | DisjRule   [[BranchModification]]
-           | SemBrRule  [[BranchModification]]
-           | NegRule    [BranchModification]
-           | AtRule     [BranchModification]
-           | NegNomRule [BranchModification]
+data Rule =  ConjRule   PrFormula [PrFormula]
+           | DiaRule    PrFormula AccFormula PrFormula
+           | BoxRule    BoxRuleCheck PrFormula
+           | DisjRule   PrFormula [PrFormula]
+           | SemBrRule  PrFormula [[PrFormula]]
+           | NegRule    PrFormula PrFormula
+           | AtRule     PrFormula PrFormula PrFormula
+           | NegNomRule PrFormula PrFormula
 
-mods :: Rule -> [[BranchModification]]
-mods (ConjRule setOfMods) = [setOfMods]
-mods (DiaRule setOfMods) = [setOfMods]
-mods (BoxRule setOfMods) = [setOfMods]
-mods (DisjRule setOfSetOfMods) = setOfSetOfMods
-mods (SemBrRule setOfSetOfMods) = setOfSetOfMods
-mods (NegRule setOfMods) = [setOfMods]
-mods (AtRule setOfMods) = [setOfMods]
-mods (NegNomRule setOfMods) = [setOfMods]
+getMods :: Rule -> [[BranchModification]]
+getMods (ConjRule todelete toadds) =
+ [[BM_RemFormula todelete, BM_AddFormulas toadds]]
+
+getMods (DiaRule todelete acctoadd toadd) =
+ [[BM_RemFormula todelete, BM_AddAccFormula acctoadd,
+   BM_AddFormulas [toadd], BM_IncLastPr]]
+
+getMods (BoxRule checktoadd ftoadd) =
+ [[BM_AddBoxRuleCheck checktoadd, BM_AddFormulas [ftoadd]]]
+
+getMods (DisjRule todelete toadds) =
+ [[BM_RemFormula todelete, BM_AddFormulas [toadd]] | toadd <- toadds]
+
+getMods (SemBrRule todelete toaddss) =
+ [[BM_RemFormula todelete, BM_AddFormulas toadds] | toadds <- toaddss]
+
+getMods (NegRule todelete toadd) =
+ [[BM_RemFormula todelete, BM_AddFormulas [toadd]]]
+
+getMods (AtRule todelete toadd1 toadd2) =
+ [[BM_RemFormula todelete, BM_AddFormulas [toadd1, toadd2], BM_IncLastPr]]
+
+getMods (NegNomRule todelete toadd) =
+ [[BM_RemFormula todelete, BM_AddFormulas [toadd], BM_IncLastPr]]
+
 
 instance Show Rule where
-   show (ConjRule ((BM_RemFormula f):_)) = "conjunction : " ++ (show f)
-   show (DiaRule ((BM_RemFormula f):_)) = "diamond : " ++ (show f)
-   show (BoxRule ((BM_AddBoxRuleCheck f):_)) = "box : " ++ (show f)
-   show (DisjRule (((BM_RemFormula f):((BM_AddFormulas l):_)):_)) = "disjunction : " ++ (show f) ++ " ,  " ++ (show l)
-   show (SemBrRule (((BM_RemFormula f):_):_)) = "semantic branching : " ++ (show f)
-   show (NegRule ((BM_RemFormula f):_)) = "negation : " ++ (show f)
-   show (AtRule ((BM_RemFormula f):_)) = "at : " ++ (show f)
-   show (NegNomRule ((BM_RemFormula f):_)) = "neg nom : " ++ (show f)
-   show _ = error $ "show Rule"
+   show (ConjRule  todelete _ )    = "conjunction : " ++ (show todelete)
+   show (DiaRule   todelete _ _ )  = "diamond : " ++ (show todelete)
+   show (BoxRule   boxRuleCheck _ )= "box : " ++ (show boxRuleCheck)
+   show (DisjRule  todelete _ )    = "disjunction : " ++ (show todelete)
+   show (SemBrRule todelete _ )    = "semantic branching : " ++ (show todelete)
+   show (NegRule   todelete _ )    = "negation : " ++ (show todelete)
+   show (AtRule    todelete _ _ )  = "at : " ++ (show todelete)
+   show (NegNomRule todelete _ )   = "neg nom : " ++ (show todelete)
 
 
 instance ShowLatex Rule where
-   showLatex (ConjRule ((BM_RemFormula f):_)) = "conjunction : " ++ (math $ showLatex f)
-   showLatex (DiaRule ((BM_RemFormula f):_)) = "diamond : " ++ ( math $ showLatex f)
-   showLatex (BoxRule ((BM_AddBoxRuleCheck f):_)) = "box : " ++ ( showLat f)
+   showLatex (ConjRule   todelete _ ) = "conjunction : " ++  (math $ showLatex todelete)
+   showLatex (DiaRule    todelete _ _ ) = "diamond : " ++  (math $ showLatex todelete)
+   showLatex (BoxRule    boxRuleCheck _ ) = "box : " ++ (showLat boxRuleCheck)
     where showLat (pr,acc) = "(" ++ (math $ showLatex pr) ++ "," ++ (math $ showLatex acc) ++ ")"
-   showLatex (DisjRule (((BM_RemFormula f):((BM_AddFormulas l):_)):_)) = "disjunction : " ++ (math $ showLatex f) ++ " ,  " ++ (math $ show l)
-   showLatex (SemBrRule (((BM_RemFormula f):_):_)) = "semantic branching : " ++ (math $ showLatex f)
-   showLatex (NegRule ((BM_RemFormula f):_)) = "negation : " ++ (math $ showLatex f)
-   showLatex (AtRule ((BM_RemFormula f):_)) = "at : " ++ (math $ showLatex f)
-   showLatex (NegNomRule ((BM_RemFormula f):_)) = "neg nom : " ++ (math $ showLatex f)
-   showLatex _ = error $ "show Rule"
+   showLatex (DisjRule   todelete _ ) = "disjunction : " ++ (math $ showLatex todelete)
+   showLatex (SemBrRule  todelete _ ) = "semantic branching : " ++ (math $ showLatex todelete)
+   showLatex (NegRule    todelete _ ) = "negation : " ++ (math $ showLatex todelete)
+   showLatex (AtRule     todelete _ _ ) = "at : " ++ (math $ showLatex todelete)
+   showLatex (NegNomRule todelete _ ) = "neg nom : " ++ (math $ showLatex todelete)
 
 
 --
 ruleToId :: Rule -> RuleId
 ruleToId r = case r of
-              (ConjRule _)   -> R_Conj
-              (DiaRule _)    -> R_Dia
-              (BoxRule _)    -> R_Box
-              (DisjRule _)   -> R_Disj
-              (SemBrRule _)  -> R_SemBr
-              (NegRule _)    -> R_Neg
-              (AtRule _)     -> R_At
-              (NegNomRule _) -> R_NegNom
+              (ConjRule _ _)   -> R_Conj
+              (DiaRule _ _ _)  -> R_Dia
+              (BoxRule _ _)    -> R_Box
+              (DisjRule _ _)   -> R_Disj
+              (SemBrRule _ _)  -> R_SemBr
+              (NegRule _ _)    -> R_Neg
+              (AtRule _ _ _)   -> R_At
+              (NegNomRule _ _) -> R_NegNom
 --
 
 applicableRules :: Branch -> CmdLineParams -> [Rule]
@@ -121,7 +136,7 @@ unCheckedBoxPairs br
 --
 
 applyRule :: CmdLineParams -> Rule -> Branch -> [BranchInfo]
-applyRule clp rule br = applySetOfMods clp (mods rule) br
+applyRule clp rule br = applySetOfMods clp (getMods rule) br
 
 
 applySetOfMods :: CmdLineParams -> [[BranchModification]] -> Branch -> [BranchInfo]
@@ -133,7 +148,6 @@ applyMods :: CmdLineParams -> [BranchModification] -> Branch -> BranchInfo
 applyMods clp (hd:tl) br = case (applyMod clp hd br) of
                             BranchOK br2         -> applyMods clp tl br2
                             si@(BranchClash _ _) -> si
-
 applyMods _ [] br = BranchOK br
 
 
@@ -152,8 +166,7 @@ applyMod  _ (BM_RemFormula f) br = BranchOK (remFormula br f)
 
 -- takes 1 argument, the formula to remove
 conjRule :: PrFormula -> Branch -> Rule
-conjRule f _ = ConjRule [(BM_RemFormula f),
-                         (BM_AddFormulas (breakConj f))]
+conjRule f _ = ConjRule f (breakConj f)
 
 breakConj :: PrFormula -> [PrFormula]
 breakConj (PrFormula pr (Con formulaList)) = prefixList pr formulaList
@@ -163,11 +176,8 @@ breakConj _ = error $ "breakConj error"
 -- dia
 diaRule :: PrFormula -> Branch -> Rule
 diaRule f@(PrFormula pr (Dia r f2)) br
-  = DiaRule [(BM_RemFormula f),
-             (BM_AddAccFormula (AccFormula r pr newPr)),
-             (BM_AddFormulas [(prefix newPr f2)]),
-             (BM_IncLastPr)]
-            where newPr = getNewPr br
+  = DiaRule f (AccFormula r pr newPr) (prefix newPr f2)
+      where newPr = getNewPr br
 diaRule _ _ = error $ "diaRule"
 
 --
@@ -177,18 +187,15 @@ getNewPr br = (lastPr br)+1
 -- box
 boxRule :: PrFormula -> AccFormula -> Branch -> Rule
 boxRule bf@(PrFormula pr0 (Box r1 f2)) af@(AccFormula r2 pr1 pr2) _
- | (pr0 == pr1) && (r1 == r2) = BoxRule [(BM_AddBoxRuleCheck (bf,af)),
-                                   (BM_AddFormulas [(prefix pr2 f2)])]
+ | (pr0 == pr1) && (r1 == r2) =
+ BoxRule (bf,af) (prefix pr2 f2)
 
 boxRule _ _ _ = error $ "boxrule error"
 
 -- disjunction
 
 disjRule :: PrFormula -> Branch -> Rule
-disjRule df _ = DisjRule [[(BM_RemFormula df),
-                           (BM_AddFormulas [oneDisjointed])]
-                          | oneDisjointed <- disjointed]
-                where disjointed = (breakDisj df)
+disjRule df _ = DisjRule df (breakDisj df)
 
 breakDisj :: PrFormula -> [PrFormula]
 breakDisj (PrFormula pr (Dis formulaList)) = prefixList pr formulaList
@@ -197,24 +204,18 @@ breakDisj _ = error $ "breakDisj error"
 -- disjunction with semantic branching
 
 semBrRule :: PrFormula -> Branch -> Rule
-semBrRule df _ = SemBrRule (sbModList df disjointed [])
+semBrRule df _ = SemBrRule df (sbModList df disjointed [])
                   where disjointed = (breakDisj df)
 
-sbModList :: PrFormula -> [PrFormula] -> [PrFormula] -> [[BranchModification]]
-sbModList df (hd_disj:tl_disj) negated =  [(BM_RemFormula df),
-                                           (BM_AddFormulas [hd_disj]),
-                                           (BM_AddFormulas negated)]:(sbModList df tl_disj ((negPr hd_disj):negated))
-
+sbModList :: PrFormula -> [PrFormula] -> [PrFormula] -> [[PrFormula]]
+sbModList df (hd_disj:tl_disj) negated =  (hd_disj:negated):(sbModList df tl_disj ((negPr hd_disj):negated))
                                           where negPr (PrFormula pr f) = PrFormula pr (neg f)
 sbModList _ [] _ = []
 
 -- @
 atRule :: PrFormula -> Branch -> Rule
 atRule af@(PrFormula _ (At n f)) br
- = AtRule [(BM_RemFormula af),
-           (BM_AddFormulas [(prefix newPr (PosLit (N n))),
-                            (prefix newPr f)]),
-           (BM_IncLastPr)]
+ = AtRule af (prefix newPr (PosLit (N n))) (prefix newPr f)
     where newPr = getNewPr br
 
 atRule _ _ = error "atRule error"
@@ -222,18 +223,14 @@ atRule _ _ = error "atRule error"
 -- ¬a
 negNomRule :: PrFormula -> Branch -> Rule
 negNomRule f@(PrFormula _ (NegLit n@(N _))) br
- = NegNomRule [(BM_RemFormula f),
-               (BM_AddFormulas [(prefix newPr (PosLit n))]),
-               (BM_IncLastPr)]
-
+ = NegNomRule f (prefix newPr (PosLit n))
     where newPr = getNewPr br
 
 negNomRule _ _ = error "negNomRule error"
 
 -- negation
 negRule :: PrFormula -> Branch -> Rule
-negRule nf@(PrFormula pr (Neg f)) _ = NegRule [(BM_RemFormula nf),
-                                               (BM_AddFormulas [PrFormula pr (neg1 f)])]
+negRule nf@(PrFormula pr (Neg f)) _ = NegRule nf (PrFormula pr (neg1 f))
 
 negRule _ _ = error $ "negRule error"
 
