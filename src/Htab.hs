@@ -38,7 +38,7 @@ main =
                    do let fLang = formulaLanguageInfo f
                       latexInit clp
                       let f2 = renameNominals $ if (fullClash clp) then f else nnf f
-                      putStr ("\nInput:\n" ++ (show f2) ++" \nEnd of input\n\n");
+                      putStr ("\nInput:\n{ " ++ (show f2) ++" }\nEnd of input\n\n");
                       let branchInfo = addFormula clp
                                                   (emptyBranch fLang)
                                                   (prefix 0 f2)
