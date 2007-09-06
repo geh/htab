@@ -14,4 +14,4 @@ other-modules:       Clexer
 		     HyLoLexer
 		     HyLoParse
 Hs-Source-Dirs:      src
-ghc-options:         -Wall -fglasgow-exts 
+ghc-options:         -O2 -Wall -fglasgow-exts 
