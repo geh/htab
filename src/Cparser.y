@@ -23,7 +23,7 @@ import Clexer (Token(..), PosToken)
     semanticbranching         {(SemBranch,_,_)}
     fullclash                 {(FullClash,_,_)}
     latexoutput               {(LatexOutput,_,_)}
-    latexname                 {(LatexName,_,_)}
+    genmodel                  {(GenModel,_,_)}
     savesat                   {(SaveSat,_,_)}
     statistics                {(Stats,_,_)}
     statisticsValue           {(StatsValue $$,_,_)}
@@ -47,10 +47,10 @@ Input :
    {("sembranch",$3):$4}
  | fullclash '=' bool Input
    {("fullclash",$3):$4}
- | latexoutput '=' bool Input
+ | latexoutput '=' filename Input
    {("latexoutput",$3):$4}
- | latexname '=' filename Input
-   {("latexname",$3):$4}
+ | genmodel '=' filename Input
+   {("genmodel",$3):$4}
 
 
 {

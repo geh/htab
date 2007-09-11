@@ -56,8 +56,8 @@ data CmdLineParams = CLP {
            statsStr      :: String,
            semBranch     :: Bool,
            fullClash     :: Bool,
-           latexOutput   :: Bool,
-           latexName   :: String
+           latexOutput   :: Maybe FilePath,
+           genModel      :: Maybe FilePath
          } deriving (Show)
 
 initialParams :: CmdLineParams
@@ -68,8 +68,8 @@ initialParams = CLP {paramsOk = False,
                      statsStr = ":0:c",
                      semBranch = True,
                      fullClash = True,
-                     latexOutput = False,
-                     latexName = "htab_out.tex"}
+                     latexOutput = Nothing,
+                     genModel = Nothing}
 
 initialParamsStr :: String
 initialParamsStr = concat ["% This is the default configuration file for htab\n",
@@ -80,16 +80,14 @@ initialParamsStr = concat ["% This is the default configuration file for htab\n"
                            "% statistics = [statistics to print]\n",
                            "% Semanticbranching = [Use semantic branching instead of disjunction rule, True | False]\n",
                            "% Fullclash = [Detect full clashes instead of working with negative normal form]\n",
-                           "% LatexOutput = [Do a LaTeX output of calculus]\n",
-                           "% LatexName = [name for LaTeX output file]\n",
+                           "% LatexOutput = [name for LaTeX output file]\n",
+                           "% GenModel = [name for model output file]\n",
                            "\n",
                            "Timeout = ", show $ maxtimeout initialParams, " \n",
                            "Showstate = ", show $ logState initialParams, "\n",
                            "Statistics = ", statsStr initialParams, "\n",
                            "Semanticbranching = ", show $ semBranch initialParams,"\n",
-                           "Fullclash = ", show $ fullClash initialParams,"\n",
-                           "LatexOutput = ", show $ latexOutput initialParams,"\n",
-                           "LatexName = ", show $ latexName initialParams,"\n"]
+                           "Fullclash = ", show $ fullClash initialParams,"\n"]
 
 
 {- parseParams: Given
@@ -104,9 +102,10 @@ parseParams clp  []          = clp
 parseParams clp ("-t":[])    = clp{paramsOk = False}
 parseParams clp ("-t":t:xs)  = parseParams clp{maxtimeout = (read t)} xs
 parseParams clp ("-s":xs)    = parseParams clp{logState = True} xs
-parseParams clp ("-l":xs)    = parseParams clp{latexOutput = True} xs
 parseParams clp ("-lo":[])   = clp{paramsOk = False}
-parseParams clp ("-lo":s:xs) = parseParams clp{latexName= s} xs
+parseParams clp ("-lo":f:xs) = parseParams clp{latexOutput= Just f} xs
+parseParams clp ("-gm":[])   = clp{paramsOk = False}
+parseParams clp ("-gm":f:xs) = parseParams clp{genModel = Just f} xs
 parseParams clp ("-st":[])   = clp{paramsOk = False}
 parseParams clp ("-st":s:xs) = if (validStats s)
                                    then parseParams clp{statsStr=s} xs
@@ -133,8 +132,8 @@ defineParams p ((f,v):s) =
             "statistics" ->  defineParams p{statsStr = v} s
             "sembranch"  ->  defineParams p{semBranch = read v} s
             "fullclash"  ->  defineParams p{fullClash = read v} s
-            "latexoutput"->  defineParams p{latexOutput = read v} s
-            "latexname"  ->  defineParams p{latexName = v} s
+            "latexoutput" ->  defineParams p{latexOutput = Just v} s
+            "genmodel"   ->  defineParams p{genModel = Just v} s
             unknown      -> error ("Can't Happen!: Unknown configuration parameter " ++ show unknown ++ " \n")
 
 
@@ -170,13 +169,12 @@ showHelp = putStrLn ("htab 0.01\n" ++
      "-sb 1     : Use semantic branching.\n" ++
      "-fc 0     : Don't use full clashes.\n" ++
      "-fc 1     : Use full clashes.\n" ++
-     "-l        : Enable LaTeX output.\n" ++
-     "-lo file  : Specify LaTeX output file (default: htab_out.tex).\n\n" ++
+     "-lo file  : Specify LaTeX output file.\n\n" ++
+     "-gm file  : Specify model output file.\n\n" ++
      "This program is distributed in the hope that it will be useful,\n" ++
      "but WITHOUT ANY WARRANTY; without even the implied warranty of\n" ++
      "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n" ++
      "GNU General Public License for more details.\n")
-
 
 
 

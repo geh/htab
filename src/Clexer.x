@@ -29,7 +29,7 @@ tokens :-
   [Ss]emantic[Bb]ranching        { tok SemBranch }
   [Ff]ull[Cc]lash                { tok FullClash }
   [Ll]atex[Oo]utput              { tok LatexOutput }
-  [Ll]atex[Nn]ame                { tok LatexName }
+  [Gg]en[Mm]odel                 { tok GenModel }
   [cr]+(\:[$digit]+\:[cr]+)?
  |\:[$digit]+\:[cr]+             { \p s -> tok' (StatsValue s) p }
 
@@ -44,7 +44,7 @@ tokens :-
 data Token =
     Eq | TF String | Num String | FileName String | File | Timeout |
     SFunction | SFValue String | ShowS | SaveSat | Stats |
-    SemBranch | FullClash | LatexOutput | LatexName | StatsValue String
+    SemBranch | FullClash | LatexOutput | GenModel | StatsValue String
   deriving (Eq, Show, Read)
 
 type PosToken = (Token, Int, Int)

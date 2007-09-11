@@ -6,7 +6,7 @@ import System.Environment(getArgs)
 import HyLoLexer(hyloLexer)
 import HyLoParse(parse)
 import CommandLine(getConf,initialParams,paramsOk, filename, parseParams,
-                   maxtimeout, showHelp, CmdLineParams, logState,
+                   maxtimeout, showHelp, CmdLineParams, logState, genModel,
                    configureMetrics,fullClash)
 import Branch(BranchInfo,initialBranchStateFor,BranchMonad, BranchData(..),
               addFormula,emptyBranch)
@@ -18,9 +18,9 @@ import Base(vPutStrLn)
 import Tableau(liftStats, tableau, OpenFlag(..))
 import Formula(nnf,prefix,formulaLanguageInfo,renameNominals)
 import LatexOutput
+import ModelGen ( HerbrandModel, inducedModel )
 
-
-data SatFlagAndStats = SAT Statistics | UNSAT Statistics | TIMEOUT
+data SatFlagAndStats = SAT HerbrandModel Statistics | UNSAT Statistics | TIMEOUT
 
 main :: IO ()
 main =
@@ -49,7 +49,8 @@ main =
                                    else (tableauInit branchInfo clp)
 
                       case result of
-                       SAT stats   -> (putStrLn "The formula is satisfiable." >>
+                       SAT m stats -> (putStrLn "The formula is satisfiable." >>
+                                       saveGenModel clp m >>
                                        printOutAllMetrics' stats)
                        UNSAT stats -> (putStrLn "The formula is unsatisfiable." >>
                                        printOutAllMetrics' stats)
@@ -68,7 +69,7 @@ tableauInit bi clp =
         do vPutStrLn ">> Starting rules application" (logState clp)
            res <- initStatsState $ initBranchState bd $ tableauStart clp
            case res of
-            ((OPEN,_),stats)   -> return $ SAT stats
+            ((OPEN m,_),stats)   -> return $ SAT m stats
             ((CLOSED,_),stats) -> return $ UNSAT stats
  where initStatsState  = initialStatisticsStateFor runStateT
        initBranchState = initialBranchStateFor runStateT
@@ -82,3 +83,8 @@ tableauStart clp =
  do liftStats $ configureMetrics clp    -- knows from the command line which statistics will be displayed
     tableau
 
+
+saveGenModel :: CmdLineParams -> HerbrandModel -> IO ()
+saveGenModel clp m = maybe (return ()) doWrite (genModel clp)
+    where doWrite f = do writeFile f (show . inducedModel $ m)
+                         putStrLn $ "Model saved as " ++ f

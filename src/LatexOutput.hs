@@ -16,19 +16,14 @@ section name = "\\newpage\\section{" ++ name ++ "}\n"
 
 
 latexPutCLP :: CmdLineParams -> String -> StateT ma (StateT mb IO) ()
-latexPutCLP clp input = if (latexOutput clp) then do let outname = latexName clp
-                                                     lift . lift $ appendFile outname (input ++ "\n")  -- liftIO
-                                             else return ()
-
+latexPutCLP clp input = maybe (return ()) doWrite (latexOutput clp)
+    where doWrite f = lift . lift $ appendFile f (input ++ "\n")  -- liftIO
 
 latexInit :: CmdLineParams -> IO ()
-latexInit clp = if (latexOutput clp) then do let outname = latexName clp
-                                             writeFile outname latexHeader
-                                     else return ()
+latexInit clp = maybe (return ()) doWrite (latexOutput clp)
+    where doWrite f = writeFile f latexHeader
 
 latexEnd :: CmdLineParams -> IO ()
-latexEnd clp = if (latexOutput clp) then do let outname = latexName clp
-                                            appendFile outname latexFooter
-                                     else return ()
-
+latexEnd clp = maybe (return ()) doWrite (latexOutput clp)
+    where doWrite f = appendFile f latexFooter
 

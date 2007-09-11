@@ -13,10 +13,11 @@ import Statistics(Statistics)
 import Formula(PrFormula)
 import LatexOutput
 import LatexOutputHelper
+import ModelGen ( HerbrandModel, buildHerbrandModel )
 
 --
 
-data OpenFlag = OPEN | CLOSED
+data OpenFlag = OPEN HerbrandModel | CLOSED
 
 --
 
@@ -46,7 +47,7 @@ tableau =
                    -- BranchData state before returning
                Nothing   ->
                 do debugMsg_BranchOK_saturated
-                   return OPEN
+                   return $ OPEN (buildHerbrandModel br)
 
 
 -- simple rule-choosing strategy
@@ -62,11 +63,11 @@ chooseBranch (hd:tl) =
     res <- tableau
 
     case (res) of
-     OPEN     -> return OPEN
-     CLOSED   -> do put $ incPathHead bd
-                    -- put bd (BranchData) as it was before branching
-                    -- in order to retrieve the path at that stage
-                    chooseBranch tl
+     o@(OPEN _)   -> return o
+     CLOSED       -> do put $ incPathHead bd
+                        -- put bd (BranchData) as it was before branching
+                        -- in order to retrieve the path at that stage
+                        chooseBranch tl
 
 chooseBranch [] = return CLOSED
 

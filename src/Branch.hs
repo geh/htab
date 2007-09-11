@@ -12,7 +12,7 @@ Branch(..), BranchMonad, incLastPr, BranchInfo(..),
 addFormulas, addFormula, addAccFormula, remFormula,
 addBoxRuleCheck, BoxRuleCheck, BranchData(..),branch_depth,
 emptyBranch,initialBranchStateFor,getCLParams,
-addZeroInPath,incPathHead
+addZeroInPath,incPathHead,nominals
 
 ) where
 
@@ -434,6 +434,10 @@ isModal br = (inputLanguage br) == 0
 matrixIsEmpty :: Matrix -> Bool
 matrixIsEmpty m = (fst $ fst $ b) > (fst $ snd $ b)
     where b = (UArray.bounds m)
+
+nominals :: Branch -> [Nominal]
+nominals br = range (0,(inputLanguage br) - 1)
+
 
 {-
     Monad related stuff
