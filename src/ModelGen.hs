@@ -14,19 +14,29 @@ import Formula(AccFormula(..), Nominal, Prefix, Prop, Formula (..), Atom (..),
                PrFormula(..) )
 import Branch( Branch(..) , nominals)
 
-type HerbrandModel = H.HerbrandModel Int Int Int
+import qualified HyLo.Signature.Simple as S -- to have types with distinct "show" representations
+
+type HerbrandModel = H.HerbrandModel S.NomSymbol S.PropSymbol S.RelSymbol
 
 buildHerbrandModel :: Branch -> HerbrandModel
 buildHerbrandModel branch =
    H.herbrand es ps rs
- where bias = (inputLanguage branch) - 1
+ where bias = (inputLanguage branch)
        prefixAndPropCouples = prefixAndProps branch
-       es = Set.fromList [NNF.At ((urfatherOrPrefixZero branch n)+ bias) (NNF.Nom n) | n <- (nominals branch)]
-       ps = Set.fromList [NNF.At (pr+bias) (NNF.Prop p) | (pr,p) <- prefixAndPropCouples]
+       es = Set.fromList
+             [NNF.At
+              (S.NomSymbol ((urfatherOrPrefixZero branch n)+ bias))
+              (NNF.Nom (S.NomSymbol n)) | n <- (nominals branch)]
+       ps = Set.fromList
+             [NNF.At
+               (S.NomSymbol (pr+bias))
+               (NNF.Prop (S.PropSymbol p)) | (pr,p) <- prefixAndPropCouples]
        rs = Set.fromList $ map (accToNNF bias) (accStr branch)
 
-accToNNF :: Int -> AccFormula -> NNF.Formula Int Int Int Int (NNF.At NNF.Nom (NNF.Diam NNF.Nom))
-accToNNF bias (AccFormula r p1 p2) = NNF.At (p1+bias) $ NNF.Diam r $ NNF.Nom (p2+bias)
+accToNNF :: Int -> AccFormula
+             -> NNF.Formula S.NomSymbol S.PropSymbol S.RelSymbol S.StateVar (NNF.At NNF.Nom (NNF.Diam NNF.Nom))
+accToNNF bias (AccFormula r p1 p2) =
+  NNF.At (S.NomSymbol (p1+bias)) $ NNF.Diam (S.RelSymbol r) $ NNF.Nom (S.NomSymbol (p2+bias))
 
 urfatherOrPrefixZero :: Branch -> Nominal -> Prefix
 urfatherOrPrefixZero br n =
