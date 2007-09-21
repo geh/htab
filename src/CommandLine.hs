@@ -158,7 +158,7 @@ getConf p =
 
 showHelp :: IO ()
 
-showHelp = putStrLn ("htab 0.01\n" ++
+showHelp = putStrLn ("htab 1.0\n" ++
      "G. Hoffmann (c) 2007.\n" ++
      "C. Areces, D.Gorin and J. Heguiabehere. (c) 2002-2005.\n\n" ++
      "Usage: htab -f file_name [-t <t>|-st <s>|-r|-s|-l|-lo file_name]\n\n" ++
