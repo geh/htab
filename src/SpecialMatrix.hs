@@ -11,7 +11,6 @@ import Data.Array.ST(STUArray, readArray, writeArray, getBounds,newArray)
 import Data.Array.Unboxed(UArray,listArray)
 import Ix(range)
 
-import Data.Set(elems,Set,empty,insert)
 import Data.List(elemIndex)
 
 type MMatrix s = STUArray s (Int,Int) Bool
@@ -40,18 +39,19 @@ addElement t (pr,nom) = do writeArray t (pr,nom) True
                            colIdxs <- seekColumns pr t
                            cols <- mapM (getColumn t) colIdxs
 
-                           let newUrfather = foldr1 min $ elems $ urfatherSet (empty::Set Int) cols
+                           let newUrfather = minimum $ urfatherSet cols
 
                            let oredCol = orColumns cols
                            replaceColsBy colIdxs oredCol t
 
                            return (colIdxs,newUrfather)
 
+type Row = [Bool]
+type Column = [Bool]
 
 
-urfatherSet :: Set Int -> [Column] -> Set Int
-urfatherSet s (hd:_) = insert (indexOfEarliestNoMaybe hd) s
-urfatherSet s [] = s
+urfatherSet :: [Column] -> [Int]
+urfatherSet cols = map indexOfEarliestNoMaybe cols
 
 
 indexOfEarliestNoMaybe :: Column -> Int
@@ -61,10 +61,6 @@ indexOfEarliestNoMaybe c = case (elemIndex True c) of
 
 indexOfEarliest :: Column -> Maybe Int
 indexOfEarliest c = elemIndex True c
-
-
-type Row = [Bool]
-type Column = [Bool]
 
 getRow :: MMatrix s -> Int -> ST s Row
 getRow t rowNum =
