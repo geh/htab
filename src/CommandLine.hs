@@ -97,6 +97,7 @@ initialParamsStr = concat ["% This is the default configuration file for htab\n"
 
 parseParams :: CmdLineParams -> [String] -> CmdLineParams
 parseParams clp  []          = clp
+parseParams clp ("-cd":_:xs)   = parseParams clp xs
 parseParams clp ("-t":[])    = clp{paramsOk = False}
 parseParams clp ("-t":t:xs)  = parseParams clp{maxtimeout = (read t)} xs
 parseParams clp ("-s":xs)    = parseParams clp{logState = True} xs
