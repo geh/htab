@@ -38,8 +38,6 @@ module CommandLine (
     configureMetrics
 ) where
 
--- import Char(isDigit)
-
 import Cparser(cParser)
 import Clexer(cLexer)
 import Statistics(Metric,closedBranches,StatisticsState,
@@ -73,7 +71,7 @@ initialParams = CLP {paramsOk = False,
 
 initialParamsStr :: String
 initialParamsStr = concat ["% This is the default configuration file for htab\n",
-                           "% Possible valriables to set are:\n",
+                           "% Possible variables to set are:\n",
                            "% Filename = [file of the formula to resolve]\n",
                            "% Timeout = [in seconds, 0 = no timeout]\n",
                            "% Showstate = [Show internal state during calculus, True | False]\n",
@@ -141,14 +139,15 @@ defineParams p ((f,v):s) =
 otherwise it creates the file with default values and warns
 the user -}
 
-getConf :: CmdLineParams -> IO CmdLineParams
-getConf p =
+getConf :: CmdLineParams -> String -> IO CmdLineParams
+getConf p configDir =
   catch getConf' (\_ -> createConf)
-      where getConf' = do fconf <- readFile ".htabrc"
-                          putStr "Reading parameters from .htabrc\n"
+      where fullName = configDir ++ "/.htabrc"
+            getConf' = do fconf <- readFile fullName
+                          putStr $ "Reading parameters from " ++ fullName ++ "\n"
                           return (defineParams p (cParser (cLexer fconf)))
-            createConf = do writeFile ".htabrc" initialParamsStr
-                            putStr "File .htabrc does not exists.\n"
+            createConf = do writeFile fullName initialParamsStr
+                            putStr $ "File "  ++ fullName ++ " does not exist.\n"
                             putStr "Writing default configuration file.\n"
                             return p
 
@@ -161,7 +160,7 @@ showHelp :: IO ()
 showHelp = putStrLn ("htab 1.0\n" ++
      "G. Hoffmann (c) 2007.\n" ++
      "C. Areces, D.Gorin and J. Heguiabehere. (c) 2002-2005.\n\n" ++
-     "Usage: htab -f file_name [-t <t>|-st <s>|-r|-s|-l|-lo file_name]\n\n" ++
+     "Usage: htab -f file_name [OPTIONS]\n\n" ++
      "-t secs   : Timeout in seconds.\n" ++
      "-st string: Configure statistics\n" ++
      "-s        : Prints the internal state of the tableaux.\n" ++
@@ -169,8 +168,9 @@ showHelp = putStrLn ("htab 1.0\n" ++
      "-sb 1     : Use semantic branching.\n" ++
      "-fc 0     : Don't use full clashes.\n" ++
      "-fc 1     : Use full clashes.\n" ++
-     "-lo file  : Specify LaTeX output file.\n\n" ++
      "-gm file  : Specify model output file.\n\n" ++
+     "-cd dir   : Use or create config file in directory dir (default: $HOME).\n" ++
+     "-lo file  : Specify LaTeX output file.\n\n" ++
      "This program is distributed in the hope that it will be useful,\n" ++
      "but WITHOUT ANY WARRANTY; without even the implied warranty of\n" ++
      "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n" ++

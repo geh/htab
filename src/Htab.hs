@@ -2,7 +2,8 @@ module Main (main)
 
 where
 
-import System.Environment(getArgs)
+import System.Environment(getArgs,getEnv)
+import System.Directory(doesDirectoryExist,canonicalizePath)
 import HyLoLexer(hyloLexer)
 import HyLoParse(parse)
 import CommandLine(getConf,initialParams,paramsOk, filename, parseParams,
@@ -16,7 +17,7 @@ import Control.Monad.State(runStateT)
 import System.CPUTime(getCPUTime)
 import Base(vPutStrLn)
 import Tableau(liftStats, tableau, OpenFlag(..))
-import Formula(nnf,prefix,formulaLanguageInfo,renameNominals)
+import Formula(PrFormula(..),nnf,formulaLanguageInfo,renameNominals)
 import LatexOutput
 import ModelGen ( HerbrandModel, inducedModel )
 
@@ -25,43 +26,54 @@ data SatFlagAndStats = SAT HerbrandModel Statistics | UNSAT Statistics | TIMEOUT
 main :: IO ()
 main =
     do
-      confhyloresrc <- getConf initialParams
       args <- getArgs
-      let clp = parseParams confhyloresrc args
+      mConfigDir <- getConfigDir args
+      case mConfigDir of
+       Nothing        -> showHelp
+       Just configDir ->
+          do  confhyloresrc <- getConf initialParams configDir
+              let clp = parseParams confhyloresrc args
 
-      if ( paramsOk clp )
-        then do
-               start <- getCPUTime;
-               fstr <- readFile (filename clp);
-               case (parse . hyloLexer $ fstr) of
-                 f ->
-                   do let fLang = formulaLanguageInfo f
-                      latexInit clp
-                      let f2 = renameNominals $ if (fullClash clp) then f else nnf f
-                      putStr ("\nInput:\n{ " ++ (show f2) ++" }\nEnd of input\n\n");
-                      let branchInfo = addFormula clp
-                                                  (emptyBranch fLang)
-                                                  (prefix 0 f2)
-                      result <- if (not ((maxtimeout clp) == 0))
-                                   then timeout (maxtimeout clp)
-                                               (tableauInit branchInfo clp)
-                                               (return TIMEOUT)
-                                   else (tableauInit branchInfo clp)
+              if ( paramsOk clp )
+                then do
+                       start <- getCPUTime;
+                       fstr <- readFile (filename clp);
+                       case (parse . hyloLexer $ fstr) of
+                         f ->
+                           do let fLang = formulaLanguageInfo f
+                              latexInit clp
+                              let f2 = renameNominals $ if (fullClash clp) then f else nnf f
+                              putStr ("\nInput:\n{ " ++ (show f2) ++" }\nEnd of input\n\n");
+                              let branchInfo = addFormula clp
+                                                          (emptyBranch fLang)
+                                                          (PrFormula 0 f2)
+                              result <- if (not ((maxtimeout clp) == 0))
+                                           then timeout (maxtimeout clp)
+                                                       (tableauInit branchInfo clp)
+                                                       (return TIMEOUT)
+                                           else (tableauInit branchInfo clp)
+                              case result of
+                                SAT m stats -> (putStrLn "The formula is satisfiable." >>
+                                                saveGenModel clp m >>
+                                                printOutAllMetrics' stats)
+                                UNSAT stats -> (putStrLn "The formula is unsatisfiable." >>
+                                                printOutAllMetrics' stats)
+                                TIMEOUT     -> (putStrLn "TIMEOUT")
+                              end <- getCPUTime
+                              putStr "Elapsed time: "
+                              print ((fromInteger (end - start)) / 1000000000000 :: Double)
+                              latexEnd clp
+                else showHelp
 
-                      case result of
-                       SAT m stats -> (putStrLn "The formula is satisfiable." >>
-                                       saveGenModel clp m >>
-                                       printOutAllMetrics' stats)
-                       UNSAT stats -> (putStrLn "The formula is unsatisfiable." >>
-                                       printOutAllMetrics' stats)
-                       TIMEOUT     -> (putStrLn "TIMEOUT")
 
-                      end <- getCPUTime
-                      putStr "Elapsed time: "
-                      print ((fromInteger (end - start)) / 1000000000000 :: Double)
-                      latexEnd clp
-
-        else showHelp
+getConfigDir :: [String] -> IO (Maybe String)
+getConfigDir ("-cd":d:_)   = do d_ <- canonicalizePath d
+                                exists <-(doesDirectoryExist d_)
+                                if exists then return (Just d_) else return Nothing
+getConfigDir ("-cd":[])    = return Nothing
+getConfigDir (_:xs)        = getConfigDir xs
+getConfigDir []            = do homeDir <- getEnv "HOME"
+                                return (Just homeDir)
 
 
 tableauInit :: BranchInfo -> CmdLineParams -> IO (SatFlagAndStats)
