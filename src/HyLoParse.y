@@ -68,6 +68,7 @@ import Formula
 %left or
 %left and
 %left box dia neg
+%right at
 
 %%
 
