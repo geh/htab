@@ -17,7 +17,7 @@ import Control.Monad.State(runStateT)
 import System.CPUTime(getCPUTime)
 import Base(vPutStrLn)
 import Tableau(liftStats, tableau, OpenFlag(..))
-import Formula(PrFormula(..),nnf,formulaLanguageInfo,renameNominals)
+import Formula(firstPrefixedFormula,nnf,formulaLanguageInfo,renameNominals)
 import LatexOutput
 import ModelGen ( HerbrandModel, inducedModel )
 
@@ -46,7 +46,7 @@ main =
                               putStr ("\nInput:\n{ " ++ (show f2) ++" }\nEnd of input\n\n");
                               let branchInfo = addFormula clp
                                                           (emptyBranch fLang)
-                                                          (PrFormula 0 f2)
+                                                          (firstPrefixedFormula f2)
                               result <- if (not ((maxtimeout clp) == 0))
                                            then timeout (maxtimeout clp)
                                                        (tableauInit branchInfo clp)
@@ -82,7 +82,7 @@ tableauInit bi clp =
            res <- initStatsState $ initBranchState bd $ tableauStart clp
            case res of
             ((OPEN m,_),stats)   -> return $ SAT m stats
-            ((CLOSED,_),stats) -> return $ UNSAT stats
+            ((CLOSED _,_),stats) -> return $ UNSAT stats
  where initStatsState  = initialStatisticsStateFor runStateT
        initBranchState = initialBranchStateFor runStateT
        bd              = BranchData

@@ -11,6 +11,7 @@ module Formula where
 import LatexOutputHelper
 import qualified Data.Set as Set
 import Data.List(elemIndex)
+import qualified Data.IntSet as IntSet
 
 type Prop = Int
 type Rel  = Int
@@ -65,21 +66,44 @@ instance ShowLatex Formula where
    showLatex (Dia r f)  = "\\lozenge_{" ++ (show r)  ++ "}" ++ (showLatex f)
    showLatex (Neg f)    = "\\neg" ++ showLatex f
 
+--
+-- Required structures to implement backjumping
+--
 
-data PrFormula = PrFormula Prefix Formula
+type BranchingPrefix = Int
+type BranchingPrefixes = IntSet.IntSet
+
+bps_union :: BranchingPrefixes -> BranchingPrefixes -> BranchingPrefixes
+bps_union  = IntSet.union
+
+bps_unions :: [BranchingPrefixes] -> BranchingPrefixes
+bps_unions = IntSet.unions
+
+bps_insert :: BranchingPrefix -> BranchingPrefixes -> BranchingPrefixes
+bps_insert = IntSet.insert
+
+bps_member :: BranchingPrefix -> BranchingPrefixes -> Bool
+bps_member = IntSet.member
+
+bps_empty :: BranchingPrefixes
+bps_empty  = IntSet.empty
+
+--
+
+data PrFormula = PrFormula Prefix BranchingPrefixes Formula
  deriving (Eq, Ord)
 
 instance Show PrFormula where
- show (PrFormula pr f) = (show pr)++":"++(show f)
+ show (PrFormula pr bprs f) = (show pr)++":"++(show $ IntSet.toList bprs)++":"++(show f)
 
 instance ShowLatex PrFormula where
- showLatex (PrFormula pr f) = (show pr)++"{:}"++(showLatex f)
+ showLatex (PrFormula pr bprs f) = (show pr)++"{:}"++(show $ IntSet.toList bprs)++"{:}"++(showLatex f)
 
-prefix :: Prefix -> Formula -> PrFormula
-prefix p f = PrFormula p f
+prefixList :: Prefix -> BranchingPrefixes -> [Formula] -> [PrFormula]
+prefixList p bps fl = [(PrFormula p bps formula)|formula <-fl]
 
-prefixList :: Prefix -> [Formula] -> [PrFormula]
-prefixList p fl = [(PrFormula p formula)|formula <-fl]
+firstPrefixedFormula :: Formula -> PrFormula
+firstPrefixedFormula = PrFormula 0 bps_empty
 
 -- CONSTRUCTORS
 
@@ -181,15 +205,15 @@ neg f            = Neg f
 
 {- Accessibility Formulas -}
 -- of the kind i<>j with i and j prefixes
-data AccFormula = AccFormula Rel Prefix Prefix
+data AccFormula = AccFormula BranchingPrefixes Rel Prefix Prefix
      deriving (Eq, Ord)
 
 instance Show AccFormula where
- show (AccFormula r p1 p2) = (show p1)++"<R"++(show r)++">"++(show p2)
+ show (AccFormula bprs r p1 p2) = (showLatex bprs) ++ ":" ++ (show p1)++"<R"++(show r)++">"++(show p2)
 
 
 instance ShowLatex AccFormula where
- showLatex (AccFormula r p1 p2) = (show p1)++"\\lozenge_{"++(show r)++"}"++(show p2)
+ showLatex (AccFormula bprs r p1 p2) = (showLatex bprs) ++ ":" ++ (show p1)++"\\lozenge_{"++(show r)++"}"++(show p2)
 
 
 {- isTrue: Given

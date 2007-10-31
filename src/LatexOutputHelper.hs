@@ -1,10 +1,27 @@
 module LatexOutputHelper where
 
+import qualified Data.IntSet as IntSet
+
 class ShowLatex a where
  showLatex :: a -> String
 
 instance ShowLatex Bool where
  showLatex b = if b then "1" else "."
+
+instance (ShowLatex a, ShowLatex b) => ShowLatex (a,b) where
+ showLatex (a,b) = "(" ++ showLatex a ++ "," ++ showLatex b ++ ")"
+
+instance (ShowLatex a, ShowLatex b, ShowLatex c) => ShowLatex (a,b,c) where
+ showLatex (a,b,c) = "(" ++ showLatex a ++ "," ++ showLatex b ++ "," ++ showLatex c ++ ")"
+
+instance (ShowLatex a) => ShowLatex [a] where
+ showLatex l = "[" ++ (separate ", " l)  ++ "]"
+
+instance ShowLatex Int where
+ showLatex = show
+
+instance ShowLatex IntSet.IntSet where
+ showLatex = show . IntSet.toList
 
 
 separate :: ShowLatex a => String -> [a] -> String

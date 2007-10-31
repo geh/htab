@@ -5,19 +5,21 @@ import Control.Monad.State(StateT,lift,modify, put, get)
 import Statistics(updateStep,printOutInspectionMetrics,
                   recordClosedBranch,recordFiredRule)
 import Branch(BranchInfo(..),Branch,BranchMonad, BranchData(..),branch_depth,
-              addZeroInPath, incPathHead)
+              addZeroInPath, incPathHead )
 import CommandLine(logState,CmdLineParams)
 import Rules(Rule,applyRule,
              applicableRules,ruleToId)
 import Statistics(Statistics)
-import Formula(PrFormula)
+import Formula(Prefix,BranchingPrefixes,Formula,bps_empty,bps_member,bps_union)
 import LatexOutput
 import LatexOutputHelper
 import ModelGen ( HerbrandModel, buildHerbrandModel )
 
 --
 
-data OpenFlag = OPEN HerbrandModel | CLOSED
+type DependencySet = BranchingPrefixes -- to handle backjumping : when a clash occurs, tells because of which branch(es) it was.
+
+data OpenFlag = OPEN HerbrandModel | CLOSED DependencySet
 
 --
 
@@ -29,22 +31,22 @@ tableau =
          debugMsg_NewSection
 
          case (branch_info bd) of
-          BranchClash br pf ->
-           do debugMsg_BranchClash br pf
+          BranchClash br pr bprs f ->
+           do debugMsg_BranchClash br pr bprs f
               liftStats $ recordClosedBranch
-              return CLOSED
+              return (CLOSED bprs)
 
           BranchOK br ->
            do debugMsg_BranchOK br
-              case (chooseRule $ applicableRules br clp) of
+              let currentBranchingDepth = (branch_depth bd) + 1 -- `+ 1` because it's only when we know if there is an applicable rule
+                                                                -- that we increase the depth of the branch
+              case (chooseRule $ applicableRules br clp currentBranchingDepth) of
                Just rule ->
                 do debugMsg_BranchOK_applicableRule rule
                    liftStats $ recordFiredRule $ ruleToId rule
                    let possibleBranches = applyRule clp rule br
                    modify addZeroInPath
                    chooseBranch possibleBranches
-                   -- when we want to keep information, modify the
-                   -- BranchData state before returning
                Nothing   ->
                 do debugMsg_BranchOK_saturated
                    return $ OPEN (buildHerbrandModel br)
@@ -56,25 +58,30 @@ chooseRule (hd:_)  = Just hd
 chooseRule [] = Nothing
 
 -- depth-first branch-choosing strategy
-chooseBranch :: [BranchInfo]  -> BranchMonad OpenFlag
-chooseBranch (hd:tl) =
+chooseBranch :: [BranchInfo] ->  BranchMonad OpenFlag
+chooseBranch = chooseBranch_ bps_empty
+
+chooseBranch_ :: BranchingPrefixes -> [BranchInfo] -> BranchMonad OpenFlag
+chooseBranch_ currentDepSet (hd:tl) =
  do bd <- get
     put bd{branch_info=hd}
     res <- tableau
-
+    let currentBranchingDepth = branch_depth bd
     case (res) of
-     o@(OPEN _)   -> return o
-     CLOSED       -> do put $ incPathHead bd
-                        -- put bd (BranchData) as it was before branching
-                        -- in order to retrieve the path at that stage
-                        chooseBranch tl
+     o@(OPEN _)    -> return o
+     CLOSED depSet -> if bps_member currentBranchingDepth depSet  -- was the clash because of this branching ?
+                         then do put $ incPathHead bd
+                                 -- put bd (BranchData) as it was before branching
+                                 -- in order to retrieve the path at that stage
+                                 chooseBranch_ (bps_union currentDepSet depSet) tl
+                         else return $ CLOSED (bps_union currentDepSet depSet)
 
-chooseBranch [] = return CLOSED
+chooseBranch_ currentDepSet [] = return $ CLOSED currentDepSet
 
--- like hylores' logstate
+
 logMe :: BranchMonad ()
 logMe = do liftStats $ printOutInspectionMetrics
-           liftStats $ modify updateStep  -- not very elegant to call it explicitely and here
+           liftStats $ modify updateStep
 
 --
 liftStats :: StateT Statistics IO a -> BranchMonad a
@@ -96,12 +103,12 @@ debugMsg_NewSection =
     liftIO $ vPutStrLn ("\n>> " ++ traceMsg) showState
     latexPut $ section traceMsg
 
-debugMsg_BranchClash :: Branch -> PrFormula -> BranchMonad ()
-debugMsg_BranchClash br pf =
+debugMsg_BranchClash :: Branch -> Prefix -> BranchingPrefixes -> Formula -> BranchMonad ()
+debugMsg_BranchClash br pr bprs f =
  do bd <- get
     let showState = logState $ branch_clp bd
-    liftIO $ vPutStrLn ((show br) ++ "\nClasher : " ++ (show pf)) showState
-    latexPut $ (showLatex br) ++ "\n\nClasher : " ++ (math $ showLatex pf) ++ "\n\n"
+    liftIO $ vPutStrLn ((show br) ++ "\nClasher : " ++ (show (pr,bprs,f))) showState
+    latexPut $ (showLatex br) ++ "\n\nClasher : " ++ (math $ showLatex (pr,bprs,f)) ++ "\n\n"
 
 debugMsg_BranchOK :: Branch -> BranchMonad ()
 debugMsg_BranchOK br =

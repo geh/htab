@@ -6,7 +6,7 @@ import Control.Monad.State(lift,StateT)
 
 
 latexHeader :: String
-latexHeader = "\\documentclass[a4paper,10pt]{article}\n\\usepackage{amssymb}\n\\begin{document}\n"
+latexHeader = "\\documentclass[a4paper,10pt]{article}\n\\usepackage{geometry}\\geometry{hmargin=0cm}\n\\usepackage{amssymb}\n\\begin{document}\n"
 
 latexFooter :: String
 latexFooter = "\\end{document}\n"

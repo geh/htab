@@ -1,7 +1,6 @@
 ----------------------------------------------------
 --                                                --
--- Branch.hs:                                     --
--- Branches used in the calculus.                 --
+-- Branch.hs                                      --
 --                                                --
 ----------------------------------------------------
 
@@ -10,9 +9,9 @@ module Branch
 (
 Branch(..), BranchMonad, incLastPr, BranchInfo(..),
 addFormulas, addFormula, addAccFormula, remFormula,
-addBoxRuleCheck, BoxRuleCheck, BranchData(..),branch_depth,
+addBoxRuleCheck, BranchData(..),branch_depth,
 emptyBranch,initialBranchStateFor,getCLParams,
-addZeroInPath,incPathHead,nominals
+addZeroInPath,incPathHead,nominals,Box_rule_chart
 
 ) where
 
@@ -39,6 +38,7 @@ import qualified Data.Map as Map
 import Statistics(Statistics)
 import CommandLine(CmdLineParams, fullClash)
 import Formula
+import qualified Data.IntSet as IntSet
 
 import qualified Data.Array.Unboxed as UArray
 import SpecialMatrix(addElement,newUArray,
@@ -46,38 +46,34 @@ import SpecialMatrix(addElement,newUArray,
 
 import Control.Monad.ST(runST)
 import Data.Array.MArray(thaw,freeze)
-import Data.Set(Set,insert,elems,singleton)
-
-import Base(flatten)
 
 import LatexOutputHelper
 import Ix(range)
 
-type Clasher = PrFormula
 data BranchInfo = BranchOK Branch |
-                  BranchClash Branch Clasher
+                  BranchClash Branch Prefix BranchingPrefixes Formula
 
 -- Lit structure is a Map, because it's easier to detect clashed
 -- by looking if there is already something at the (prefix, prop) place
 -- and if what is there contradicts what we want to add
 
-type Seen_structure   = Map.Map PrFormula Bool
+type Seen_structure   = Map.Map (Prefix,Formula) (Bool,BranchingPrefixes)
 type Conj_structure   = [PrFormula]
 type Disj_structure   = [PrFormula]
 type Dia_structure    = [PrFormula]
-type Box_structure    = [PrFormula]
 type Neg_structure    = [PrFormula]
 type At_structure     = [PrFormula]
 type NegNom_structure = [PrFormula]
-type Acc_structure    = [AccFormula]             -- accessibility relations
-type Box_rule_chart   = [BoxRuleCheck]
+type Box_structure    = Map.Map (Prefix,Rel) [(BranchingPrefixes,Formula)]
+type Acc_structure    = Map.Map (Prefix,Rel) [(BranchingPrefixes,Prefix)]
+type Box_rule_chart   = Map.Map (Prefix,Rel,Prefix) [Formula]
+
 
 type NomToEarliestPref = Map.Map Nominal Prefix
-type PrefToFormulas    = Map.Map Prefix [Formula]
+type PrefToFormulas    = Map.Map Prefix [(BranchingPrefixes,Formula)]
+type PrefToBrPrefs     = Map.Map Prefix BranchingPrefixes -- a urfather holds all the dependencies of its class
 
 type Matrix = UArray.UArray (Int,Int) Bool
-
-type BoxRuleCheck = (PrFormula,AccFormula)
 
 data Branch = Branch { seenStr :: Seen_structure,
                        conjStr :: Conj_structure,
@@ -92,8 +88,9 @@ data Branch = Branch { seenStr :: Seen_structure,
                         lastPr :: Prefix,
                      nomToPref :: NomToEarliestPref,
                    prefToForms :: PrefToFormulas,
+                   prToBrPrefs :: PrefToBrPrefs,
                  nomPrefMatrix :: Matrix,
-                 inputLanguage :: Int }
+                 inputLanguage :: Int}
 
 --
 
@@ -104,19 +101,20 @@ branch_depth b = length $ branch_path b
 emptyBranch :: LanguageInfo -> Branch
 emptyBranch l =
                 Branch
-                { seenStr= Map.empty::Map.Map PrFormula Bool,
+                { seenStr= Map.empty::Seen_structure,
                   conjStr=[],
                   disjStr=[],
                   diaStr=[],
-                  boxStr=[],
+                  boxStr=Map.empty::Box_structure,
                   negStr=[],
                   atStr=[],
-                  accStr=[],
-                  boxRlCh=[],
+                  accStr=Map.empty::Acc_structure,
+                  boxRlCh=Map.empty::Box_rule_chart,
                   negNomStr=[],
-                  lastPr=0,
-                  nomToPref= Map.empty::Map.Map Nominal Prefix,
-                  prefToForms= Map.empty::Map.Map Prefix [Formula],
+                  lastPr= 0 ,
+                  nomToPref= Map.empty::NomToEarliestPref,
+                  prefToForms= Map.empty::PrefToFormulas,
+                  prToBrPrefs= Map.empty::PrefToBrPrefs,
                   nomPrefMatrix = newUArray ((1,1),(0,0)),
                   inputLanguage = l
                 }
@@ -129,12 +127,13 @@ instance Show Branch where
               "\nDiamonds: "       ++ show (diaStr br)   ++
               "\nBoxes: "          ++ show (boxStr br)   ++
               "\nNegations: "      ++ show (negStr br)   ++
-              "\nAts: "            ++ show (atStr br)   ++
-              "\nNeg noms: "       ++ show (negNomStr br)   ++
+              "\nAts: "            ++ show (atStr br)    ++
+              "\nNeg noms: "       ++ show (negNomStr br)  ++
               "\nAccesibility: "   ++ show (accStr br)   ++
               "\nBox rule chart: " ++ show (boxRlCh br)  ++
               "\nBiggest prefix: " ++ show (lastPr br) ++
               "\nNominal to earliest prefix: "    ++ show (Map.toList $ nomToPref br) ++
+              "\nPrefix to branching prefixes: " ++ show (Map.toList $ prToBrPrefs br) ++
               "\nPrefix to formulas: "  ++ show (Map.toList $ prefToForms br)
 
 instance ShowLatex Branch where
@@ -143,21 +142,22 @@ instance ShowLatex Branch where
               "\nConjunctions: "   ++ (putEol $ math $ separate ", " $ conjStr br)  ++
               "\nDisjunctions: "   ++ (putEol $ math $ separate ", " $ disjStr br)  ++
               "\nDiamonds: "       ++ (putEol $ math $ separate ", " $ diaStr br)   ++
-              "\nBoxes: "          ++ (putEol $ math $ separate ", " $ boxStr br)   ++
+              "\nBoxes: "          ++ (putEol $ math $ show $ Map.toList $ boxStr br)   ++
               "\nNegations: "      ++ (putEol $ math $ separate ", " $ negStr br)   ++
               "\nAts: "            ++ (putEol $ math $ separate ", " $ atStr br)   ++
               "\nNeg noms: "       ++ (putEol $ math $ separate ", " $ negNomStr br)   ++
-              "\nAccesibility: "   ++ (putEol $ math $ separate ", " $ accStr br)   ++
-              "\nBox rule chart: " ++ (putEol $ (genericSeparate showLat) ", " $ boxRlCh br)  ++
+              "\nAccesibility: "   ++ (putEol $ math $ show $ Map.toList $ accStr br)   ++
+              "\nBox rule chart: " ++ (putEol $ math $ show $ Map.toList $ boxRlCh br)  ++
               "\nBiggest prefix: " ++ (putEol $ show $ lastPr br) ++
               "\nNominal to earliest prefix: "  ++ (putEol $ showLatex $ nomToPref br)   ++
+              "\nPrefix to branching prefixes: " ++ (putEol $ showLatex $ prToBrPrefs br) ++
               "\nPrefix to formulas: \\\\"      ++ (putEol $ math $ showLatex $ prefToForms br) ++
               "\nPrefix-Nominal matrix : " ++ (verbatim $ showLatex $ nomPrefMatrix br)
-  where showLat (pr,acc) = "(" ++ (math $ showLatex pr) ++ "," ++ (math $ showLatex acc) ++ ")"
-
-
 
 instance ShowLatex NomToEarliestPref where
+ showLatex ntep = show $ Map.toList ntep
+
+instance ShowLatex PrefToBrPrefs where
  showLatex ntep = show $ Map.toList ntep
 
 instance ShowLatex PrefToFormulas where
@@ -168,8 +168,9 @@ instance ShowLatex PrefToFormulas where
 instance ShowLatex Seen_structure where
  showLatex ss  = 
    "[" ++ ((genericSeparate showLat) ", " $ Map.toList ss) ++ "]"
-    where showLat (pf,b)  = if b then "" ++ "(" ++ (showLatex pf) ++ ")"
-                                 else "\\neg" ++ "(" ++ (showLatex pf) ++ ")"
+    where showLat (pf,(b,bpfs)) = if b then "" ++ "(" ++ (showLatex pf) ++ ")(" ++ showLatex bpfs ++ ")"
+                                       else "\\neg" ++ "(" ++ (showLatex pf) ++ ")(" ++ showLatex bpfs ++ ")"
+
 
 instance ShowLatex Matrix where
  showLatex m = foldr insertEol "" $ map (separate " " . (getRow m)) (range (firstRow,lastDisplayedRow))
@@ -191,8 +192,8 @@ genericSeparate f s os = foldl1 (\a1 a2 -> (a1 ++ s ++ a2)) $ map f os
 
 addFormulas :: CmdLineParams -> Branch -> [PrFormula] -> BranchInfo
 addFormulas clp br (hd:tl) = case (addFormula clp br hd) of
-                               BranchOK br2         -> addFormulas clp br2 tl
-                               bi@(BranchClash _ _) -> bi
+                               BranchOK br2             -> addFormulas clp br2 tl
+                               bi@(BranchClash _ _ _ _) -> bi
 
 addFormulas _ br [] = BranchOK br
 
@@ -200,19 +201,29 @@ addFormulas _ br [] = BranchOK br
 addFormula :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
 -- Case 1 :
 -- p : a (a nominal)
-addFormula clp br f@(PrFormula pr f2@(PosLit (N n)))
-  = addFormulas2 clp brUpdated (f:newFormulas)
-     where oldMatrixData = UArray.assocs $ nomPrefMatrix br
-           newMRowLength = (lastPr br) + 1             -- 1 unit longer because in between, we may have created a new prefix
-           newMColLength = (inputLanguage br) - 1
-           biggerOldMatrix = newUArray ((0,0),(newMRowLength,newMColLength)) UArray.// oldMatrixData  -- make a (possibily) bigger matrix
+addFormula clp br f@(PrFormula pr bprs f2@(PosLit (N n)))
+  = addFormulas2 clp brUpdated nubbedNewFormulas
+     where oldMatrixData    = UArray.assocs $ nomPrefMatrix br
+           newMRowLength    = (lastPr br) + 1             -- 1 unit longer because in between, we may have created a new prefix
+           newMColLength    = (inputLanguage br) - 1
+           biggerOldMatrix  = newUArray ((0,0),(newMRowLength,newMColLength)) UArray.// oldMatrixData  -- make a (possibily) bigger matrix
            (newMatrix,updatedNominals,newUrfather) = addElement_ biggerOldMatrix (pr,n)
            updatedNomToPref = Map.union (Map.fromList $ zip updatedNominals $ repeat newUrfather) (nomToPref br) -- update urfather(s)
-           oldUrfathers = elems $ urfathersOfNominals (nomToPref br) (singleton pr::Set Int) updatedNominals
+           oldUrfathers     = IntSet.elems $ urfathersOfNominals (nomToPref br) (IntSet.singleton pr) updatedNominals
+
+           currentDependencies = bps_unions $ bprs:(map (findDeps br) oldUrfathers)
+           updatedPrToBrPrefs = Map.insert pr currentDependencies (prToBrPrefs br)
+
            urfathersToRetrieveFormulasFrom = delete newUrfather oldUrfathers -- avoid copying into the same prefix
-           formulasToCopy = flatten $ map (getFormulas br) urfathersToRetrieveFormulasFrom
-           newFormulas = map (PrFormula newUrfather) (f2:formulasToCopy)
-           brUpdated = br{nomPrefMatrix = newMatrix, nomToPref=updatedNomToPref}
+           formulasToCopy = concatMap (getFormulas br) urfathersToRetrieveFormulasFrom
+           formulasToCopy2 = (PrFormula newUrfather bprs f2):(map (\(bprs2,f_) -> PrFormula newUrfather (bps_union currentDependencies bprs2) f_) formulasToCopy)
+
+           nubbedNewFormulas = nubAndMergeDeps (f:formulasToCopy2)
+           brUpdated         = br{nomPrefMatrix = newMatrix,
+                                  nomToPref     = updatedNomToPref,
+                                  prToBrPrefs   = updatedPrToBrPrefs}
+
+
 
 
 -- Case 2
@@ -222,45 +233,70 @@ addFormula clp br f@(PrFormula pr f2@(PosLit (N n)))
 addFormula clp br f | isModal br =  addFormula2 clp br f
 
 -- if we work with the hybrid language
-addFormula clp br f@(PrFormula pr f2) 
+addFormula clp br f@(PrFormula pr bprs f2)
  = addFormulas2 clp br (f:newFormula)
-    where newFormula = case (getUrfather br pr) of
-                        Just urfather -> if urfather == pr then [] else [PrFormula urfather f2]
+    where newFormula = case (getUrfatherAndDeps br pr) of
+                        Just (urfather,bprs2) -> if urfather == pr
+                                                  then []
+                                                  else [PrFormula urfather (bps_union bprs bprs2) f2]
                         Nothing -> []
+
+
+nubAndMergeDeps :: [PrFormula] -> [PrFormula]
+-- Rationale : because of the equivalence classes, a same formula can be added to a branch as several prefixed formulas with different
+-- branching dependencies. This functions takes a list of prefixes formulas, looks which inner formulas are the same and merge their
+-- branching dependencies.
+nubAndMergeDeps prfs =  namd prfs (Map.empty::Map.Map (Prefix,Formula) BranchingPrefixes)
+
+namd :: [PrFormula] -> Map.Map (Prefix,Formula) BranchingPrefixes -> [PrFormula]
+namd ((PrFormula p bps f):prfs) theMap =
+  namd prfs (Map.insertWith bps_union (p,f) bps theMap)
+
+namd [] theMap = map (\((p,f),bps) -> PrFormula p bps f) (Map.assocs theMap)
+
 
 {-
    Functions related to vId, nom, prefixes and nominals ...
 -}
 
-getFormulas :: Branch -> Prefix -> [Formula]
+getFormulas :: Branch -> Prefix -> [(BranchingPrefixes,Formula)]
 getFormulas br p = Map.findWithDefault [] p (prefToForms br)
 
 
-
 addToPrefToForms :: Branch -> PrFormula -> Branch
-addToPrefToForms br (PrFormula pre f) = br{prefToForms = newMap}
-                                        where currentMap = prefToForms br
-                                              newMap = Map.insertWith (\x y -> x++y) pre [f] currentMap
+addToPrefToForms br (PrFormula pre bprs f) =
+  br{prefToForms = newMap}
+ where currentMap = prefToForms br
+       newMap = Map.insertWith (\x y -> x++y) pre [(bprs,f)] currentMap
 
-urfathersOfNominals :: NomToEarliestPref -> Set Int -> [Int] -> Set Int
+urfathersOfNominals :: NomToEarliestPref -> IntSet.IntSet -> [Int] -> IntSet.IntSet
 -- takes the (nom -> earliest prefix) map
 --       and a list of nominals
 -- outputs the set of urfathers of these nominals (so that there are no doubles)
 urfathersOfNominals ntp s (hd:tl) = case (Map.lookup hd ntp) of
-                                     Just ur -> urfathersOfNominals ntp (insert ur s) tl
+                                     Just ur -> urfathersOfNominals ntp (IntSet.insert ur s) tl
                                      Nothing -> urfathersOfNominals ntp s tl
 urfathersOfNominals _   s [] = s
 
-getUrfather :: Branch -> Prefix -> Maybe Prefix
+getUrfatherAndDeps :: Branch -> Prefix -> Maybe (Prefix,BranchingPrefixes)
 -- check if matrix size not enough for this urfather (eg when the prefix is created from the <> rule) -> return Nothing
-getUrfather br pr = case m_idx1 of
-                      Just idx1 -> indexOfEarliest $ (getColumn mat idx1)
-                      Nothing -> Nothing
-                     where mat = (nomPrefMatrix br)
-                           maxPrefixInMatrix = fst $ snd $ UArray.bounds mat
-                           m_idx1 = if maxPrefixInMatrix < pr
-                                      then Nothing 
-                                      else indexOfEarliest $ getRow mat pr
+getUrfatherAndDeps br pr =
+  case nominal_idx1 of
+   Just nidx -> case (indexOfEarliest $ getColumn mat nidx) of
+                  Just urfather -> Just (urfather, deps)
+                                    where deps = findDeps br urfather
+                  Nothing -> Nothing
+   Nothing   -> Nothing
+  where mat = nomPrefMatrix br
+        maxPrefixInMatrix = fst $ snd $ UArray.bounds mat
+        nominals_row = getRow mat pr
+        nominal_idx1 = if maxPrefixInMatrix < pr
+                        then Nothing
+                        else indexOfEarliest nominals_row
+
+findDeps :: Branch -> Prefix -> BranchingPrefixes
+findDeps br pr = Map.findWithDefault bps_empty pr (prToBrPrefs br)
+
 
 {-
    Functions to read and write the prefix<->nominal array
@@ -309,41 +345,42 @@ getColumn' t colNum rowNum remainder = (hd:tl)
 addFormulas2 :: CmdLineParams -> Branch -> [PrFormula] -> BranchInfo
 addFormulas2 clp br (hd:tl) =
    case (addFormula2 clp updatedPrefToFormsBr hd) of
-     BranchOK br2         -> addFormulas2 clp br2 tl
-     bi@(BranchClash _ _) -> bi
+     BranchOK br2             -> addFormulas2 clp br2 tl
+     bi@(BranchClash _ _ _ _) -> bi
    where updatedPrefToFormsBr = addToPrefToForms br hd
 
 addFormulas2 _ br [] = BranchOK br
 
 
 addFormula2 :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
-addFormula2 clp br pf@(PrFormula _ (Con _))
+addFormula2 clp br pf@(PrFormula _ _ (Con _))
            = modBranchCaseFC clp br pf $ \b f -> b{conjStr = f:(conjStr b)}
 
-addFormula2 clp br pf@(PrFormula _ (Dis _))
+addFormula2 clp br pf@(PrFormula _ _ (Dis _))
            = modBranchCaseFC clp br pf $ \b f -> b{disjStr = f:(disjStr b)}
 
-addFormula2 clp br pf@(PrFormula _ (Box _ _))
-           = modBranchCaseFC clp br pf $ \b f -> b{boxStr  = f:(boxStr b) }
+addFormula2 clp br pf@(PrFormula _ _ (Box _ _))
+           = modBranchCaseFC clp br pf
+              $ \b (PrFormula pr bprs (Box r f)) -> b{boxStr = Map.insertWith (++) (pr,r) [(bprs,f)] (boxStr b)}
 
-addFormula2 clp br pf@(PrFormula _ (Dia _ _))
+addFormula2 clp br pf@(PrFormula _ _ (Dia _ _))
            = modBranchCaseFC clp br pf $ \b f -> b{diaStr  = f:(diaStr b) }
 
-addFormula2 clp br pf@(PrFormula _ (At _ _))
+addFormula2 clp br pf@(PrFormula _ _ (At _ _))
            = modBranchCaseFC clp br pf $ \b f -> b{atStr   = f:(atStr b)  }
 
-addFormula2 clp br pf@(PrFormula _ (Neg _))
+addFormula2 clp br pf@(PrFormula _ _ (Neg _))
            = modBranchCaseFC clp br pf $ \b f -> b{negStr  = f:(negStr b) }
 
-addFormula2 _ br f@(PrFormula _ (NegLit (N _)))
+addFormula2 _ br f@(PrFormula _ _ (NegLit (N _)))
            = case (addAndUpdateMap br f) of
-               BranchOK bok         -> BranchOK bok{negNomStr = f:(negNomStr bok)}
-               bc@(BranchClash _ _) -> bc
+               BranchOK bok             -> BranchOK bok{negNomStr = f:(negNomStr bok)}
+               bc@(BranchClash _ _ _ _) -> bc
 
-addFormula2 _ br f@(PrFormula _ (PosLit _))
+addFormula2 _ br f@(PrFormula _ _ (PosLit _))
            = addAndUpdateMap br f
 
-addFormula2 _ br f@(PrFormula _ (NegLit _))
+addFormula2 _ br f@(PrFormula _ _ (NegLit _))
            = addAndUpdateMap br f
 
 modBranchCaseFC :: CmdLineParams -> Branch -> PrFormula
@@ -351,8 +388,8 @@ modBranchCaseFC :: CmdLineParams -> Branch -> PrFormula
                    -> BranchInfo
 modBranchCaseFC clp br f modBr =
  if (fullClash clp) then case (addAndUpdateMap br f) of
-                          BranchOK bok         -> BranchOK $ modBr bok f
-                          bc@(BranchClash _ _) -> bc
+                          BranchOK bok             -> BranchOK $ modBr bok f
+                          bc@(BranchClash _ _ _ _) -> bc
                     else  BranchOK $ modBr br f
 
 
@@ -362,12 +399,14 @@ modBranchCaseFC clp br f modBr =
 
 
 addAccFormula :: Branch -> AccFormula -> Branch
-addAccFormula br f = br{accStr=(f:(accStr br))}
+addAccFormula br (AccFormula bprs r p1 p2) =
+  br{accStr=Map.insertWith (++) (p1,r) [(bprs,p2)] (accStr br)}
 
 --
 
-addBoxRuleCheck :: Branch -> (PrFormula,AccFormula) -> Branch
-addBoxRuleCheck br c = br{boxRlCh=(c:(boxRlCh br))}
+addBoxRuleCheck :: Branch -> (Prefix,Rel,Prefix,Formula) -> Branch
+addBoxRuleCheck br (p1,r,p2,f) =
+  br{boxRlCh=Map.insertWith (++) (p1,r,p2) [f] (boxRlCh br)}
 
 --
 
@@ -377,15 +416,15 @@ incLastPr br = br{lastPr = ((lastPr br)+1)}
 --
 
 remFormula :: Branch  -> PrFormula -> Branch
-remFormula br f@(PrFormula _ (Con _))        = br{conjStr=(delete f (conjStr br))}
-remFormula br f@(PrFormula _ (Dia _ _))      = br{diaStr=(delete f (diaStr br))}
-remFormula br f@(PrFormula _ (Dis _))        = br{disjStr=(delete f (disjStr br))}
-remFormula br f@(PrFormula _ (Neg _))        = br{negStr=(delete f (negStr br))}
-remFormula _    (PrFormula _ (Box _ _))      = error "that formula should never be deleted"
-remFormula br f@(PrFormula _ (At _ _))       = br{atStr=(delete f (atStr br))}
-remFormula _    (PrFormula _ (PosLit _))     = error "that formula should never be deleted"
-remFormula br f@(PrFormula _ (NegLit (N _))) = br{negNomStr=(delete f (negNomStr br))}
-remFormula _    (PrFormula _ (NegLit _))     = error "that formula should never be deleted"
+remFormula br f@(PrFormula _ _ (Con _))        = br{conjStr=(delete f (conjStr br))}
+remFormula br f@(PrFormula _ _ (Dia _ _))      = br{diaStr=(delete f (diaStr br))}
+remFormula br f@(PrFormula _ _ (Dis _))        = br{disjStr=(delete f (disjStr br))}
+remFormula br f@(PrFormula _ _ (Neg _))        = br{negStr=(delete f (negStr br))}
+remFormula _    (PrFormula _ _ (Box _ _))      = error "that formula should never be deleted"
+remFormula br f@(PrFormula _ _ (At _ _))       = br{atStr=(delete f (atStr br))}
+remFormula _    (PrFormula _ _ (PosLit _))     = error "that formula should never be deleted"
+remFormula br f@(PrFormula _ _ (NegLit (N _))) = br{negNomStr=(delete f (negNomStr br))}
+remFormula _    (PrFormula _ _ (NegLit _))     = error "that formula should never be deleted"
 
 
 
@@ -393,38 +432,35 @@ remFormula _    (PrFormula _ (NegLit _))     = error "that formula should never 
   Functions to update the "seen structures" map
 -}
 
+data UpdateResult = UpdateSuccess Seen_structure | UpdateFailure BranchingPrefixes
 
 addAndUpdateMap :: Branch -> PrFormula -> BranchInfo
-addAndUpdateMap br prf@(PrFormula pr (Neg f))
-  = case (updateMap (seenStr br) (pr,f) False) of
-     Just m  -> BranchOK br{seenStr = m}
-     Nothing -> BranchClash br prf
+addAndUpdateMap br (PrFormula pr bprs formula@(Neg f))
+  = case (updateMap (seenStr br) (pr,f) (False,bprs)) of
+     UpdateSuccess ss    -> BranchOK br{seenStr = ss}
+     UpdateFailure bprs2 -> BranchClash br pr bprs2 formula
 
-addAndUpdateMap br prf@(PrFormula pr f)
-  = case (updateMap (seenStr br) (pr,f) True) of
-     Just m  -> BranchOK br{seenStr = m}
-     Nothing -> BranchClash br prf
+addAndUpdateMap br (PrFormula pr bprs f)
+  = case (updateMap (seenStr br) (pr,f) (True,bprs)) of
+     UpdateSuccess ss    -> BranchOK br{seenStr = ss}
+     UpdateFailure bprs2 -> BranchClash br pr bprs2 f
 
 
-updateMap :: Seen_structure -> (Prefix,Formula) -> Bool -> Maybe Seen_structure
-updateMap ss (_,PosLit Taut) True = Just ss
+updateMap :: Seen_structure -> (Prefix,Formula) -> (Bool,BranchingPrefixes) -> UpdateResult
+updateMap ss (_,PosLit Taut) (True,_) = UpdateSuccess ss
 
-updateMap _ (_,PosLit Taut) False = Nothing
+updateMap _ (_,PosLit Taut) (False,bprs) = UpdateFailure bprs
 
-updateMap ss (pre,PosLit a) b
-  = case (Map.lookup (PrFormula pre (PosLit a)) ss) of
-       Just b2 -> if b == b2 then Just ss
-                             else Nothing                   -- clash!
-       Nothing -> Just (Map.insert (PrFormula pre (PosLit a)) b ss)
+updateMap ss (pre,NegLit a) (bool,bprs)
+    = updateMap ss (pre,PosLit a) (not bool,bprs)
 
-updateMap ss (pre,NegLit a) b
-    = updateMap ss (pre,PosLit a) (not b)
+updateMap ss (pre,f) (bool,bprs)
+  = case (Map.lookup (pre,f) ss) of
+       Just (bool2,bprs2) -> if bool == bool2
+                              then UpdateSuccess (Map.insert (pre,f) (bool,bps_union bprs bprs2) ss)
+                              else UpdateFailure (bps_union bprs bprs2)           -- clash!
+       Nothing            -> UpdateSuccess (Map.insert (pre,f) (bool,bprs) ss)
 
-updateMap ss (pre,f) b           -- Conj, Disj , Box, Dia, At
-    = case (Map.lookup (PrFormula pre f) ss) of
-       Just b2 -> if b == b2 then Just ss
-                             else Nothing                   -- clash!
-       Nothing -> Just (Map.insert (PrFormula pre f) b ss)
 
 
 isModal :: Branch -> Bool
@@ -470,6 +506,4 @@ addZeroInPath bd = bd{branch_path=(0:(branch_path bd))}
 
 incPathHead :: BranchData -> BranchData
 incPathHead bd = bd{branch_path=(((head (branch_path bd))+1):(tail $ branch_path bd))}
-
-
 

@@ -10,8 +10,7 @@ import qualified HyLo.Model.Herbrand as H
 
 import qualified HyLo.Formula.NNF as NNF
 
-import Formula(AccFormula(..), Nominal, Prefix, Prop, Formula (..), Atom (..),
-               PrFormula(..) )
+import Formula(Nominal, Prefix,Rel, Prop, Formula (..), Atom (..))
 import Branch( Branch(..) , nominals)
 
 import qualified HyLo.Signature.Simple as S -- to have types with distinct "show" representations
@@ -31,11 +30,14 @@ buildHerbrandModel branch =
              [NNF.At
                (S.NomSymbol (pr+bias))
                (NNF.Prop (S.PropSymbol p)) | (pr,p) <- prefixAndPropCouples]
-       rs = Set.fromList $ map (accToNNF bias) (accStr branch)
+       rs = Set.fromList $ map (accToNNF bias)
+              $ concatMap (\((p1,r),bp_ps) -> map (\(_,p2) -> (p1,r,p2))
+                                                  bp_ps)
+                          (Map.assocs $ accStr branch)
 
-accToNNF :: Int -> AccFormula
+accToNNF :: Int -> (Prefix,Rel,Prefix)
              -> NNF.Formula S.NomSymbol S.PropSymbol S.RelSymbol S.StateVar (NNF.At NNF.Nom (NNF.Diam NNF.Nom))
-accToNNF bias (AccFormula r p1 p2) =
+accToNNF bias (p1,r,p2) =
   NNF.At (S.NomSymbol (p1+bias)) $ NNF.Diam (S.RelSymbol r) $ NNF.Nom (S.NomSymbol (p2+bias))
 
 urfatherOrPrefixZero :: Branch -> Nominal -> Prefix
@@ -46,12 +48,12 @@ urfatherOrPrefixZero br n =
 
 prefixAndProps :: Branch -> [(Prefix,Prop)]
 prefixAndProps br =
-  [(pr,p_) | (PrFormula pr (PosLit (P p_))) <- prPosLitProp]
+  [(pr,p_) | (pr , PosLit (P p_)) <- prPosLitProp]
  where seen = seenStr br
-       prPosLitProp = filter isPosLitProp $ map fst $ filter snd $ Map.toList seen
+       prPosLitProp = filter isPosLitProp $ map fst $ filter (fst . snd) $ Map.toList seen
 
-isPosLitProp :: PrFormula -> Bool
-isPosLitProp (PrFormula _ (PosLit (P _))) = True
+isPosLitProp :: (Prefix,Formula) -> Bool
+isPosLitProp (_, PosLit (P _)) = True
 isPosLitProp _ = False
 
 
