@@ -39,6 +39,8 @@ import Statistics(Statistics)
 import CommandLine(CmdLineParams, fullClash)
 import Formula
 import qualified Data.IntSet as IntSet
+import qualified Data.Set as Set
+
 
 import qualified Data.Array.Unboxed as UArray
 import SpecialMatrix(addElement,newUArray,
@@ -66,7 +68,7 @@ type At_structure     = [PrFormula]
 type NegNom_structure = [PrFormula]
 type Box_structure    = Map.Map (Prefix,Rel) [(BranchingPrefixes,Formula)]
 type Acc_structure    = Map.Map (Prefix,Rel) [(BranchingPrefixes,Prefix)]
-type Box_rule_chart   = Map.Map (Prefix,Rel,Prefix) [Formula]
+type Box_rule_chart   = Map.Map (Prefix,Rel,Prefix) (Set.Set Formula)
 
 
 type NomToEarliestPref = Map.Map Nominal Prefix
@@ -406,7 +408,7 @@ addAccFormula br (AccFormula bprs r p1 p2) =
 
 addBoxRuleCheck :: Branch -> (Prefix,Rel,Prefix,Formula) -> Branch
 addBoxRuleCheck br (p1,r,p2,f) =
-  br{boxRlCh=Map.insertWith (++) (p1,r,p2) [f] (boxRlCh br)}
+  br{boxRlCh=Map.insertWith Set.union (p1,r,p2) (Set.singleton f) (boxRlCh br)}
 
 --
 

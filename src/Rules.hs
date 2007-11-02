@@ -8,7 +8,7 @@ import RuleMetadata(RuleId(..))
 import LatexOutput()
 import LatexOutputHelper
 import qualified Data.Map as Map
-
+import qualified Data.Set as Set
 
 -- a "rule" is basically a list of modifications of the structures
 
@@ -144,7 +144,7 @@ reallyNotIn :: (Prefix,Rel,Prefix,Formula) -> Box_rule_chart -> Bool
 reallyNotIn (p1,r,p2,f) brc =
  case (Map.lookup (p1,r,p2) brc) of
     Nothing -> True
-    Just fs -> notElem f fs
+    Just fs -> Set.notMember f fs
 
 
 applyRule :: CmdLineParams -> Rule -> Branch -> [BranchInfo]
