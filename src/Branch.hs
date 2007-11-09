@@ -214,7 +214,7 @@ addFormula clp br f@(PrFormula pr bprs f2@(PosLit (N n)))
            oldUrfathers     = IntSet.elems $ urfathersOfNominals (nomToPref br) (IntSet.singleton pr) updatedNominals
 
            currentDependencies = bps_unions $ bprs:(map (findDeps br) oldUrfathers)
-           updatedPrToBrPrefs = Map.insert pr currentDependencies (prToBrPrefs br)
+           updatedPrToBrPrefs = Map.insert newUrfather currentDependencies (prToBrPrefs br)
 
            urfathersToRetrieveFormulasFrom = delete newUrfather oldUrfathers -- avoid copying into the same prefix
            formulasToCopy = concatMap (getFormulas br) urfathersToRetrieveFormulasFrom
