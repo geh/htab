@@ -105,10 +105,10 @@ applicableRules br clp d =
 
 
 applicableConjRules :: Branch -> [Rule]
-applicableConjRules br = [conjRule f br | f <- (conjStr br)]
+applicableConjRules br = [conjRule f br | f <- Set.toAscList $ conjStr br]
 
 applicableDiaRules :: Branch -> [Rule]
-applicableDiaRules br = [diaRule f br | f <- (diaStr br)]
+applicableDiaRules br = [diaRule f br | f <- Set.toAscList $ diaStr br]
 
 
 applicableBoxRules :: Branch -> [Rule]
@@ -116,21 +116,22 @@ applicableBoxRules br
   = [boxRule prF accF br | (prF,accF) <- (unCheckedBoxPairs br)]
 
 applicableDisjRules :: Branch -> BranchingPrefix -> [Rule]
-applicableDisjRules br d = [disjRule f br d | f <- (disjStr br)]
+applicableDisjRules br d = [disjRule f br d | f <- Set.toAscList $ disjStr br]
 
 applicableSemBrRules :: Branch -> BranchingPrefix -> [Rule]
-applicableSemBrRules br d = [semBrRule f br d | f <- (disjStr br)]
+applicableSemBrRules br d = [semBrRule f br d | f <- Set.toAscList $ disjStr br]
 
 applicableNegRules :: Branch -> [Rule]
-applicableNegRules br = [negRule f br | f <- (negStr br)]
+applicableNegRules br = [negRule f br | f <- Set.toAscList $ negStr br]
 
 applicableAtRules :: Branch -> [Rule]
-applicableAtRules br = [atRule f br | f <- (atStr br)]
+applicableAtRules br = [atRule f br | f <- Set.toAscList $ atStr br]
 
 applicableNegNomRules :: Branch -> [Rule]
-applicableNegNomRules br = [negNomRule f br | f <- (negNomStr br)]
+applicableNegNomRules br = [negNomRule f br | f <- Set.toAscList $ negNomStr br]
 
 unCheckedBoxPairs :: Branch -> [(AccFormula,(BranchingPrefixes,Formula))]
+-- TODO consider privilegiating formulas with older branchings
 unCheckedBoxPairs br
   = [(AccFormula bps2 r2 p2 p3, (bps1,f))
                  | bk@(p1,r1) <- Map.keys (boxStr br),

@@ -88,10 +88,21 @@ bps_member = IntSet.member
 bps_empty :: BranchingPrefixes
 bps_empty  = IntSet.empty
 
---
+deps_min :: BranchingPrefixes -> Int
+deps_min deps
+  =  case IntSet.toList deps of  -- with GHC 6.8.1 , use IntSet.toAscList
+       [] -> 0
+       l  -> minimum l           -- (hd:_) -> hd
 
 data PrFormula = PrFormula Prefix BranchingPrefixes Formula
- deriving (Eq, Ord)
+ deriving Eq
+
+instance Ord PrFormula where
+ compare (PrFormula pr1 deps1 f1) (PrFormula pr2 deps2 f2) =
+  case (compare (deps_min deps1) (deps_min deps2)) of
+   LT -> LT
+   GT -> GT
+   EQ -> compare (pr1,f1) (pr2,f2)
 
 instance Show PrFormula where
  show (PrFormula pr bprs f) = (show pr)++":"++(show $ IntSet.toList bprs)++":"++(show f)

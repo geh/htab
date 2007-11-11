@@ -60,12 +60,12 @@ data BranchInfo = BranchOK Branch |
 -- and if what is there contradicts what we want to add
 
 type Seen_structure   = Map.Map (Prefix,Formula) (Bool,BranchingPrefixes)
-type Conj_structure   = [PrFormula]
-type Disj_structure   = [PrFormula]
-type Dia_structure    = [PrFormula]
-type Neg_structure    = [PrFormula]
-type At_structure     = [PrFormula]
-type NegNom_structure = [PrFormula]
+type Conj_structure   = Set.Set PrFormula
+type Disj_structure   = Set.Set PrFormula
+type Dia_structure    = Set.Set PrFormula
+type Neg_structure    = Set.Set PrFormula
+type At_structure     = Set.Set PrFormula
+type NegNom_structure = Set.Set PrFormula
 type Box_structure    = Map.Map (Prefix,Rel) [(BranchingPrefixes,Formula)]
 type Acc_structure    = Map.Map (Prefix,Rel) [(BranchingPrefixes,Prefix)]
 type Box_rule_chart   = Map.Map (Prefix,Rel,Prefix) (Set.Set Formula)
@@ -104,15 +104,15 @@ emptyBranch :: LanguageInfo -> Branch
 emptyBranch l =
                 Branch
                 { seenStr= Map.empty::Seen_structure,
-                  conjStr=[],
-                  disjStr=[],
-                  diaStr=[],
+                  conjStr= Set.empty::Conj_structure,
+                  disjStr= Set.empty::Disj_structure,
+                  diaStr = Set.empty::Dia_structure,
                   boxStr=Map.empty::Box_structure,
-                  negStr=[],
-                  atStr=[],
+                  negStr = Set.empty::Neg_structure,
+                  atStr= Set.empty::At_structure,
                   accStr=Map.empty::Acc_structure,
                   boxRlCh=Map.empty::Box_rule_chart,
-                  negNomStr=[],
+                  negNomStr= Set.empty::NegNom_structure,
                   lastPr= 0 ,
                   nomToPref= Map.empty::NomToEarliestPref,
                   prefToForms= Map.empty::PrefToFormulas,
@@ -141,13 +141,13 @@ instance Show Branch where
 instance ShowLatex Branch where
  showLatex br = "Input language: " ++ (putEol $ math $ show $ inputLanguage br)   ++ 
               "\nSeen formulas: "  ++ (putEol $ math $ showLatex $ seenStr br)   ++
-              "\nConjunctions: "   ++ (putEol $ math $ separate ", " $ conjStr br)  ++
-              "\nDisjunctions: "   ++ (putEol $ math $ separate ", " $ disjStr br)  ++
-              "\nDiamonds: "       ++ (putEol $ math $ separate ", " $ diaStr br)   ++
+              "\nConjunctions: "   ++ (putEol $ math $ show $ conjStr br)  ++
+              "\nDisjunctions: "   ++ (putEol $ math $ show $ disjStr br)  ++
+              "\nDiamonds: "       ++ (putEol $ math $ show $ diaStr br)   ++
               "\nBoxes: "          ++ (putEol $ math $ show $ Map.toList $ boxStr br)   ++
-              "\nNegations: "      ++ (putEol $ math $ separate ", " $ negStr br)   ++
-              "\nAts: "            ++ (putEol $ math $ separate ", " $ atStr br)   ++
-              "\nNeg noms: "       ++ (putEol $ math $ separate ", " $ negNomStr br)   ++
+              "\nNegations: "      ++ (putEol $ math $ show $ negStr br)   ++
+              "\nAts: "            ++ (putEol $ math $ show $ atStr br)   ++
+              "\nNeg noms: "       ++ (putEol $ math $ show $ negNomStr br)   ++
               "\nAccesibility: "   ++ (putEol $ math $ show $ Map.toList $ accStr br)   ++
               "\nBox rule chart: " ++ (putEol $ math $ show $ Map.toList $ boxRlCh br)  ++
               "\nBiggest prefix: " ++ (putEol $ show $ lastPr br) ++
@@ -356,27 +356,27 @@ addFormulas2 _ br [] = BranchOK br
 
 addFormula2 :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
 addFormula2 clp br pf@(PrFormula _ _ (Con _))
-           = modBranchCaseFC clp br pf $ \b f -> b{conjStr = f:(conjStr b)}
+           = modBranchCaseFC clp br pf $ \b f -> b{conjStr = Set.insert f (conjStr b)}
 
 addFormula2 clp br pf@(PrFormula _ _ (Dis _))
-           = modBranchCaseFC clp br pf $ \b f -> b{disjStr = f:(disjStr b)}
+           = modBranchCaseFC clp br pf $ \b f -> b{disjStr = Set.insert f (disjStr b)}
 
 addFormula2 clp br pf@(PrFormula _ _ (Box _ _))
            = modBranchCaseFC clp br pf
               $ \b (PrFormula pr bprs (Box r f)) -> b{boxStr = Map.insertWith (++) (pr,r) [(bprs,f)] (boxStr b)}
 
 addFormula2 clp br pf@(PrFormula _ _ (Dia _ _))
-           = modBranchCaseFC clp br pf $ \b f -> b{diaStr  = f:(diaStr b) }
+           = modBranchCaseFC clp br pf $ \b f -> b{diaStr  = Set.insert f (diaStr b)}
 
 addFormula2 clp br pf@(PrFormula _ _ (At _ _))
-           = modBranchCaseFC clp br pf $ \b f -> b{atStr   = f:(atStr b)  }
+           = modBranchCaseFC clp br pf $ \b f -> b{atStr   = Set.insert f (atStr b)}
 
 addFormula2 clp br pf@(PrFormula _ _ (Neg _))
-           = modBranchCaseFC clp br pf $ \b f -> b{negStr  = f:(negStr b) }
+           = modBranchCaseFC clp br pf $ \b f -> b{negStr  = Set.insert f (negStr b)}
 
 addFormula2 _ br f@(PrFormula _ _ (NegLit (N _)))
            = case (addAndUpdateMap br f) of
-               BranchOK bok             -> BranchOK bok{negNomStr = f:(negNomStr bok)}
+               BranchOK bok             -> BranchOK bok{negNomStr = Set.insert f (negNomStr bok)}
                bc@(BranchClash _ _ _ _) -> bc
 
 addFormula2 _ br f@(PrFormula _ _ (PosLit _))
@@ -418,14 +418,14 @@ incLastPr br = br{lastPr = ((lastPr br)+1)}
 --
 
 remFormula :: Branch  -> PrFormula -> Branch
-remFormula br f@(PrFormula _ _ (Con _))        = br{conjStr=(delete f (conjStr br))}
-remFormula br f@(PrFormula _ _ (Dia _ _))      = br{diaStr=(delete f (diaStr br))}
-remFormula br f@(PrFormula _ _ (Dis _))        = br{disjStr=(delete f (disjStr br))}
-remFormula br f@(PrFormula _ _ (Neg _))        = br{negStr=(delete f (negStr br))}
+remFormula br f@(PrFormula _ _ (Con _))        = br{conjStr=(Set.delete f (conjStr br))}
+remFormula br f@(PrFormula _ _ (Dia _ _))      = br{diaStr=(Set.delete f (diaStr br))}
+remFormula br f@(PrFormula _ _ (Dis _))        = br{disjStr=(Set.delete f (disjStr br))}
+remFormula br f@(PrFormula _ _ (Neg _))        = br{negStr=(Set.delete f (negStr br))}
 remFormula _    (PrFormula _ _ (Box _ _))      = error "that formula should never be deleted"
-remFormula br f@(PrFormula _ _ (At _ _))       = br{atStr=(delete f (atStr br))}
+remFormula br f@(PrFormula _ _ (At _ _))       = br{atStr=(Set.delete f (atStr br))}
 remFormula _    (PrFormula _ _ (PosLit _))     = error "that formula should never be deleted"
-remFormula br f@(PrFormula _ _ (NegLit (N _))) = br{negNomStr=(delete f (negNomStr br))}
+remFormula br f@(PrFormula _ _ (NegLit (N _))) = br{negNomStr=(Set.delete f (negNomStr br))}
 remFormula _    (PrFormula _ _ (NegLit _))     = error "that formula should never be deleted"
 
 
