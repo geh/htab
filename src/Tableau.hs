@@ -17,7 +17,7 @@ import ModelGen ( HerbrandModel, buildHerbrandModel )
 
 --
 
-type DependencySet = BranchingPrefixes -- to handle backjumping : when a clash occurs, tells because of which branch(es) it was.
+type DependencySet = BranchingPrefixes -- to handle backjumping
 
 data OpenFlag = OPEN HerbrandModel | CLOSED DependencySet
 

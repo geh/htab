@@ -131,7 +131,6 @@ applicableNegNomRules :: Branch -> [Rule]
 applicableNegNomRules br = [negNomRule f br | f <- Set.toAscList $ negNomStr br]
 
 unCheckedBoxPairs :: Branch -> [(AccFormula,(BranchingPrefixes,Formula))]
--- TODO consider privilegiating formulas with older branchings
 unCheckedBoxPairs br
   = [(AccFormula bps2 r2 p2 p3, (bps1,f))
                  | bk@(p1,r1) <- Map.keys (boxStr br),

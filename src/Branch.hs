@@ -73,7 +73,7 @@ type Box_rule_chart   = Map.Map (Prefix,Rel,Prefix) (Set.Set Formula)
 
 type NomToEarliestPref = Map.Map Nominal Prefix
 type PrefToFormulas    = Map.Map Prefix [(BranchingPrefixes,Formula)]
-type PrefToBrPrefs     = Map.Map Prefix BranchingPrefixes -- a urfather holds all the dependencies of its class
+type PrefToBrPrefs     = Map.Map Prefix BranchingPrefixes
 
 type Matrix = UArray.UArray (Int,Int) Bool
 
@@ -245,8 +245,9 @@ addFormula clp br f@(PrFormula pr bprs f2)
 
 
 nubAndMergeDeps :: [PrFormula] -> [PrFormula]
--- Rationale : because of the equivalence classes, a same formula can be added to a branch as several prefixed formulas with different
--- branching dependencies. This functions takes a list of prefixes formulas, looks which inner formulas are the same and merge their
+-- Rationale : because of the equivalence classes, a same formula can be added to a branch
+-- as several prefixed formulas with different branching dependencies. This functions takes
+-- a list of prefixes formulas, looks which inner formulas are the same and merge their
 -- branching dependencies.
 nubAndMergeDeps prfs =  namd prfs (Map.empty::Map.Map (Prefix,Formula) BranchingPrefixes)
 
