@@ -89,10 +89,10 @@ runWithParams clp =
       f ->
          do let fLang = formulaLanguageInfo f
             latexInit clp
-            let f2 = renameNominals $ if (fullClash clp) then f else nnf f
+            let (f2,newToOldNomsMap) = renameNominals $ if (fullClash clp) then f else nnf f
             myPutStrLn ("\nInput:\n{ " ++ (show f2) ++" }\nEnd of input\n\n");
             let branchInfo = addFormula clp
-                                        (emptyBranch fLang)
+                                        (emptyBranch fLang newToOldNomsMap)
                                         (firstPrefixedFormula f2)
             result <- if (not ((maxtimeout clp) == 0))
                        then timeout (maxtimeout clp)

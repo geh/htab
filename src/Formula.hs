@@ -12,6 +12,7 @@ import LatexOutputHelper
 import qualified Data.Set as Set
 import Data.List(elemIndex)
 import qualified Data.IntSet as IntSet
+import qualified Data.Map as Map
 
 type Prop = Int
 type Rel  = Int
@@ -305,8 +306,21 @@ extractNominals _ = Set.empty
 
 --
 
-renameNominals :: Formula -> Formula
-renameNominals f = fst $ renameNominals_ f []
+type NewToOldNomsMap = Map.Map Nominal Nominal
+
+
+renameNominals :: Formula -> (Formula, NewToOldNomsMap)
+renameNominals f = (newFormula, newToOldNomsMap)
+                    where rawRenamed      = renameNominals_ f []
+                          newFormula      = fst rawRenamed
+                          newToOldNomsMap = convertNomListInMap $ snd rawRenamed
+
+
+convertNomListInMap :: [Nominal] -> NewToOldNomsMap
+-- the initial name of the nominals are the one of the nominals in the list
+-- the new name of the nominals are their place in the list
+-- ( the list has unique elements )
+convertNomListInMap l = foldr (\(new_nom, old_nom) map_ -> Map.insert  new_nom old_nom map_) Map.empty (zip [0..] l)
 
 -- scans the whole formula, building a list of Nominals in the order of which they
 -- have been found, and replace each nominal by its place in the list

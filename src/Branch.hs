@@ -11,8 +11,8 @@ Branch(..), BranchMonad, incLastPr, BranchInfo(..),
 addFormulas, addFormula, addAccFormula, remFormula,
 addBoxRuleCheck, BranchData(..),branch_depth,
 emptyBranch,initialBranchStateFor,getCLParams,
-addZeroInPath,incPathHead,nominals,Box_rule_chart
-
+addZeroInPath,incPathHead,nominals,prefixes,Box_rule_chart,
+getUrfather
 ) where
 
 -- Formulas are put in different lists depending on their kind
@@ -92,7 +92,8 @@ data Branch = Branch { seenStr :: Seen_structure,
                    prefToForms :: PrefToFormulas,
                    prToBrPrefs :: PrefToBrPrefs,
                  nomPrefMatrix :: Matrix,
-                 inputLanguage :: Int}
+                 inputLanguage :: Int,
+                  newToOldNoms :: NewToOldNomsMap }
 
 --
 
@@ -100,8 +101,8 @@ branch_depth :: BranchData -> Int
 branch_depth b = length $ branch_path b
 
 --
-emptyBranch :: LanguageInfo -> Branch
-emptyBranch l =
+emptyBranch :: LanguageInfo -> NewToOldNomsMap -> Branch
+emptyBranch l ntom =
                 Branch
                 { seenStr= Map.empty::Seen_structure,
                   conjStr= Set.empty::Conj_structure,
@@ -118,7 +119,8 @@ emptyBranch l =
                   prefToForms= Map.empty::PrefToFormulas,
                   prToBrPrefs= Map.empty::PrefToBrPrefs,
                   nomPrefMatrix = newUArray ((1,1),(0,0)),
-                  inputLanguage = l
+                  inputLanguage = l,
+                  newToOldNoms = ntom
                 }
 
 instance Show Branch where
@@ -237,11 +239,10 @@ addFormula clp br f | isModal br =  addFormula2 clp br f
 -- if we work with the hybrid language
 addFormula clp br f@(PrFormula pr bprs f2)
  = addFormulas2 clp br (f:newFormula)
-    where newFormula = case (getUrfatherAndDeps br pr) of
-                        Just (urfather,bprs2) -> if urfather == pr
-                                                  then []
-                                                  else [PrFormula urfather (bps_union bprs bprs2) f2]
-                        Nothing -> []
+    where   (urfather,bprs2) = getUrfatherAndDeps br pr
+            newFormula = if urfather == pr
+                          then []
+                          else [PrFormula urfather (bps_union bprs bprs2) f2]
 
 
 nubAndMergeDeps :: [PrFormula] -> [PrFormula]
@@ -281,21 +282,25 @@ urfathersOfNominals ntp s (hd:tl) = case (Map.lookup hd ntp) of
                                      Nothing -> urfathersOfNominals ntp s tl
 urfathersOfNominals _   s [] = s
 
-getUrfatherAndDeps :: Branch -> Prefix -> Maybe (Prefix,BranchingPrefixes)
+getUrfather :: Branch -> Prefix -> Prefix
+getUrfather b p = fst $ getUrfatherAndDeps b p
+
+getUrfatherAndDeps :: Branch -> Prefix -> (Prefix,BranchingPrefixes)
 -- check if matrix size not enough for this urfather (eg when the prefix is created from the <> rule) -> return Nothing
 getUrfatherAndDeps br pr =
   case nominal_idx1 of
    Just nidx -> case (indexOfEarliest $ getColumn mat nidx) of
-                  Just urfather -> Just (urfather, deps)
+                  Just urfather -> (urfather, deps)
                                     where deps = findDeps br urfather
-                  Nothing -> Nothing
-   Nothing   -> Nothing
+                  Nothing -> defaultAnswer
+   Nothing   -> defaultAnswer
   where mat = nomPrefMatrix br
         maxPrefixInMatrix = fst $ snd $ UArray.bounds mat
         nominals_row = getRow mat pr
         nominal_idx1 = if maxPrefixInMatrix < pr
                         then Nothing
                         else indexOfEarliest nominals_row
+        defaultAnswer = (pr,bps_empty)
 
 findDeps :: Branch -> Prefix -> BranchingPrefixes
 findDeps br pr = Map.findWithDefault bps_empty pr (prToBrPrefs br)
@@ -476,6 +481,9 @@ matrixIsEmpty m = (fst $ fst $ b) > (fst $ snd $ b)
 
 nominals :: Branch -> [Nominal]
 nominals br = range (0,(inputLanguage br) - 1)
+
+prefixes :: Branch -> [Prefix]
+prefixes br = range (0,lastPr br)
 
 
 {-
