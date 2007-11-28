@@ -30,6 +30,9 @@ import System.CPUTime(getCPUTime)
 import Data.Version        ( showVersion )
 import Paths_HTab ( version )
 
+import Prelude hiding ( catch )
+import Control.Exception   ( catch )
+
 data SatFlagAndStats = SAT HerbrandModel Statistics | UNSAT Statistics | TIMEOUT
 
 main :: IO ()
@@ -60,15 +63,15 @@ runCmdLineVersion =
        case p_clp of
          Left  err -> do putStrLn header
                          putStrLn err
-                         hylores <- getProgName
-                         putStrLn $ "Try `" ++ hylores ++ " --help' " ++
+                         progName <- getProgName
+                         putStrLn $ "Try `" ++ progName ++ " --help' " ++
                                      "for more information"
                          return Nothing
          --
          Right clp -> if showHelp clp
                         then do putStrLn header
-                                hylores <- getProgName
-                                putStrLn $ usage (hylores ++ " [OPTIONS]")
+                                progName <- getProgName
+                                putStrLn $ usage (progName ++ " [OPTIONS]")
                                 putStrLn gpl_tag
                                 return Nothing
                         --
