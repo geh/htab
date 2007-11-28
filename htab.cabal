@@ -13,5 +13,6 @@ Main-is:             Htab.hs
 other-modules:       HyLoLexer
 		     HyLoParse
 Hs-Source-Dirs:      src
-ghc-options:         -O2 -Wall -fglasgow-exts
+Extra-source-files:  INSTALL man/htab.1.in man/htab.1 man/htab.1.html
+ghc-options:         -Wall -fglasgow-exts
 ghc-prof-options:    -auto-all
