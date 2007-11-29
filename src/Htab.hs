@@ -5,27 +5,27 @@ where
 import HyLoLexer(hyloLexer)
 import HyLoParse(parse)
 
-import CommandLine(filename, getCmdLineParams, usage,
-                   maxtimeout, showHelp, CmdLineParams, logState, genModel,
-                   configureMetrics,fullClash,quietMode)
-import Branch(BranchInfo,initialBranchStateFor,BranchMonad, BranchData(..),
-              addFormula,emptyBranch)
-import Timeout(timeout)
-import Statistics(Statistics, initialStatisticsStateFor, printOutAllMetrics')
-import Base(vPutStrLn)
-import Tableau(liftStats, tableau, OpenFlag(..))
-import Formula(firstPrefixedFormula,nnf,formulaLanguageInfo,renameNominals)
+import CommandLine( filename, getCmdLineParams, usage,
+                    maxtimeout, showHelp, CmdLineParams, logState, genModel,
+                    configureMetrics,fullClash,quietMode )
+import Branch( BranchInfo,initialBranchStateFor,BranchMonad, BranchData(..),
+              addFormula,emptyBranch )
+import Timeout( timeout )
+import Statistics( Statistics, initialStatisticsStateFor, printOutAllMetrics' )
+import Base( vPutStrLn )
+import Tableau( liftStats, tableau, OpenFlag(..) )
+import Formula( firstPrefixedFormula,nnf,formulaLanguageInfo,renameNominals )
 import LatexOutput
 import ModelGen ( HerbrandModel, inducedModel )
 
 import Control.Applicative ( (<$>) )
 import Control.Monad       ( unless )
-import Control.Monad.State(runStateT)
+import Control.Monad.State( runStateT )
 
 import System.IO           ( hPrint, stderr, hSetBuffering, stdin, BufferMode(LineBuffering)) 
 import System.Exit         ( exitWith, ExitCode(ExitFailure) )
-import System.Environment(getProgName)
-import System.CPUTime(getCPUTime)
+import System.Environment( getProgName )
+import System.CPUTime( getCPUTime )
 
 import Data.Version        ( showVersion )
 import Paths_HTab ( version )
@@ -79,43 +79,51 @@ runCmdLineVersion =
 
 runWithParams :: CmdLineParams -> IO (SatFlagAndStats)
 runWithParams clp =
- do  start <- getCPUTime;
+ do  start <- getCPUTime
+     --
      let myPutStrLn = if quietMode clp then const (return ()) else putStrLn
      --
      let fromStdIn = do myPutStrLn $ "Reading from stdin (run again with" ++
                                      "`--help' for usage options)"
                         hSetBuffering stdin LineBuffering
                         getContents
-     fstr  <- maybe fromStdIn readFile (filename clp)
 
-     case (parse . hyloLexer $ fstr) of
-      f ->
-         do let fLang = formulaLanguageInfo f
-            latexInit clp
-            let (f2,newToOldNomsMap) = renameNominals $ if (fullClash clp) then f else nnf f
-            myPutStrLn ("\nInput:\n{ " ++ (show f2) ++" }\nEnd of input\n\n");
-            let branchInfo = addFormula clp
-                                        (emptyBranch fLang newToOldNomsMap)
-                                        (firstPrefixedFormula f2)
-            result <- if (not ((maxtimeout clp) == 0))
-                       then timeout (maxtimeout clp)
-                                    (tableauInit branchInfo clp)
-                                    (return TIMEOUT)
-                       else (tableauInit branchInfo clp)
-            case result of
-             SAT m stats -> do myPutStrLn "The formula is satisfiable."
-                               saveGenModel clp m
-                               unless (quietMode clp) $
-                                printOutAllMetrics' stats
-             UNSAT stats -> do myPutStrLn "The formula is unsatisfiable."
-                               unless (quietMode clp) $
-                                printOutAllMetrics' stats
-             TIMEOUT     -> myPutStrLn "TIMEOUT"
-            end <- getCPUTime
-            let elapsedTime = fromInteger (end - start) / 1000000000000.0
-            myPutStrLn $ "Elapsed time: " ++ show (elapsedTime :: Double)
-            latexEnd clp
-            return result
+     f <- P.parse . L.lexify <$> maybe fromStdIn readFile (filename clp)
+     --
+     let fLang = formulaLanguageInfo f
+     latexInit clp
+     --
+     let (f2,newToOldNomsMap) = renameNominals $ if (fullClash clp) then f else nnf f
+     --
+     f `seq` myPutStrLn ("\nInput:\n{ " ++ (show f2) ++" }\nEnd of input\n\n");
+     --
+     let branchInfo = addFormula clp
+                                 (emptyBranch fLang newToOldNomsMap)
+                                 (firstPrefixedFormula f2)
+     --
+     result <- if (not ((maxtimeout clp) == 0))
+                then timeout (maxtimeout clp)
+                             (tableauInit branchInfo clp)
+                             (return TIMEOUT)
+                else (tableauInit branchInfo clp)
+     --
+     case result of
+        SAT m stats -> do myPutStrLn "The formula is satisfiable."
+                          saveGenModel clp m
+                          unless (quietMode clp) $
+                              printOutAllMetrics' stats
+        UNSAT stats -> do myPutStrLn "The formula is unsatisfiable."
+                          unless (quietMode clp) $
+                              printOutAllMetrics' stats
+        TIMEOUT     ->    myPutStrLn "TIMEOUT"
+     --
+     end <- getCPUTime
+     let elapsedTime = fromInteger (end - start) / 1000000000000.0
+     myPutStrLn $ "Elapsed time: " ++ show (elapsedTime :: Double)
+     --
+     latexEnd clp
+     --
+     return result
 
 saveGenModel :: CmdLineParams -> HerbrandModel -> IO ()
 saveGenModel clp m = maybe (return ()) doWrite (genModel clp)
