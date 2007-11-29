@@ -9,9 +9,6 @@
 {-# OPTIONS_GHC -w #-}
 {-
 Copyright (C) HyLoRes 2002-2005
-Carlos Areces     - areces@loria.fr      - http://www.loria.fr/~areces
-Daniel Gorin      - dgorin@dc.uba.ar
-Juan Heguiabehere - juanh@inf.unibz.it - http://www.inf.unibz.it/~juanh/
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License
@@ -29,18 +26,19 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307,
 USA.
 -}
 
-module HyLoParse
+module HyLoParse (parse)
 
 where
 
-import HyLoLexer(HyLoToken(..), FilePos, line, col)
+import HyLo.InputFile.Lexer ( Token(..), FilePos, line, col )
 
 import Branch
 import Formula
+
 }
 
 %name parse
-%tokentype { (HyLoToken, FilePos) }
+%tokentype { (Token, FilePos) }
 
 %token
              begin           { (TokenBegin    , _) }
@@ -72,76 +70,31 @@ import Formula
 
 %%
 
+Input :: {Formula}
 Input :
-  begin Formulas end               { $2 }
+  begin Formula end          { $2 }
 
+Formula :: { Formula }
 Formula :
-  dia Formula
-{let f = $2 in (diamond (read $1) f)}
+  true                        {taut}
+| false                       {neg taut}
+| nom                         {nom $1}
+| prop                        {prop $1}
+| neg  Formula                {neg $2}
+| dia  Formula                {diamond $1 $2}
+| box  Formula                {box $1 $2}
+| Formula dimp Formula        {dimp $1 $3}
+| Formula imp Formula         {imp $1 $3}
+| Formula and Formula         {conj $1 $3}
+| Formula or Formula          {disj $1 $3}
+| nom at Formula              {at $1 $3}
+| at2 nom Formula             {at $2 $3}
+| '(' Formula ')'             {$2}
+|  Formula ';' Formula        {conj $1 $3}
 
-| box Formula
-{let f = $2 in (box (read $1) f)}
-
-| Formula dimp Formula
-{let {
-    f1 = $1;
-    f2 = $3;
-} in (conj (disj (neg f1) f2) (disj (neg f2) f1))}
-
-| Formula imp Formula
-{ let {
-    f1 = $1;
-    f2 = $3;
-} in (disj (neg f1) f2)}
-
-| neg Formula
-{ let f = $2 in (neg f) }
-
-| Formula and Formula
-{ let {
-    f1 = $1;
-    f2 = $3;
-} in (conj f1 f2)}
-
-| Formula or Formula
-{ let {
-    f1 = $1;
-    f2 = $3;
-} in (disj f1 f2)}
-
-| nom at Formula
-{ let f = $3 in (at (read $1) f) }
-
-| at2 nom Formula
-{ let f = $3 in (at (read $2) f) }
-
-| nom
-{ (nom (read $1)) }
-
-| prop
-{ (prop (read $1)) }
-
-| true
-{ (taut) }
-
-| false
-{ (neg taut) }
-
-| '(' Formula ')'
-{ $2 }
-
-|  Formula ';' Formula
-{let {
-    fs = $1;
-    f = $3;
-} in (conj fs f) }
-
-Formulas :
- Formula
-{ $1 }
 
 {
-happyError :: [(HyLoToken, FilePos)] -> a
+happyError :: [(Token, FilePos)] -> a
 happyError []          = error "Unexpected end of file!"
 happyError ((_, fp):_) = error ("Parse error near line " ++
                                    (show $ line fp) ++

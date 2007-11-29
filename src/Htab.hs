@@ -2,8 +2,8 @@ module Main (main)
 
 where
 
-import HyLoLexer(hyloLexer)
-import HyLoParse(parse)
+import qualified HyLo.InputFile.Lexer as L
+import qualified HyLoParse as P
 
 import CommandLine( filename, getCmdLineParams, usage,
                     maxtimeout, showHelp, CmdLineParams, logState, genModel,

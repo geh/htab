@@ -10,8 +10,7 @@ Build-Depends:       base, haskell98, mtl, filepath, hylolib
 
 Executable:          htab
 Main-is:             Htab.hs
-other-modules:       HyLoLexer
-		     HyLoParse
+other-modules:       HyLoParse
 Hs-Source-Dirs:      src
 Extra-source-files:  INSTALL man/htab.1.in man/htab.1 man/htab.1.html
 ghc-options:         -O2 -Wall -fglasgow-exts

@@ -6,7 +6,25 @@
 --                                                --
 ----------------------------------------------------
 
-module Formula where
+module Formula
+
+(PropSymbol(..), NomSymbol(..), StateVar,
+RelSymbol(..), Rel, Prefix,
+Formula(..), Atom(..),
+BranchingPrefix, BranchingPrefixes,
+bps_union, bps_unions, bps_insert, bps_member,
+bps_empty, deps_min, PrFormula(..), AccFormula(..),
+LanguageInfo(..),
+nnf, neg, isTrue, isFalse,
+NewToOldNomsMap, renameNominals,
+box, diamond, at, conj, disj, taut,
+dimp, imp,
+prop, nom, formulaLanguageInfo, prefixList ,
+firstPrefixedFormula
+)
+
+
+ where
 
 import LatexOutputHelper
 import qualified Data.Set as Set
@@ -14,35 +32,35 @@ import Data.List(elemIndex)
 import qualified Data.IntSet as IntSet
 import qualified Data.Map as Map
 
-type Prop = Int
-type Rel  = Int
-type Level = Int
-type Nominal = Int
+import HyLo.Signature.Simple( PropSymbol(..),
+                              NomSymbol(..),
+                              RelSymbol(..),
+                              StateVar)
 type Prefix = Int
-
+type Rel = Int
 data Atom = Taut
-          | N Nominal
-          | P Prop
+          | N NomSymbol
+          | P PropSymbol
   deriving(Eq, Ord)
+
 instance Show Atom where
  show (Taut) = "T"
- show (N n) = "N"++(show n)
- show (P p) = "P"++(show p)
+ show (N n) = show n
+ show (P p) = show p
 
 instance ShowLatex Atom where
  showLatex (Taut) = "T"
- showLatex (N n) = "N_{" ++(show n) ++ "}"
- showLatex (P p) = "P_{" ++(show p) ++ "}"
-
+ showLatex (N n) = show n
+ showLatex (P p) = show p
 
 data Formula
      = PosLit Atom
      | NegLit Atom
      | Con   [Formula]
      | Dis   [Formula]
-     | At     Nominal Formula
-     | Box    Rel     Formula
-     | Dia    Rel     Formula
+     | At     NomSymbol Formula
+     | Box    RelSymbol     Formula
+     | Dia    RelSymbol     Formula
      | Neg Formula
   deriving (Eq, Ord)
 
@@ -52,8 +70,8 @@ instance Show Formula where
  show (Con fs)   = "^" ++ (show fs)
  show (Dis fs)   = "v" ++ (show fs)
  show (At n f)   = "@" ++ (show n)  ++ (show f)
- show (Box r f)  = "[R" ++ (show r)  ++ "]" ++ (show f)
- show (Dia r f)  = "<R" ++ (show r)  ++ ">" ++ (show f)
+ show (Box r f)  = "[" ++ (show r)  ++ "]" ++ (show f)
+ show (Dia r f)  = "<" ++ (show r)  ++ ">" ++ (show f)
  show (Neg f)    = "!" ++ show f
 
 
@@ -121,26 +139,23 @@ firstPrefixedFormula = PrFormula 0 bps_empty
 
 {- Atoms -}
 taut :: Formula
-prop :: Prop -> Formula
-nom  :: Nominal -> Formula
+prop :: PropSymbol -> Formula
+nom  :: NomSymbol -> Formula
 
 taut   = PosLit Taut
 prop p = PosLit (P p)
 nom  n = PosLit (N n)
 
 {- Modalities -}
-box, diamond :: Rel -> Formula -> Formula
-
+box, diamond :: RelSymbol -> Formula -> Formula
 box        = Box
 diamond    = Dia
 
-
 {- Hybrid operators -}
-at             :: Nominal -> Formula -> Formula
+at             :: NomSymbol -> Formula -> Formula
 
 at  _  f@(At _ _)    = f
 at  n  f             = At n f
-
 
 {- Conjunction and disjunction -}
 
@@ -173,6 +188,11 @@ disj    f          f'
     | isFalse f'           = f
     | otherwise            = skipSingleton Dis (sortAndNub2 f f')
 
+dimp :: Formula -> Formula -> Formula
+dimp f1 f2 = conj (disj (neg f1) f2) (disj (neg f2) f1)
+
+imp :: Formula -> Formula -> Formula
+imp f1 f2 = disj (neg f1) f2
 
 skipSingleton :: ([Formula] -> Formula) -> [Formula] -> Formula
 skipSingleton _ [x] = x
@@ -212,16 +232,13 @@ neg f            = Neg f
 
 --
 
-{- Prefixes for externalised calculus -}
-
-
 {- Accessibility Formulas -}
 -- of the kind i<>j with i and j prefixes
-data AccFormula = AccFormula BranchingPrefixes Rel Prefix Prefix
+data AccFormula = AccFormula BranchingPrefixes RelSymbol Prefix Prefix
      deriving (Eq, Ord)
 
 instance Show AccFormula where
- show (AccFormula bprs r p1 p2) = (showLatex bprs) ++ ":" ++ (show p1)++"<R"++(show r)++">"++(show p2)
+ show (AccFormula bprs r p1 p2) = (showLatex bprs) ++ ":" ++ (show p1)++"<"++(show r)++">"++(show p2)
 
 
 instance ShowLatex AccFormula where
@@ -281,19 +298,15 @@ neg2 (PosLit a)   = (NegLit a)       --
 neg2 (NegLit a)   = (PosLit a)       -- cases where it doesn't go deeper
 neg2 (Neg f)      = f                --
 
-
 type LanguageInfo = Int
 
--- currently : how many nominals has the formula
--- api may evolve ... (does it have past modalities ?...)
 formulaLanguageInfo :: Formula -> LanguageInfo
 formulaLanguageInfo = countNominals
-
 
 countNominals :: Formula -> Int
 countNominals f = Set.size $ extractNominals f 
 
-extractNominals :: Formula -> Set.Set Nominal
+extractNominals :: Formula -> Set.Set NomSymbol
 extractNominals (PosLit (N n)) = Set.singleton n
 extractNominals (NegLit (N n)) = Set.singleton n
 extractNominals (Con fs) = Set.unions $ map extractNominals fs
@@ -306,7 +319,7 @@ extractNominals _ = Set.empty
 
 --
 
-type NewToOldNomsMap = Map.Map Nominal Nominal
+type NewToOldNomsMap = Map.Map NomSymbol NomSymbol
 
 
 renameNominals :: Formula -> (Formula, NewToOldNomsMap)
@@ -316,16 +329,16 @@ renameNominals f = (newFormula, newToOldNomsMap)
                           newToOldNomsMap = convertNomListInMap $ snd rawRenamed
 
 
-convertNomListInMap :: [Nominal] -> NewToOldNomsMap
+convertNomListInMap :: [NomSymbol] -> NewToOldNomsMap
 -- the initial name of the nominals are the one of the nominals in the list
 -- the new name of the nominals are their place in the list
 -- ( the list has unique elements )
-convertNomListInMap l = foldr (\(new_nom, old_nom) map_ -> Map.insert  new_nom old_nom map_) Map.empty (zip [0..] l)
+convertNomListInMap l = foldr (\(new_nom, old_nom) map_ -> Map.insert  new_nom old_nom map_) Map.empty (zip (map NomSymbol [0..]) l)
 
 -- scans the whole formula, building a list of Nominals in the order of which they
 -- have been found, and replace each nominal by its place in the list
 
-renameNominals_ :: Formula -> [Nominal] -> (Formula,[Nominal])
+renameNominals_ :: Formula -> [NomSymbol] -> (Formula,[NomSymbol])
 renameNominals_ (PosLit (N n)) l = (PosLit (N newN),newL)
       where (newN,newL) = indexInNominalList n l
 renameNominals_ (NegLit (N n)) l = (NegLit (N newN),newL)
@@ -345,12 +358,12 @@ renameNominals_ (Dis fs) l = (Dis newFs,newL)
       where (newFs,newL) =  (renameNominals_formulas fs l)
 renameNominals_ f l = (f,l)
 
-indexInNominalList :: Nominal -> [Nominal] -> (Nominal,[Nominal])
+indexInNominalList :: NomSymbol -> [NomSymbol] -> (NomSymbol,[NomSymbol])
 indexInNominalList n l =  case (elemIndex n l) of
-                           Just i  -> (i,l)
-                           Nothing -> (length l, l++[n])
+                           Just i  -> (NomSymbol i,l)
+                           Nothing -> (NomSymbol (length l), l++[n])
 
-renameNominals_formulas :: [Formula] -> [Nominal] -> ([Formula],[Nominal])
+renameNominals_formulas :: [Formula] -> [NomSymbol] -> ([Formula],[NomSymbol])
 renameNominals_formulas (hd:tl) l = ((newHd:newTl),newDeepL)
       where (newHd,newL) = (renameNominals_ hd l)
             (newTl,newDeepL) =  renameNominals_formulas tl newL

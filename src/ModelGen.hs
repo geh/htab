@@ -10,12 +10,11 @@ import qualified HyLo.Model.Herbrand as H
 
 import qualified HyLo.Formula.NNF as NNF
 
-import Formula(Nominal, Prefix,Rel, Prop, Formula (..), Atom (..))
+import Formula( Prefix, Formula (..), Atom (..), Rel,
+                NomSymbol(..), RelSymbol(..), PropSymbol(..), StateVar)
 import Branch( Branch(..) , nominals, prefixes,getUrfather)
 
-import qualified HyLo.Signature.Simple as S -- to have types with distinct "show" representations
-
-type HerbrandModel = H.HerbrandModel S.NomSymbol S.PropSymbol S.RelSymbol
+type HerbrandModel = H.HerbrandModel NomSymbol PropSymbol RelSymbol
 
 buildHerbrandModel :: Branch -> HerbrandModel
 buildHerbrandModel branch =
@@ -23,43 +22,41 @@ buildHerbrandModel branch =
  where
        newToOldNomsMap = newToOldNoms branch
        bias = if Map.null newToOldNomsMap then 0
-                                          else 1 + (maximum (Map.elems newToOldNomsMap))
+                                          else 1 + (maximum (map unpackNomSymbol $ Map.elems newToOldNomsMap))
        prefixAndPropCouples = prefixAndProps branch
        es = Set.union
              (Set.fromList
                [NNF.At
-                (S.NomSymbol ((urfatherOrPrefixZero branch n_) + bias))
-                (NNF.Nom (S.NomSymbol n)) | n_ <- (nominals branch),
-                                            let n = (Map.!) newToOldNomsMap n_]
+                (NomSymbol ((urfatherOrPrefixZero branch n_) + bias))
+                (NNF.Nom n) | n_ <- (nominals branch),
+                            let n = (Map.!) newToOldNomsMap n_]
              )
              (Set.fromList
                [NNF.At
-                (S.NomSymbol (p + bias))
-                (NNF.Nom (S.NomSymbol (p + bias))) | p <- (prefixes branch)]
+                (NomSymbol (p + bias))
+                (NNF.Nom (NomSymbol (p + bias))) | p <- (prefixes branch)]
              )
        ps = Set.fromList
              [NNF.At
-               (S.NomSymbol (pr+bias))
-               (NNF.Prop (S.PropSymbol p)) | (pr,p) <- prefixAndPropCouples]
-       rs = Set.fromList $ map (accToNNF branch bias)
-              $ concatMap (\((p1,r),bp_ps) -> map (\(_,p2) -> (p1,r,p2))
+               (NomSymbol (pre+bias))
+               (NNF.Prop pro) | (pre,pro) <- prefixAndPropCouples]
+       rs = Set.fromList $ map accToNNF
+              $ concatMap (\((p1,r),bp_ps) -> map (\(_,p2) -> (p1 + bias, r, (getUrfather branch p2)  + bias))
                                                   bp_ps)
                           (Map.assocs $ accStr branch)
 
-accToNNF :: Branch -> Int -> (Prefix,Rel,Prefix)
-             -> NNF.Formula S.NomSymbol S.PropSymbol S.RelSymbol S.StateVar (NNF.At NNF.Nom (NNF.Diam NNF.Nom))
-accToNNF branch bias (p1,r,p2) =
-  NNF.At (S.NomSymbol (p1+bias)) $ NNF.Diam (S.RelSymbol r) $ NNF.Nom (S.NomSymbol (p2_urfather+bias))
-   where p2_urfather = getUrfather branch p2
+accToNNF :: (Prefix,Rel,Prefix)
+             -> NNF.Formula NomSymbol PropSymbol RelSymbol StateVar (NNF.At NNF.Nom (NNF.Diam NNF.Nom))
+accToNNF (p1,r,p2) =
+  NNF.At (NomSymbol p1) $ NNF.Diam (RelSymbol r) $ NNF.Nom (NomSymbol p2)
 
-
-urfatherOrPrefixZero :: Branch -> Nominal -> Prefix
+urfatherOrPrefixZero :: Branch -> NomSymbol -> Prefix
 urfatherOrPrefixZero br n =
   case (Map.lookup n (nomToPref br)) of
      Just p -> p
      Nothing -> 0
 
-prefixAndProps :: Branch -> [(Prefix,Prop)]
+prefixAndProps :: Branch -> [(Prefix,PropSymbol)]
 prefixAndProps br =
   [(pr,p_) | (pr , PosLit (P p_)) <- prPosLitProp]
  where seen = seenStr br
@@ -70,4 +67,5 @@ isPosLitProp (_, PosLit (P _)) = True
 isPosLitProp _ = False
 
 
-
+unpackNomSymbol :: NomSymbol -> Int
+unpackNomSymbol (NomSymbol n) = n

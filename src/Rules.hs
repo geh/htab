@@ -1,14 +1,20 @@
 module Rules where
 
-import Formula
+import Formula(RelSymbol(..), Atom(..), Formula(..), PrFormula(..), neg,
+               BranchingPrefix, BranchingPrefixes,
+               bps_insert, bps_union, prefixList, AccFormula(..),
+               Rel, Prefix )
 import Branch(Branch(..), incLastPr, BranchInfo(..),
-              addFormulas, addAccFormula, remFormula, addBoxRuleCheck,Box_rule_chart)
+              addFormulas, addAccFormula, remFormula,
+              addBoxRuleCheck, Box_rule_chart)
 import CommandLine(CmdLineParams, semBranch, fullClash)
 import RuleMetadata(RuleId(..))
 import LatexOutput()
 import LatexOutputHelper
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+
+import HyLo.Signature.Simple( RelSymbol(..))
 
 -- a "rule" is basically a list of modifications of the structures
 
@@ -132,7 +138,7 @@ applicableNegNomRules br = [negNomRule f br | f <- Set.toAscList $ negNomStr br]
 
 unCheckedBoxPairs :: Branch -> [(AccFormula,(BranchingPrefixes,Formula))]
 unCheckedBoxPairs br
-  = [(AccFormula bps2 r2 p2 p3, (bps1,f))
+  = [(AccFormula bps2 (RelSymbol r2) p2 p3, (bps1,f))
                  | bk@(p1,r1) <- Map.keys (boxStr br),
                    ak@(p2,r2) <- Map.keys (accStr br),
                    p1 == p2 , r1 == r2,
@@ -196,8 +202,11 @@ getNewPr br = (lastPr br)+1
 
 -- box
 boxRule :: AccFormula -> (BranchingPrefixes,Formula) -> Branch -> Rule
-boxRule (AccFormula bprs1 r1 pr1 pr2) (bprs2,f) _
+boxRule (AccFormula bprs1 (RelSymbol r1) pr1 pr2) (bprs2,f) _
  =  BoxRule (pr1,r1,pr2,f) (PrFormula pr2 (bps_union bprs1 bprs2) f)
+
+boxRule (AccFormula _ (InvRelSymbol _) _ _) _ _
+ = error "inverse modality not supported"
 
 -- disjunction
 disjRule :: PrFormula -> Branch -> BranchingPrefix -> Rule

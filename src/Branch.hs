@@ -30,13 +30,14 @@ getUrfather
 -- for [] : we remember if a couple (accessibility formula, box formula) has
 --          been treated, by storing it in a special list in the branch
 
-
 import Control.Monad.State(StateT, MonadState, get)
 import Data.List(delete)
+
 import qualified Data.Map as Map
 
 import Statistics(Statistics)
 import CommandLine(CmdLineParams, fullClash)
+
 import Formula
 import qualified Data.IntSet as IntSet
 import qualified Data.Set as Set
@@ -70,8 +71,7 @@ type Box_structure    = Map.Map (Prefix,Rel) [(BranchingPrefixes,Formula)]
 type Acc_structure    = Map.Map (Prefix,Rel) [(BranchingPrefixes,Prefix)]
 type Box_rule_chart   = Map.Map (Prefix,Rel,Prefix) (Set.Set Formula)
 
-
-type NomToEarliestPref = Map.Map Nominal Prefix
+type NomToEarliestPref = Map.Map NomSymbol Prefix
 type PrefToFormulas    = Map.Map Prefix [(BranchingPrefixes,Formula)]
 type PrefToBrPrefs     = Map.Map Prefix BranchingPrefixes
 
@@ -92,8 +92,8 @@ data Branch = Branch { seenStr :: Seen_structure,
                    prefToForms :: PrefToFormulas,
                    prToBrPrefs :: PrefToBrPrefs,
                  nomPrefMatrix :: Matrix,
-                 inputLanguage :: Int,
-                  newToOldNoms :: NewToOldNomsMap }
+                 inputLanguage :: LanguageInfo,
+                  newToOldNoms :: NewToOldNomsMap}
 
 --
 
@@ -108,7 +108,7 @@ emptyBranch l ntom =
                   conjStr= Set.empty::Conj_structure,
                   disjStr= Set.empty::Disj_structure,
                   diaStr = Set.empty::Dia_structure,
-                  boxStr=Map.empty::Box_structure,
+                  boxStr = Map.empty::Box_structure,
                   negStr = Set.empty::Neg_structure,
                   atStr= Set.empty::At_structure,
                   accStr=Map.empty::Acc_structure,
@@ -153,16 +153,11 @@ instance ShowLatex Branch where
               "\nAccesibility: "   ++ (putEol $ math $ show $ Map.toList $ accStr br)   ++
               "\nBox rule chart: " ++ (putEol $ math $ show $ Map.toList $ boxRlCh br)  ++
               "\nBiggest prefix: " ++ (putEol $ show $ lastPr br) ++
-              "\nNominal to earliest prefix: "  ++ (putEol $ showLatex $ nomToPref br)   ++
-              "\nPrefix to branching prefixes: " ++ (putEol $ showLatex $ prToBrPrefs br) ++
+              "\nNominal to earliest prefix: "  ++ (putEol $ math $ show $ Map.toList $ nomToPref br)   ++
+              "\nPrefix to branching prefixes: " ++ (putEol $ math $ show $ Map.toList $ prToBrPrefs br) ++
               "\nPrefix to formulas: \\\\"      ++ (putEol $ math $ showLatex $ prefToForms br) ++
-              "\nPrefix-Nominal matrix : " ++ (verbatim $ showLatex $ nomPrefMatrix br)
+              "\nPrefix-Nominal matrix : " ++ (putEol $ verbatim $ showLatex $ nomPrefMatrix br)
 
-instance ShowLatex NomToEarliestPref where
- showLatex ntep = show $ Map.toList ntep
-
-instance ShowLatex PrefToBrPrefs where
- showLatex ntep = show $ Map.toList ntep
 
 instance ShowLatex PrefToFormulas where
  showLatex ptf =
@@ -174,7 +169,6 @@ instance ShowLatex Seen_structure where
    "[" ++ ((genericSeparate showLat) ", " $ Map.toList ss) ++ "]"
     where showLat (pf,(b,bpfs)) = if b then "" ++ "(" ++ (showLatex pf) ++ ")(" ++ showLatex bpfs ++ ")"
                                        else "\\neg" ++ "(" ++ (showLatex pf) ++ ")(" ++ showLatex bpfs ++ ")"
-
 
 instance ShowLatex Matrix where
  showLatex m = foldr insertEol "" $ map (separate " " . (getRow m)) (range (firstRow,lastDisplayedRow))
@@ -205,13 +199,14 @@ addFormulas _ br [] = BranchOK br
 addFormula :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
 -- Case 1 :
 -- p : a (a nominal)
-addFormula clp br f@(PrFormula pr bprs f2@(PosLit (N n)))
+addFormula clp br f@(PrFormula pr bprs f2@(PosLit (N (NomSymbol n))))
   = addFormulas2 clp brUpdated nubbedNewFormulas
      where oldMatrixData    = UArray.assocs $ nomPrefMatrix br
            newMRowLength    = (lastPr br) + 1             -- 1 unit longer because in between, we may have created a new prefix
            newMColLength    = (inputLanguage br) - 1
            biggerOldMatrix  = newUArray ((0,0),(newMRowLength,newMColLength)) UArray.// oldMatrixData  -- make a (possibily) bigger matrix
-           (newMatrix,updatedNominals,newUrfather) = addElement_ biggerOldMatrix (pr,n)
+           (newMatrix,updatedNominals_,newUrfather) = addElement_ biggerOldMatrix (pr,n)
+           updatedNominals = map NomSymbol updatedNominals_
            updatedNomToPref = Map.union (Map.fromList $ zip updatedNominals $ repeat newUrfather) (nomToPref br) -- update urfather(s)
            oldUrfathers     = IntSet.elems $ urfathersOfNominals (nomToPref br) (IntSet.singleton pr) updatedNominals
 
@@ -273,7 +268,7 @@ addToPrefToForms br (PrFormula pre bprs f) =
  where currentMap = prefToForms br
        newMap = Map.insertWith (\x y -> x++y) pre [(bprs,f)] currentMap
 
-urfathersOfNominals :: NomToEarliestPref -> IntSet.IntSet -> [Int] -> IntSet.IntSet
+urfathersOfNominals :: NomToEarliestPref -> IntSet.IntSet -> [NomSymbol] -> IntSet.IntSet
 -- takes the (nom -> earliest prefix) map
 --       and a list of nominals
 -- outputs the set of urfathers of these nominals (so that there are no doubles)
@@ -343,11 +338,9 @@ getColumn' t colNum rowNum remainder = (hd:tl)
                                               tl = getColumn' t colNum (rowNum+1) (remainder-1)
 
 
-
 {-
    "add formula(s)" functions, that update the "seen structure"
    to detect clashes, and store the new formula in the right sub-structure
-   (can't be called from outside this module)
 -}
 
 addFormulas2 :: CmdLineParams -> Branch -> [PrFormula] -> BranchInfo
@@ -369,7 +362,7 @@ addFormula2 clp br pf@(PrFormula _ _ (Dis _))
 
 addFormula2 clp br pf@(PrFormula _ _ (Box _ _))
            = modBranchCaseFC clp br pf
-              $ \b (PrFormula pr bprs (Box r f)) -> b{boxStr = Map.insertWith (++) (pr,r) [(bprs,f)] (boxStr b)}
+              $ \b (PrFormula pr bprs (Box (RelSymbol r) f)) -> b{boxStr = Map.insertWith (++) (pr,r) [(bprs,f)] (boxStr b)}
 
 addFormula2 clp br pf@(PrFormula _ _ (Dia _ _))
            = modBranchCaseFC clp br pf $ \b f -> b{diaStr  = Set.insert f (diaStr b)}
@@ -407,9 +400,10 @@ modBranchCaseFC clp br f modBr =
 
 
 addAccFormula :: Branch -> AccFormula -> Branch
-addAccFormula br (AccFormula bprs r p1 p2) =
+addAccFormula br (AccFormula bprs (RelSymbol r) p1 p2) =
   br{accStr=Map.insertWith (++) (p1,r) [(bprs,p2)] (accStr br)}
 
+addAccFormula _ (AccFormula _ (InvRelSymbol _) _ _ ) = error "inverse modality not handled"
 --
 
 addBoxRuleCheck :: Branch -> (Prefix,Rel,Prefix,Formula) -> Branch
@@ -472,19 +466,17 @@ updateMap ss (pre,f) (bool,bprs)
 
 
 isModal :: Branch -> Bool
--- True if we are in the modal language
 isModal br = (inputLanguage br) == 0
 
 matrixIsEmpty :: Matrix -> Bool
 matrixIsEmpty m = (fst $ fst $ b) > (fst $ snd $ b)
     where b = (UArray.bounds m)
 
-nominals :: Branch -> [Nominal]
-nominals br = range (0,(inputLanguage br) - 1)
+nominals :: Branch -> [NomSymbol]
+nominals br = map NomSymbol $ range (0,(inputLanguage br) - 1)
 
 prefixes :: Branch -> [Prefix]
 prefixes br = range (0,lastPr br)
-
 
 {-
     Monad related stuff
