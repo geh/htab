@@ -14,5 +14,5 @@ other-modules:       HyLoLexer
 		     HyLoParse
 Hs-Source-Dirs:      src
 Extra-source-files:  INSTALL man/htab.1.in man/htab.1 man/htab.1.html
-ghc-options:         -Wall -fglasgow-exts
+ghc-options:         -O2 -Wall -fglasgow-exts
 ghc-prof-options:    -auto-all
