@@ -1,17 +1,21 @@
 Name:                HTab
-Version:             1.2.1
+Version:             1.2.2
 Homepage:            http://hylo.loria.fr/intohylo/htab.php
 Description:         Tableau based theorem prover for hybrid logics
 License:             GPL
 License-file:        COPYING
 Author:              Guillaume Hoffmann, Carlos Areces, Daniel Gorín, Juan Heguiabehere
 Maintainer:          guillaume.hoffmann@loria.fr
-Build-Depends:       base, haskell98, mtl, filepath, hylolib
+Build-Depends:       base >= 2, base < 3,
+                     haskell98 >= 1, haskell98 < 2,
+                     mtl >= 1, mtl < 2,
+                     filepath > 1, filepath <= 2,
+                     hylolib >= 1.0, hylolib < 1.1
 
 Executable:          htab
 Main-is:             Htab.hs
 other-modules:       HyLoParse
 Hs-Source-Dirs:      src
-Extra-source-files:  INSTALL man/htab.1.in man/htab.1 man/htab.1.html
+Extra-source-files:  INSTALL man/htab.1
 ghc-options:         -O2 -Wall -fglasgow-exts
 ghc-prof-options:    -auto-all
