@@ -6,7 +6,7 @@ import Formula(RelSymbol(..), Atom(..), Formula(..), PrFormula(..), neg,
                Rel, Prefix )
 import Branch(Branch(..), incLastPr, BranchInfo(..),
               addFormulas, addAccFormula, remFormula,
-              addBoxRuleCheck, Box_rule_chart)
+              addBoxRuleCheck, addDiaRuleCheck, Box_rule_chart)
 import CommandLine(CmdLineParams, semBranch, fullClash)
 import RuleMetadata(RuleId(..))
 import LatexOutput()
@@ -21,6 +21,7 @@ import HyLo.Signature.Simple( RelSymbol(..))
 data BranchModification =    BM_AddFormulas   [PrFormula]
                            | BM_AddAccFormula AccFormula
                            | BM_AddBoxRuleCheck (Prefix,Rel,Prefix,Formula)
+                           | BM_AddDiaRuleCheck Prefix Formula
                            | BM_RemFormula PrFormula
                            | BM_IncLastPr
 
@@ -37,9 +38,11 @@ getMods :: Rule -> [[BranchModification]]
 getMods (ConjRule todelete toadds) =
  [[BM_RemFormula todelete, BM_AddFormulas toadds]]
 
-getMods (DiaRule todelete acctoadd toadd) =
+getMods (DiaRule todelete@(PrFormula pr _ f) acctoadd toadd) =
  [[BM_RemFormula todelete, BM_AddAccFormula acctoadd,
-   BM_AddFormulas [toadd], BM_IncLastPr]]
+   BM_AddFormulas [toadd],
+   BM_AddDiaRuleCheck pr f,
+   BM_IncLastPr]]
 
 getMods (BoxRule checktoadd ftoadd) =
  [[BM_AddBoxRuleCheck checktoadd, BM_AddFormulas [ftoadd]]]
@@ -116,7 +119,6 @@ applicableConjRules br = [conjRule f br | f <- Set.toAscList $ conjStr br]
 applicableDiaRules :: Branch -> [Rule]
 applicableDiaRules br = [diaRule f br | f <- Set.toAscList $ diaStr br]
 
-
 applicableBoxRules :: Branch -> [Rule]
 applicableBoxRules br
   = [boxRule prF accF br | (prF,accF) <- (unCheckedBoxPairs br)]
@@ -173,6 +175,7 @@ applyMod :: CmdLineParams -> BranchModification -> Branch -> BranchInfo
 applyMod clp (BM_AddFormulas li) br = addFormulas clp br li
 applyMod  _ (BM_AddAccFormula accFor) br = BranchOK (addAccFormula br accFor)
 applyMod  _ (BM_AddBoxRuleCheck li) br = BranchOK (addBoxRuleCheck br li)
+applyMod  _ (BM_AddDiaRuleCheck pr f) br = BranchOK (addDiaRuleCheck br pr f)
 applyMod  _ (BM_IncLastPr) br = BranchOK (incLastPr br)
 applyMod  _ (BM_RemFormula f) br = BranchOK (remFormula br f)
 

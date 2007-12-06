@@ -9,7 +9,7 @@ module Branch
 (
 Branch(..), BranchMonad, incLastPr, BranchInfo(..),
 addFormulas, addFormula, addAccFormula, remFormula,
-addBoxRuleCheck, BranchData(..),branch_depth,
+addBoxRuleCheck, addDiaRuleCheck, BranchData(..),branch_depth,
 emptyBranch,initialBranchStateFor,getCLParams,
 addZeroInPath,incPathHead,nominals,prefixes,Box_rule_chart,
 getUrfather
@@ -70,6 +70,7 @@ type NegNom_structure = Set.Set PrFormula
 type Box_structure    = Map.Map (Prefix,Rel) [(BranchingPrefixes,Formula)]
 type Acc_structure    = Map.Map (Prefix,Rel) [(BranchingPrefixes,Prefix)]
 type Box_rule_chart   = Map.Map (Prefix,Rel,Prefix) (Set.Set Formula)
+type Dia_rule_chart   = Map.Map Prefix (Set.Set Formula)
 
 type NomToEarliestPref = Map.Map NomSymbol Prefix
 type PrefToFormulas    = Map.Map Prefix [(BranchingPrefixes,Formula)]
@@ -87,6 +88,7 @@ data Branch = Branch { seenStr :: Seen_structure,
                      negNomStr :: NegNom_structure,
                         accStr :: Acc_structure,
                        boxRlCh :: Box_rule_chart,
+                       diaRlCh :: Dia_rule_chart,
                         lastPr :: Prefix,
                      nomToPref :: NomToEarliestPref,
                    prefToForms :: PrefToFormulas,
@@ -113,6 +115,7 @@ emptyBranch l ntom =
                   atStr= Set.empty::At_structure,
                   accStr=Map.empty::Acc_structure,
                   boxRlCh=Map.empty::Box_rule_chart,
+                  diaRlCh=Map.empty::Dia_rule_chart,
                   negNomStr= Set.empty::NegNom_structure,
                   lastPr= 0 ,
                   nomToPref= Map.empty::NomToEarliestPref,
@@ -135,6 +138,7 @@ instance Show Branch where
               "\nNeg noms: "       ++ show (negNomStr br)  ++
               "\nAccesibility: "   ++ show (accStr br)   ++
               "\nBox rule chart: " ++ show (boxRlCh br)  ++
+              "\nDia rule chart: " ++ show (diaRlCh br)  ++
               "\nBiggest prefix: " ++ show (lastPr br) ++
               "\nNominal to earliest prefix: "    ++ show (Map.toList $ nomToPref br) ++
               "\nPrefix to branching prefixes: " ++ show (Map.toList $ prToBrPrefs br) ++
@@ -152,6 +156,7 @@ instance ShowLatex Branch where
               "\nNeg noms: "       ++ (putEol $ math $ show $ negNomStr br)   ++
               "\nAccesibility: "   ++ (putEol $ math $ show $ Map.toList $ accStr br)   ++
               "\nBox rule chart: " ++ (putEol $ math $ show $ Map.toList $ boxRlCh br)  ++
+              "\nDia rule chart: " ++ (putEol $ math $ show $ Map.toList $ diaRlCh br)  ++
               "\nBiggest prefix: " ++ (putEol $ show $ lastPr br) ++
               "\nNominal to earliest prefix: "  ++ (putEol $ math $ show $ Map.toList $ nomToPref br)   ++
               "\nPrefix to branching prefixes: " ++ (putEol $ math $ show $ Map.toList $ prToBrPrefs br) ++
@@ -365,7 +370,10 @@ addFormula2 clp br pf@(PrFormula _ _ (Box _ _))
               $ \b (PrFormula pr bprs (Box (RelSymbol r) f)) -> b{boxStr = Map.insertWith (++) (pr,r) [(bprs,f)] (boxStr b)}
 
 addFormula2 clp br pf@(PrFormula _ _ (Dia _ _))
-           = modBranchCaseFC clp br pf $ \b f -> b{diaStr  = Set.insert f (diaStr b)}
+           = modBranchCaseFC clp br pf $ \b f@(PrFormula pr _ f2)
+                                             -> b{diaStr  = if diaAlreadyDone b pr f2
+                                                              then diaStr b
+                                                              else Set.insert f (diaStr b)}
 
 addFormula2 clp br pf@(PrFormula _ _ (At _ _))
            = modBranchCaseFC clp br pf $ \b f -> b{atStr   = Set.insert f (atStr b)}
@@ -409,6 +417,23 @@ addAccFormula _ (AccFormula _ (InvRelSymbol _) _ _ ) = error "inverse modality n
 addBoxRuleCheck :: Branch -> (Prefix,Rel,Prefix,Formula) -> Branch
 addBoxRuleCheck br (p1,r,p2,f) =
   br{boxRlCh=Map.insertWith Set.union (p1,r,p2) (Set.singleton f) (boxRlCh br)}
+
+--
+
+addDiaRuleCheck :: Branch -> Prefix -> Formula -> Branch
+addDiaRuleCheck br pr f =
+  br{diaRlCh=Map.insertWith Set.union pr (Set.singleton f) (diaRlCh br)}
+
+--
+
+diaAlreadyDone :: Branch -> Prefix -> Formula -> Bool
+diaAlreadyDone b p f@(Dia _ _) =
+  case Map.lookup p (diaRlCh b) of
+     Nothing  -> False
+     Just fset -> Set.member f fset
+
+diaAlreadyDone _ _ _ = error "dia already done : wrong formula kind"
+
 
 --
 
