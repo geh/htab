@@ -32,9 +32,7 @@ where
 
 import HyLo.InputFile.Lexer ( Token(..), FilePos, line, col )
 
-import Branch
 import Formula
-
 }
 
 %name parse
