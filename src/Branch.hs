@@ -31,7 +31,7 @@ getUrfather
 --          been treated, by storing it in a special list in the branch
 
 import Control.Monad.State(StateT, MonadState, get)
-import Data.List(delete)
+import Data.List(delete, nub)
 
 import qualified Data.Map as Map
 
@@ -39,16 +39,9 @@ import Statistics(Statistics)
 import CommandLine(CmdLineParams, fullClash)
 
 import Formula
-import qualified Data.IntSet as IntSet
 import qualified Data.Set as Set
 
-
-import qualified Data.Array.Unboxed as UArray
-import SpecialMatrix(addElement,newUArray,
-                     indexOfEarliest,Column,Row)
-
-import Control.Monad.ST(runST)
-import Data.Array.MArray(thaw,freeze)
+import qualified DisjSet as DS
 
 import LatexOutputHelper
 import Ix(range)
@@ -72,11 +65,10 @@ type Acc_structure    = Map.Map (Prefix,Rel) [(BranchingPrefixes,Prefix)]
 type Box_rule_chart   = Map.Map (Prefix,Rel,Prefix) (Set.Set Formula)
 type Dia_rule_chart   = Map.Map Prefix (Set.Set Formula)
 
-type NomToEarliestPref = Map.Map NomSymbol Prefix
 type PrefToFormulas    = Map.Map Prefix [(BranchingPrefixes,Formula)]
 type PrefToBrPrefs     = Map.Map Prefix BranchingPrefixes
 
-type Matrix = UArray.UArray (Int,Int) Bool
+type EquivClasses = DS.DisjSet DS.Pointer
 
 data Branch = Branch { seenStr :: Seen_structure,
                        conjStr :: Conj_structure,
@@ -90,10 +82,9 @@ data Branch = Branch { seenStr :: Seen_structure,
                        boxRlCh :: Box_rule_chart,
                        diaRlCh :: Dia_rule_chart,
                         lastPr :: Prefix,
-                     nomToPref :: NomToEarliestPref,
                    prefToForms :: PrefToFormulas,
                    prToBrPrefs :: PrefToBrPrefs,
-                 nomPrefMatrix :: Matrix,
+                nomPrefClasses :: EquivClasses,
                  inputLanguage :: LanguageInfo,
                   newToOldNoms :: NewToOldNomsMap}
 
@@ -118,10 +109,9 @@ emptyBranch l ntom =
                   diaRlCh=Map.empty::Dia_rule_chart,
                   negNomStr= Set.empty::NegNom_structure,
                   lastPr= 0 ,
-                  nomToPref= Map.empty::NomToEarliestPref,
                   prefToForms= Map.empty::PrefToFormulas,
                   prToBrPrefs= Map.empty::PrefToBrPrefs,
-                  nomPrefMatrix = newUArray ((1,1),(0,0)),
+                  nomPrefClasses= DS.mkDSet::EquivClasses,
                   inputLanguage = l,
                   newToOldNoms = ntom
                 }
@@ -140,9 +130,9 @@ instance Show Branch where
               "\nBox rule chart: " ++ show (boxRlCh br)  ++
               "\nDia rule chart: " ++ show (diaRlCh br)  ++
               "\nBiggest prefix: " ++ show (lastPr br) ++
-              "\nNominal to earliest prefix: "    ++ show (Map.toList $ nomToPref br) ++
               "\nPrefix to branching prefixes: " ++ show (Map.toList $ prToBrPrefs br) ++
-              "\nPrefix to formulas: "  ++ show (Map.toList $ prefToForms br)
+              "\nPrefix to formulas: "  ++ show (Map.toList $ prefToForms br) ++
+              "\nPrefix-Nominal classes : " ++ show (Map.toList $ nomPrefClasses br)
 
 instance ShowLatex Branch where
  showLatex br = "Input language: " ++ (putEol $ math $ show $ inputLanguage br)   ++ 
@@ -158,10 +148,9 @@ instance ShowLatex Branch where
               "\nBox rule chart: " ++ (putEol $ math $ show $ Map.toList $ boxRlCh br)  ++
               "\nDia rule chart: " ++ (putEol $ math $ show $ Map.toList $ diaRlCh br)  ++
               "\nBiggest prefix: " ++ (putEol $ show $ lastPr br) ++
-              "\nNominal to earliest prefix: "  ++ (putEol $ math $ show $ Map.toList $ nomToPref br)   ++
               "\nPrefix to branching prefixes: " ++ (putEol $ math $ show $ Map.toList $ prToBrPrefs br) ++
               "\nPrefix to formulas: \\\\"      ++ (putEol $ math $ showLatex $ prefToForms br) ++
-              "\nPrefix-Nominal matrix : " ++ (putEol $ verbatim $ showLatex $ nomPrefMatrix br)
+              "\nPrefix-Nominal classes : " ++ (putEol $ verbatim $ show $ nomPrefClasses br)
 
 
 instance ShowLatex PrefToFormulas where
@@ -174,12 +163,6 @@ instance ShowLatex Seen_structure where
    "[" ++ ((genericSeparate showLat) ", " $ Map.toList ss) ++ "]"
     where showLat (pf,(b,bpfs)) = if b then "" ++ "(" ++ (showLatex pf) ++ ")(" ++ showLatex bpfs ++ ")"
                                        else "\\neg" ++ "(" ++ (showLatex pf) ++ ")(" ++ showLatex bpfs ++ ")"
-
-instance ShowLatex Matrix where
- showLatex m = foldr insertEol "" $ map (separate " " . (getRow m)) (range (firstRow,lastDisplayedRow))
-                  where firstRow = fst $ fst $ UArray.bounds m
-                        lastRow  = fst $ snd $ UArray.bounds m
-                        lastDisplayedRow = min lastRow 5
 
 genericSeparate :: (a -> String) ->  String -> [a] -> String
 genericSeparate _ _ [] = ""
@@ -206,26 +189,30 @@ addFormula :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
 -- p : a (a nominal)
 addFormula clp br f@(PrFormula pr bprs f2@(PosLit (N (NomSymbol n))))
   = addFormulas2 clp brUpdated nubbedNewFormulas
-     where oldMatrixData    = UArray.assocs $ nomPrefMatrix br
-           newMRowLength    = (lastPr br) + 1             -- 1 unit longer because in between, we may have created a new prefix
-           newMColLength    = (inputLanguage br) - 1
-           biggerOldMatrix  = newUArray ((0,0),(newMRowLength,newMColLength)) UArray.// oldMatrixData  -- make a (possibily) bigger matrix
-           (newMatrix,updatedNominals_,newUrfather) = addElement_ biggerOldMatrix (pr,n)
-           updatedNominals = map NomSymbol updatedNominals_
-           updatedNomToPref = Map.union (Map.fromList $ zip updatedNominals $ repeat newUrfather) (nomToPref br) -- update urfather(s)
-           oldUrfathers     = IntSet.elems $ urfathersOfNominals (nomToPref br) (IntSet.singleton pr) updatedNominals
+     where classes = nomPrefClasses br
+           ((DS.Prefix rootP),classes2) = DS.find (DS.Prefix pr) classes
+
+           (nomAncestor,classes3) = DS.find (DS.Nominal n) classes2
+
+           oldUrfathers = nub $ rootP : case nomAncestor of
+                                         (DS.Nominal _) -> [] -- if the nominal was not yet in the classes
+                                         (DS.Prefix rr) -> [rr]
+
+           newUrfather = minimum oldUrfathers
+
+           classes4 = DS.union (DS.Prefix pr) (DS.Nominal n) classes3
 
            currentDependencies = bps_unions $ bprs:(map (findDeps br) oldUrfathers)
            updatedPrToBrPrefs = Map.insert newUrfather currentDependencies (prToBrPrefs br)
 
            urfathersToRetrieveFormulasFrom = delete newUrfather oldUrfathers -- avoid copying into the same prefix
+
            formulasToCopy = concatMap (getFormulas br) urfathersToRetrieveFormulasFrom
            formulasToCopy2 = (PrFormula newUrfather bprs f2):(map (\(bprs2,f_) -> PrFormula newUrfather (bps_union currentDependencies bprs2) f_) formulasToCopy)
 
            nubbedNewFormulas = nubAndMergeDeps (f:formulasToCopy2)
-           brUpdated         = br{nomPrefMatrix = newMatrix,
-                                  nomToPref     = updatedNomToPref,
-                                  prToBrPrefs   = updatedPrToBrPrefs}
+           brUpdated         = br{nomPrefClasses = classes4,
+                                  prToBrPrefs    = updatedPrToBrPrefs}
 
 
 
@@ -238,11 +225,12 @@ addFormula clp br f | isModal br =  addFormula2 clp br f
 
 -- if we work with the hybrid language
 addFormula clp br f@(PrFormula pr bprs f2)
- = addFormulas2 clp br (f:newFormula)
-    where   (urfather,bprs2) = getUrfatherAndDeps br pr
+ = addFormulas2 clp newBr (f:newFormula)
+    where   (urfather,bprs2,newClasses) = getUrfatherAndDeps br (DS.Prefix pr)
             newFormula = if urfather == pr
                           then []
                           else [PrFormula urfather (bps_union bprs bprs2) f2]
+            newBr = br{nomPrefClasses = newClasses}
 
 
 nubAndMergeDeps :: [PrFormula] -> [PrFormula]
@@ -273,74 +261,26 @@ addToPrefToForms br (PrFormula pre bprs f) =
  where currentMap = prefToForms br
        newMap = Map.insertWith (\x y -> x++y) pre [(bprs,f)] currentMap
 
-urfathersOfNominals :: NomToEarliestPref -> IntSet.IntSet -> [NomSymbol] -> IntSet.IntSet
--- takes the (nom -> earliest prefix) map
---       and a list of nominals
--- outputs the set of urfathers of these nominals (so that there are no doubles)
-urfathersOfNominals ntp s (hd:tl) = case (Map.lookup hd ntp) of
-                                     Just ur -> urfathersOfNominals ntp (IntSet.insert ur s) tl
-                                     Nothing -> urfathersOfNominals ntp s tl
-urfathersOfNominals _   s [] = s
 
-getUrfather :: Branch -> Prefix -> Prefix
-getUrfather b p = fst $ getUrfatherAndDeps b p
+getUrfather :: Branch -> DS.Pointer -> Prefix
+getUrfather b p = u
+                  where (u,_,_) = getUrfatherAndDeps b p
 
-getUrfatherAndDeps :: Branch -> Prefix -> (Prefix,BranchingPrefixes)
+getUrfatherAndDeps :: Branch -> DS.Pointer -> (Prefix,BranchingPrefixes,EquivClasses)
 -- check if matrix size not enough for this urfather (eg when the prefix is created from the <> rule) -> return Nothing
-getUrfatherAndDeps br pr =
-  case nominal_idx1 of
-   Just nidx -> case (indexOfEarliest $ getColumn mat nidx) of
-                  Just urfather -> (urfather, deps)
-                                    where deps = findDeps br urfather
-                  Nothing -> defaultAnswer
-   Nothing   -> defaultAnswer
-  where mat = nomPrefMatrix br
-        maxPrefixInMatrix = fst $ snd $ UArray.bounds mat
-        nominals_row = getRow mat pr
-        nominal_idx1 = if maxPrefixInMatrix < pr
-                        then Nothing
-                        else indexOfEarliest nominals_row
-        defaultAnswer = (pr,bps_empty)
+getUrfatherAndDeps br p =
+   if DS.isRoot p classes then defaultAnswer
+                          else (ur,deps,newClasses)
+  where classes = nomPrefClasses br
+        (urfather, newClasses) = DS.find p classes -- TODO update branch's classes
+        (DS.Prefix ur) = urfather
+        DS.Prefix unboxedP = p
+        defaultAnswer = (unboxedP,bps_empty,classes)
+        deps = findDeps br ur
 
 findDeps :: Branch -> Prefix -> BranchingPrefixes
 findDeps br pr = Map.findWithDefault bps_empty pr (prToBrPrefs br)
 
-
-{-
-   Functions to read and write the prefix<->nominal array
--}
-
--- returns the updated matrix,
--- the list of indexes of modified columns
--- and the new urfather of the new equivalence class
-addElement_ :: Matrix -> (Int,Int) -> (Matrix,[Int],Prefix)
-addElement_ m (p,n) = runST (do tmp <- thaw m
-                                (colIdxs,newUr) <- addElement tmp (p,n)
-                                res <- freeze tmp
-                                return (res,colIdxs,newUr))
-
-getRow :: Matrix -> Int -> Row
-getRow t rowNum = getRow' t rowNum 0 width
-                   where width = (snd $ snd $ UArray.bounds t)
-
-getRow' :: Matrix -> Int -> Int -> Int -> [Bool]
-getRow' _ _ _ (-1) = []
-getRow' m _ _ _ | matrixIsEmpty m = []
-getRow' t rowNum colNum remainder = (hd:tl)
-                                      where hd = t UArray.! (rowNum,colNum)
-                                            tl = getRow' t rowNum (colNum+1) (remainder-1)
-
-
-getColumn :: Matrix -> Int -> Column
-getColumn t column = getColumn' t column 0 height
-                     where height = (fst $ snd $ UArray.bounds t)
-
-getColumn' :: Matrix -> Int -> Int -> Int -> [Bool]
-getColumn' _ _ _ (-1) = []
-getColumn' m _ _ _ | matrixIsEmpty m = []
-getColumn' t colNum rowNum remainder = (hd:tl)
-                                        where hd = t UArray.! (rowNum,colNum)
-                                              tl = getColumn' t colNum (rowNum+1) (remainder-1)
 
 
 {-
@@ -492,10 +432,6 @@ updateMap ss (pre,f) (bool,bprs)
 
 isModal :: Branch -> Bool
 isModal br = (inputLanguage br) == 0
-
-matrixIsEmpty :: Matrix -> Bool
-matrixIsEmpty m = (fst $ fst $ b) > (fst $ snd $ b)
-    where b = (UArray.bounds m)
 
 nominals :: Branch -> [NomSymbol]
 nominals br = map NomSymbol $ range (0,(inputLanguage br) - 1)

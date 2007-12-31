@@ -14,6 +14,9 @@ import Formula( Prefix, Formula (..), Atom (..), Rel,
                 NomSymbol(..), RelSymbol(..), PropSymbol(..), StateVar)
 import Branch( Branch(..) , nominals, prefixes,getUrfather)
 
+import qualified DisjSet as DS
+
+
 type HerbrandModel = H.HerbrandModel NomSymbol PropSymbol RelSymbol
 
 buildHerbrandModel :: Branch -> HerbrandModel
@@ -41,7 +44,7 @@ buildHerbrandModel branch =
                (NomSymbol (pre+bias))
                (NNF.Prop pro) | (pre,pro) <- prefixAndPropCouples]
        rs = Set.fromList $ map accToNNF
-              $ concatMap (\((p1,r),bp_ps) -> map (\(_,p2) -> (p1 + bias, r, (getUrfather branch p2)  + bias))
+              $ concatMap (\((p1,r),bp_ps) -> map (\(_,p2) -> (p1 + bias, r, (getUrfather branch (DS.Prefix p2)) + bias))
                                                   bp_ps)
                           (Map.assocs $ accStr branch)
 
@@ -51,10 +54,11 @@ accToNNF (p1,r,p2) =
   NNF.At (NomSymbol p1) $ NNF.Diam (RelSymbol r) $ NNF.Nom (NomSymbol p2)
 
 urfatherOrPrefixZero :: Branch -> NomSymbol -> Prefix
-urfatherOrPrefixZero br n =
-  case (Map.lookup n (nomToPref br)) of
-     Just p -> p
-     Nothing -> 0
+urfatherOrPrefixZero br (NomSymbol n) =
+  if DS.isRoot (DS.Nominal n) (nomPrefClasses br)
+   then 0
+   else let (DS.Prefix p,_) = DS.find (DS.Nominal n) (nomPrefClasses br)
+         in p
 
 prefixAndProps :: Branch -> [(Prefix,PropSymbol)]
 prefixAndProps br =
