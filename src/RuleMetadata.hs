@@ -43,4 +43,6 @@ data RuleId = R_Conj    -- Conjunction
             | R_Neg     -- Negation rule
             | R_At      -- Satisfaction operator (@) rule
             | R_NegNom  -- Negation before nominal rule
+            | R_Univ    -- Universal modality
+            | R_Exist   -- Existential modality
         deriving(Eq, Ord, Ix, Show)

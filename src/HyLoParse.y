@@ -54,6 +54,8 @@ import Formula
              imp             { (TokenImp      , _) }
              box             { (TokenBox $$   , _) }
              dia             { (TokenDia $$   , _) }
+             ubox            { (TokenUBox     , _) }
+             udia            { (TokenUDia     , _) }
              '('             { (TokenOB       , _) }
              ')'             { (TokenCB       , _) }
              ';'             { (TokenSC       , _) }
@@ -63,7 +65,7 @@ import Formula
 %right dimp
 %left or
 %left and
-%left box dia neg
+%left box dia neg ubox udia
 %right at
 
 %%
@@ -81,6 +83,8 @@ Formula :
 | neg  Formula                {neg $2}
 | dia  Formula                {diamond $1 $2}
 | box  Formula                {box $1 $2}
+| udia Formula                {existMod $2}
+| ubox Formula                {univMod $2}
 | Formula dimp Formula        {dimp $1 $3}
 | Formula imp Formula         {imp $1 $3}
 | Formula and Formula         {conj $1 $3}
@@ -89,7 +93,6 @@ Formula :
 | at2 nom Formula             {at $2 $3}
 | '(' Formula ')'             {$2}
 |  Formula ';' Formula        {conj $1 $3}
-
 
 {
 happyError :: [(Token, FilePos)] -> a

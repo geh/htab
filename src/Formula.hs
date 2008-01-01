@@ -17,7 +17,7 @@ bps_empty, deps_min, PrFormula(..), AccFormula(..),
 LanguageInfo(..),
 nnf, neg, isTrue, isFalse,
 NewToOldNomsMap, renameNominals,
-box, diamond, at, conj, disj, taut,
+box, diamond, at, conj, disj, univMod, existMod, taut,
 dimp, imp,
 prop, nom, formulaLanguageInfo, prefixList ,
 firstPrefixedFormula
@@ -61,6 +61,8 @@ data Formula
      | At     NomSymbol Formula
      | Box    RelSymbol     Formula
      | Dia    RelSymbol     Formula
+     | A      Formula
+     | E      Formula
      | Neg Formula
   deriving (Eq, Ord)
 
@@ -73,17 +75,21 @@ instance Show Formula where
  show (Box r f)  = "[" ++ (show r)  ++ "]" ++ (show f)
  show (Dia r f)  = "<" ++ (show r)  ++ ">" ++ (show f)
  show (Neg f)    = "!" ++ show f
+ show (A f)      = "A" ++ show f
+ show (E f)      = "E" ++ show f
 
 
 instance ShowLatex Formula where
    showLatex (PosLit a) = showLatex a
    showLatex (NegLit a) = "\\neg(" ++ showLatex a ++ ")"
-   showLatex (Con fs)   = "(" ++ (separate "\\wedge " fs) ++ ")"
-   showLatex (Dis fs)   = "(" ++ (separate "\\vee " fs) ++ ")"
+   showLatex (Con fs)   = "(" ++ (lseparate "\\wedge " fs) ++ ")"
+   showLatex (Dis fs)   = "(" ++ (lseparate "\\vee " fs) ++ ")"
    showLatex (At n f)   = "@_{" ++ (show n) ++ "}"  ++ (showLatex f)
    showLatex (Box r f)  = "\\square_{" ++ (show r)  ++ "}" ++ (showLatex f)
    showLatex (Dia r f)  = "\\lozenge_{" ++ (show r)  ++ "}" ++ (showLatex f)
    showLatex (Neg f)    = "\\neg" ++ showLatex f
+   showLatex (A f)      = "A" ++ showLatex f
+   showLatex (E f)      = "E" ++ showLatex f
 
 --
 -- Required structures to implement backjumping
@@ -148,12 +154,14 @@ nom  n = PosLit (N n)
 
 {- Modalities -}
 box, diamond :: RelSymbol -> Formula -> Formula
+univMod, existMod :: Formula -> Formula
 box        = Box
 diamond    = Dia
+univMod    = A
+existMod   = E
 
 {- Hybrid operators -}
 at             :: NomSymbol -> Formula -> Formula
-
 at  _  f@(At _ _)    = f
 at  n  f             = At n f
 
@@ -283,6 +291,8 @@ nnf (Dis l) = Dis (map nnf l)
 nnf (At n f) = At n (nnf f)
 nnf (Box r f) = Box r (nnf f)
 nnf (Dia r f) = Dia r (nnf f)
+nnf (A f) = A (nnf f)
+nnf (E f) = E (nnf f)
 nnf (PosLit a) = PosLit a
 nnf (NegLit a) = NegLit a
 
@@ -294,14 +304,19 @@ neg2 (Dis l)      = Con (map neg2 l)
 neg2 (At n f)     = At n (neg2 f)
 neg2 (Box r f)    = Dia r (neg2 f)
 neg2 (Dia r f)    = Box r (neg2 f)
+neg2 (A f)        = E (neg2 f)
+neg2 (E f)        = A (neg2 f)
 neg2 (PosLit a)   = (NegLit a)       --
 neg2 (NegLit a)   = (PosLit a)       -- cases where it doesn't go deeper
 neg2 (Neg f)      = f                --
 
-type LanguageInfo = Int
+data LanguageInfo = LanguageInfo { languageNoms :: Int,
+                                   languageUniv :: Bool }
+ deriving (Show)
 
 formulaLanguageInfo :: Formula -> LanguageInfo
-formulaLanguageInfo = countNominals
+formulaLanguageInfo f = LanguageInfo {languageNoms = countNominals f,
+                                      languageUniv = hasUnivModality f}
 
 countNominals :: Formula -> Int
 countNominals f = Set.size $ extractNominals f 
@@ -313,9 +328,23 @@ extractNominals (Con fs) = Set.unions $ map extractNominals fs
 extractNominals (Dis fs) = Set.unions $ map extractNominals fs
 extractNominals (Dia _ f) = extractNominals f
 extractNominals (Box _ f) = extractNominals f
+extractNominals (A f) = extractNominals f
+extractNominals (E f) = extractNominals f
 extractNominals (Neg f) = extractNominals f
 extractNominals (At n f) = Set.insert n $ extractNominals f
 extractNominals _ = Set.empty
+
+hasUnivModality :: Formula -> Bool
+hasUnivModality (Con fs)  = or $ map hasUnivModality fs
+hasUnivModality (Dis fs)  = or $ map hasUnivModality fs
+hasUnivModality (Dia _ f) = hasUnivModality f
+hasUnivModality (Box _ f) = hasUnivModality f
+hasUnivModality (Neg f)   = hasUnivModality f
+hasUnivModality (At _ f)  = hasUnivModality f
+hasUnivModality (A _)     = True
+hasUnivModality (E _)     = True  -- will be ' hasUnivModality f ' when formulas are nnf
+hasUnivModality _         = False -- PosLit , NegLit
+
 
 --
 
@@ -349,6 +378,10 @@ renameNominals_ (At n f) l = ((At newN newF),newNewL)
 renameNominals_ (Dia r f) l = (Dia r newF,newL)
       where (newF,newL) = renameNominals_ f l
 renameNominals_ (Box r f) l = (Box r newF,newL)
+      where (newF,newL) = renameNominals_ f l
+renameNominals_ (A f) l = (A newF,newL)
+      where (newF,newL) = renameNominals_ f l
+renameNominals_ (E f) l = (E newF,newL)
       where (newF,newL) = renameNominals_ f l
 renameNominals_ (Neg f)  l = (Neg newF,newL)
       where (newF,newL) = renameNominals_ f l

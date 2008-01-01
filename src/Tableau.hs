@@ -5,7 +5,7 @@ import Control.Monad.State(StateT,lift,modify, put, get)
 import Statistics(updateStep,printOutInspectionMetrics,
                   recordClosedBranch,recordFiredRule)
 import Branch(BranchInfo(..),Branch,BranchMonad, BranchData(..),branch_depth,
-              addZeroInPath, incPathHead )
+              addZeroInPath, incPathHead, calculateStepInfo )
 import CommandLine(logState,CmdLineParams)
 import Rules(Rule,applyRule,
              applicableRules,ruleToId)
@@ -36,10 +36,11 @@ tableau =
               liftStats $ recordClosedBranch
               return (CLOSED bprs)
 
-          BranchOK br ->
-           do debugMsg_BranchOK br
+          BranchOK br_ ->
+           do debugMsg_BranchOK br_
               let currentBranchingDepth = (branch_depth bd) + 1 -- `+ 1` because it's only when we know if there is an applicable rule
                                                                 -- that we increase the depth of the branch
+              let br = calculateStepInfo br_
               case (chooseRule $ applicableRules br clp currentBranchingDepth) of
                Just rule ->
                 do debugMsg_BranchOK_applicableRule rule

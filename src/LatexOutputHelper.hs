@@ -15,7 +15,7 @@ instance (ShowLatex a, ShowLatex b, ShowLatex c) => ShowLatex (a,b,c) where
  showLatex (a,b,c) = "(" ++ showLatex a ++ "," ++ showLatex b ++ "," ++ showLatex c ++ ")"
 
 instance (ShowLatex a) => ShowLatex [a] where
- showLatex l = "[" ++ (separate ", " l)  ++ "]"
+ showLatex l = "[" ++ (lseparate ", " l)  ++ "]"
 
 instance ShowLatex Int where
  showLatex = show
@@ -24,9 +24,9 @@ instance ShowLatex IntSet.IntSet where
  showLatex = show . IntSet.toList
 
 
-separate :: ShowLatex a => String -> [a] -> String
-separate _ [] = ""
-separate s os = foldl1 (\a1 a2 -> (a1 ++ s ++ a2)) $ map showLatex os
+lseparate :: ShowLatex a => String -> [a] -> String
+lseparate _ [] = ""
+lseparate s os = foldl1 (\a1 a2 -> (a1 ++ s ++ a2)) $ map showLatex os
 
 math :: String -> String
 math s = if (length s) > 0 then ("$" ++ s ++ "$") else ""

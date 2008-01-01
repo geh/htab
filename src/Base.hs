@@ -152,3 +152,7 @@ intToBool :: Int -> Bool
 intToBool i | i == 0 = False
 intToBool _          = True
 
+listIncluded :: Eq a => [a] -> [a] -> Bool
+-- is the first list included in the second list ?
+-- (like a set inclusion, but with lists, ie, no multi-valuation)
+listIncluded l1 l2 = and $ map (\e -> elem e l2) l1
