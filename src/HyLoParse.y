@@ -60,7 +60,6 @@ import Formula
              ')'             { (TokenCB       , _) }
              ';'             { (TokenSC       , _) }
 
-%left ';'
 %right imp
 %right dimp
 %left or
@@ -72,7 +71,14 @@ import Formula
 
 Input :: {Formula}
 Input :
-  begin Formula end          { $2 }
+  begin Formulas end          { $2 }
+
+Formulas :: { Formula }
+Formulas :
+  Formula                          { $1 }
+| Formula ';' Formulas             { conj $1 $3 }
+
+
 
 Formula :: { Formula }
 Formula :
@@ -92,7 +98,6 @@ Formula :
 | nom at Formula              {at $1 $3}
 | at2 nom Formula             {at $2 $3}
 | '(' Formula ')'             {$2}
-|  Formula ';' Formula        {conj $1 $3}
 
 {
 happyError :: [(Token, FilePos)] -> a
