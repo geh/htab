@@ -9,7 +9,7 @@ module Branch
 (
 Branch(..), BranchMonad, incLastPr, BranchInfo(..),
 addFormulas, addFormula, addAccFormula, remFormula,
-addBoxRuleCheck, addDiaRuleCheck, addAtRuleCheck, addNegNomRuleCheck,
+addBoxRuleCheck, addDiaRuleCheck, addAtRuleCheck,
 addExistRuleCheck, addUnivRuleCheck, BranchData(..),branch_depth,
 emptyBranch,initialBranchStateFor,getCLParams,
 addZeroInPath,incPathHead,prefixes,Box_rule_chart,
@@ -65,7 +65,6 @@ type Disj_structure   = Set.Set PrFormula
 type Dia_structure    = Set.Set PrFormula
 type Neg_structure    = Set.Set PrFormula
 type At_structure     = Set.Set PrFormula
-type NegNom_structure = Set.Set PrFormula
 type Exist_structure  = Set.Set PrFormula
 type Univ_structure   = Set.Set PrFormula
 type Box_structure    = Map.Map (Prefix,Rel) [(BranchingPrefixes,Formula)]
@@ -73,8 +72,7 @@ type Acc_structure    = Map.Map (Prefix,Rel) [(BranchingPrefixes,Prefix)]
 type Box_rule_chart   = Map.Map (Prefix,Rel,Prefix) (Set.Set Formula)
 
 type Dia_rule_chart    = Map.Map Prefix (Set.Set Formula)
-type At_rule_chart     = Map.Map Prefix (Set.Set Formula) -- |
-type Negnom_rule_chart = Map.Map Prefix (Set.Set Formula) -- | used only if the input formula has the universal modality
+type At_rule_chart     = Map.Map Prefix (Set.Set Formula) -- | used only if the input formula has the universal modality
 type Exist_rule_chart  = Map.Map Prefix (Set.Set Formula) -- |
 
 type Univ_rule_chart  = Map.Map Formula Prefix
@@ -99,12 +97,10 @@ data Branch = Branch { seenStr :: Seen_structure,
                       existStr :: Exist_structure,
                         negStr :: Neg_structure,
                          atStr :: At_structure,
-                     negNomStr :: NegNom_structure,
                         accStr :: Acc_structure,
                        boxRlCh :: Box_rule_chart,
                        diaRlCh :: Dia_rule_chart,    -- saturation of the diamond rule
                         atRlCh :: At_rule_chart,     -- saturation of the @ rule
-                    negNomRlCh :: Negnom_rule_chart, -- saturation of the neg nom rule
                      existRlCh :: Exist_rule_chart,  -- saturation of the exist rule
                       univRlCh :: Univ_rule_chart,
                         lastPr :: Prefix,
@@ -138,10 +134,8 @@ emptyBranch l =
                   boxRlCh=Map.empty::Box_rule_chart,
                   diaRlCh=Map.empty::Dia_rule_chart,
                   atRlCh=Map.empty::At_rule_chart,
-                  negNomRlCh=Map.empty::Negnom_rule_chart,
                   existRlCh=Map.empty::Exist_rule_chart,
                   univRlCh=Map.empty::Univ_rule_chart,
-                  negNomStr= Set.empty::NegNom_structure,
                   lastPr= 0 ,
                   prefToForms= Map.empty::PrefToFormulas,
                   prToBrPrefs= Map.empty::PrefToBrPrefs,
@@ -163,12 +157,10 @@ instance Show Branch where
               "\nExists: "         ++ show (existStr br) ++
               "\nNegations: "      ++ show (negStr br)   ++
               "\nAts: "            ++ show (atStr br)    ++
-              "\nNeg noms: "       ++ show (negNomStr br)  ++
               "\nAccesibility: "   ++ show (accStr br)   ++
               "\nBox rule chart: " ++ show (boxRlCh br)  ++
               "\nDia rule chart: " ++ show (diaRlCh br)  ++
               "\n@ rule chart: "   ++ show (atRlCh br) ++
-              "\nNeg nom rule chart:" ++ show (negNomRlCh br) ++
               "\nExist rule chart:" ++ show (existRlCh br) ++
               "\nUniv rule chart: "++ show (univRlCh br) ++
               "\nBiggest prefix: " ++ show (lastPr br) ++
@@ -191,12 +183,10 @@ instance ShowLatex Branch where
               "\nExists: "         ++ (putEol $ math $ show $ existStr br) ++
               "\nNegations: "      ++ (putEol $ math $ show $ negStr br)   ++
               "\nAts: "            ++ (putEol $ math $ show $ atStr br)   ++
-              "\nNeg noms: "       ++ (putEol $ math $ show $ negNomStr br)   ++
               "\nAccesibility: "   ++ (putEol $ math $ show $ Map.toList $ accStr br)   ++
               "\nBox rule chart: " ++ (putEol $ math $ show $ Map.toList $ boxRlCh br)  ++
               "\nDia rule chart: " ++ (putEol $ math $ show $ Map.toList $ diaRlCh br)  ++
               "\n@ rule chart: "   ++ (putEol $ math $ show $ Map.toList $ atRlCh br)  ++
-              "\nNeg nom rule chart:" ++ (putEol $ math $ show $ Map.toList $ negNomRlCh br)  ++
               "\nExist rule chart:" ++ (putEol $ math $ show $ Map.toList $ existRlCh br)  ++
               "\nUniv rule chart: "++ (putEol $ math $ show $ Map.toList $ univRlCh br) ++
               "\nBiggest prefix: " ++ (putEol $ show $ lastPr br) ++
@@ -475,12 +465,6 @@ addFormula3 clp br pf@(PrFormula _ _ (At _ _))
 addFormula3 clp br pf@(PrFormula _ _ (Neg _))
            = modBranchCaseFC clp br pf $ \b f -> b{negStr  = Set.insert f (negStr b)}
 
-addFormula3 _ br f@(PrFormula pr _ f2@(NegLit (N _)))
-           = case (addAndUpdateMap br f) of
-               BranchOK bok             -> BranchOK bok{negNomStr = if negNomAlreadyDone bok pr f2
-                                                                      then negNomStr bok
-                                                                      else Set.insert f (negNomStr bok)}
-               bc@(BranchClash _ _ _ _) -> bc
 
 addFormula3 _ br f@(PrFormula _ _ (PosLit _))
            = addAndUpdateMap br f
@@ -549,22 +533,6 @@ existAlreadyDone _ _ _ = error "exist already done : wrong formula kind"
 
 --
 
-addNegNomRuleCheck :: Branch -> Prefix -> Formula -> Branch
-addNegNomRuleCheck br pr f =
-  br{negNomRlCh=Map.insertWith Set.union pr (Set.singleton f) (negNomRlCh br)}
-
---
-
-negNomAlreadyDone :: Branch -> Prefix -> Formula -> Bool
-negNomAlreadyDone b p f@(NegLit (N _)) =
-   case Map.lookup p (negNomRlCh b) of
-     Nothing  -> False
-     Just fset -> Set.member f fset
-
-negNomAlreadyDone _ _ _ = error "negnom already done : wrong formula kind"
-
---
-
 addAtRuleCheck :: Branch -> Prefix -> Formula -> Branch
 addAtRuleCheck br pr f =
   br{atRlCh=Map.insertWith Set.union pr (Set.singleton f) (atRlCh br)}
@@ -602,7 +570,6 @@ remFormula br f@(PrFormula _ _ (Neg _))        = br{negStr=(Set.delete f (negStr
 remFormula _    (PrFormula _ _ (Box _ _))      = error "that formula should never be deleted"
 remFormula br f@(PrFormula _ _ (At _ _))       = br{atStr=(Set.delete f (atStr br))}
 remFormula _    (PrFormula _ _ (PosLit _))     = error "that formula should never be deleted"
-remFormula br f@(PrFormula _ _ (NegLit (N _))) = br{negNomStr=(Set.delete f (negNomStr br))}
 remFormula _    (PrFormula _ _ (NegLit _))     = error "that formula should never be deleted"
 
 

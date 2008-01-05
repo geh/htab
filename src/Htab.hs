@@ -8,13 +8,14 @@ import qualified HyLoParse as P
 import CommandLine( filename, getCmdLineParams, usage,
                     maxtimeout, showHelp, CmdLineParams, logState, genModel,
                     configureMetrics,fullClash,quietMode )
-import Branch( BranchInfo,initialBranchStateFor,BranchMonad, BranchData(..),
-              addFormula,emptyBranch )
+import Branch( Branch, BranchInfo(..),initialBranchStateFor,BranchMonad, BranchData(..),
+               emptyBranch, lastPr )
 import Timeout( timeout )
 import Statistics( Statistics, initialStatisticsStateFor, printOutAllMetrics' )
 import Base( vPutStrLn )
 import Tableau( liftStats, tableau, OpenFlag(..) )
-import Formula( firstPrefixedFormula,nnf,formulaLanguageInfo)
+import Formula( firstPrefixedFormula,nnf,formulaLanguageInfo, bps_empty,
+                PrFormula(..), LanguageInfo(..), NomSymbol, Formula(..), Atom(..))
 import LatexOutput
 import ModelGen ( HerbrandModel, inducedModel )
 
@@ -32,6 +33,9 @@ import Paths_HTab ( version )
 
 import Prelude hiding ( catch )
 import Control.Exception   ( catch )
+
+
+import Rules(BranchModification(..), applyMods)
 
 data SatFlagAndStats = SAT HerbrandModel Statistics | UNSAT Statistics | TIMEOUT
 
@@ -97,9 +101,7 @@ runWithParams clp =
      --
      f `seq` myPutStrLn ("\nInput:\n{ " ++ (show f2) ++" }\nEnd of input\n\n");
      --
-     let branchInfo = addFormula clp
-                                 (emptyBranch fLang)
-                                 (firstPrefixedFormula f2)
+     let branchInfo = addFirstFormulas clp (emptyBranch fLang) f2 (languageNoms fLang)
      --
      result <- if (not ((maxtimeout clp) == 0))
                 then timeout (maxtimeout clp)
@@ -159,3 +161,18 @@ gpl_tag = unlines [
     "but WITHOUT ANY WARRANTY; without even the implied warranty of",
     "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
     "GNU General Public License for more details."]
+
+
+-- preparation of the branch at the beginning of the calculus:
+-- add the input formula at prefix 0
+-- add a nominal formula at a different prefix for each nominal of the input formula
+
+addFirstFormulas :: CmdLineParams -> Branch -> Formula -> [NomSymbol] -> BranchInfo
+addFirstFormulas clp br_ f ns
+ = applyMods clp br
+     ( BM_AddFormulas [pf]
+       : (map (\(p,n) -> BM_AddFormulas [PrFormula p bps_empty (PosLit (N n))]) $ zip [1..] ns)
+     )
+    where nbNs = length ns
+          br = br_{lastPr = (lastPr br_) + nbNs}
+          pf = firstPrefixedFormula f

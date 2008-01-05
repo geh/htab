@@ -1,4 +1,9 @@
-module Rules where
+module Rules
+(
+Rule(..),BranchModification(..),
+applicableRules, applyRule, ruleToId,
+applyMods
+) where
 
 import Formula( RelSymbol(..), Atom(..), Formula(..), PrFormula(..), neg,
                 BranchingPrefix, BranchingPrefixes,
@@ -6,7 +11,7 @@ import Formula( RelSymbol(..), Atom(..), Formula(..), PrFormula(..), neg,
                 Rel, Prefix )
 import Branch( Branch(..), incLastPr, BranchInfo(..),
                addFormulas, addAccFormula, remFormula,
-               addBoxRuleCheck, addDiaRuleCheck, addExistRuleCheck, addNegNomRuleCheck,
+               addBoxRuleCheck, addDiaRuleCheck, addExistRuleCheck,
                addAtRuleCheck, addUnivRuleCheck, Box_rule_chart,
                isInclusionUrfather, BlockingMode(..), hasUnivMod )
 import CommandLine(CmdLineParams, semBranch, fullClash)
@@ -24,7 +29,6 @@ data BranchModification =    BM_AddFormulas   [PrFormula]
                            | BM_AddBoxRuleCheck (Prefix,Rel,Prefix,Formula)
                            | BM_AddDiaRuleCheck Prefix Formula
                            | BM_AddAtRuleCheck Prefix Formula
-                           | BM_AddNegNomRuleCheck Prefix Formula
                            | BM_AddExistRuleCheck Prefix Formula
                            | BM_AddUnivRuleCheck (Formula,Prefix)
                            | BM_RemFormula PrFormula
@@ -38,7 +42,6 @@ data Rule =  ConjRule   PrFormula [PrFormula]
            | SemBrRule  PrFormula [[PrFormula]]
            | NegRule    PrFormula PrFormula
            | AtRule     PrFormula PrFormula PrFormula          -- creates a prefix
-           | NegNomRule PrFormula PrFormula                    -- creates a prefix
            | UnivModRule   [PrFormula] (Formula,Prefix)
            | ExistModRule  PrFormula PrFormula                 -- creates a prefix
 
@@ -76,10 +79,6 @@ getMods br (AtRule todelete@(PrFormula pr _ f) toadd1 toadd2) =
  [[BM_RemFormula todelete, BM_AddFormulas [toadd1, toadd2], BM_IncLastPr]
   ++ if (hasUnivMod br) then [BM_AddAtRuleCheck pr f] else [] ]
 
-getMods br (NegNomRule todelete@(PrFormula pr _ f) toadd) =
- [[BM_RemFormula todelete, BM_AddFormulas [toadd], BM_IncLastPr]
-  ++ if (hasUnivMod br) then [BM_AddNegNomRuleCheck pr f] else [] ]
-
 
 instance Show Rule where
    show (ConjRule  todelete _ )    = "conjunction : " ++ (show todelete)
@@ -89,7 +88,6 @@ instance Show Rule where
    show (SemBrRule todelete _ )    = "semantic branching : " ++ (show todelete)
    show (NegRule   todelete _ )    = "negation : " ++ (show todelete)
    show (AtRule    todelete _ _ )  = "at : " ++ (show todelete)
-   show (NegNomRule todelete _ )   = "neg nom : " ++ (show todelete)
    show (ExistModRule todelete _)  = "E : " ++ (show todelete)
    show (UnivModRule toadds _)     = "A : " ++ (show toadds)
 
@@ -102,7 +100,6 @@ instance ShowLatex Rule where
    showLatex (SemBrRule  todelete _ ) = "semantic branching : " ++ (math $ showLatex todelete)
    showLatex (NegRule    todelete _ ) = "negation : " ++ (math $ showLatex todelete)
    showLatex (AtRule     todelete _ _ ) = "at : " ++ (math $ showLatex todelete)
-   showLatex (NegNomRule todelete _ ) = "neg nom : " ++ (math $ showLatex todelete)
    showLatex (ExistModRule todelete _)  = "E : " ++ (math $ showLatex todelete)
    showLatex (UnivModRule toadds _)   = "A : " ++ (math $ showLatex toadds)
 
@@ -117,7 +114,6 @@ ruleToId r = case r of
               (SemBrRule _ _)  -> R_SemBr
               (NegRule _ _)    -> R_Neg
               (AtRule _ _ _)   -> R_At
-              (NegNomRule _ _) -> R_NegNom
               (UnivModRule _ _)   -> R_Univ
               (ExistModRule _ _)  -> R_Exist
 
@@ -131,7 +127,6 @@ applicableRules br clp d =
  ++ (applicableDiaRules br)
  ++ (applicableBoxRules br)
  ++ (applicableAtRules br)
- ++ (applicableNegNomRules br)
  ++ (applicableExistRules br)
  ++ (applicableUnivRules br)
  ++ if semBranch clp then (applicableSemBrRules br d)
@@ -169,14 +164,6 @@ applicableAtRules br =
   else [atRule f br | f <- Set.toAscList $ atStr br]
  where prefGenBlock = (blockMode br) == InclusionBlocking
 
-applicableNegNomRules :: Branch -> [Rule]
-applicableNegNomRules br =
- if prefGenBlock
-  then [negNomRule f br | f@(PrFormula pr _ _) <- Set.toAscList $ negNomStr br,
-                          isInclusionUrfather br pr]
-  else [negNomRule f br | f <- Set.toAscList $ negNomStr br]
- where prefGenBlock = (blockMode br) == InclusionBlocking
-
 
 applicableExistRules :: Branch -> [Rule]
 applicableExistRules br =
@@ -212,32 +199,31 @@ reallyNotIn (p1,r,p2,f) brc =
 
 
 applyRule :: CmdLineParams -> Rule -> Branch -> [BranchInfo]
-applyRule clp rule br = applySetOfMods clp (getMods br rule) br
+applyRule clp rule br = applySetOfMods clp br (getMods br rule)
 
 
-applySetOfMods :: CmdLineParams -> [[BranchModification]] -> Branch -> [BranchInfo]
-applySetOfMods clp (hd:tl) br = (applyMods clp hd br):(applySetOfMods clp tl br)
-applySetOfMods _ [] _ = []
+applySetOfMods :: CmdLineParams -> Branch -> [[BranchModification]] -> [BranchInfo]
+applySetOfMods clp br (hd:tl) = (applyMods clp br hd):(applySetOfMods clp br tl)
+applySetOfMods _ _ [] = []
 
 
-applyMods :: CmdLineParams -> [BranchModification] -> Branch -> BranchInfo
-applyMods clp (hd:tl) br = case (applyMod clp hd br) of
-                            BranchOK br2             -> applyMods clp tl br2
+applyMods :: CmdLineParams -> Branch -> [BranchModification] -> BranchInfo
+applyMods clp br (hd:tl) = case (applyMod clp br hd) of
+                            BranchOK br2             -> applyMods clp br2 tl
                             si@(BranchClash _ _ _ _) -> si
-applyMods _ [] br = BranchOK br
+applyMods _ br [] = BranchOK br
 
 
-applyMod :: CmdLineParams -> BranchModification -> Branch -> BranchInfo
-applyMod clp (BM_AddFormulas li) br = addFormulas clp br li
-applyMod  _ (BM_AddAccFormula accFor) br = BranchOK (addAccFormula br accFor)
-applyMod  _ (BM_AddBoxRuleCheck check) br = BranchOK (addBoxRuleCheck br check)
-applyMod  _ (BM_AddDiaRuleCheck pr f) br = BranchOK (addDiaRuleCheck br pr f)
-applyMod  _ (BM_AddAtRuleCheck pr f) br = BranchOK (addAtRuleCheck br pr f)
-applyMod  _ (BM_AddNegNomRuleCheck pr f) br = BranchOK (addNegNomRuleCheck br pr f)
-applyMod  _ (BM_AddExistRuleCheck pr f) br = BranchOK (addExistRuleCheck br pr f)
-applyMod  _ (BM_AddUnivRuleCheck check) br = BranchOK (addUnivRuleCheck br check)
-applyMod  _ (BM_IncLastPr) br = BranchOK (incLastPr br)
-applyMod  _ (BM_RemFormula f) br = BranchOK (remFormula br f)
+applyMod :: CmdLineParams -> Branch -> BranchModification -> BranchInfo
+applyMod clp br (BM_AddFormulas li) = addFormulas clp br li
+applyMod  _  br (BM_AddAccFormula accFor) = BranchOK (addAccFormula br accFor)
+applyMod  _  br (BM_AddBoxRuleCheck check) = BranchOK (addBoxRuleCheck br check)
+applyMod  _  br (BM_AddDiaRuleCheck pr f) = BranchOK (addDiaRuleCheck br pr f)
+applyMod  _  br (BM_AddAtRuleCheck pr f) = BranchOK (addAtRuleCheck br pr f)
+applyMod  _  br (BM_AddExistRuleCheck pr f) = BranchOK (addExistRuleCheck br pr f)
+applyMod  _  br (BM_AddUnivRuleCheck check) = BranchOK (addUnivRuleCheck br check)
+applyMod  _  br (BM_IncLastPr) = BranchOK (incLastPr br)
+applyMod  _  br (BM_RemFormula f) = BranchOK (remFormula br f)
 
 -- the actual rules and their helper functions
 
@@ -318,14 +304,6 @@ atRule af@(PrFormula _ bprs (At n f)) br
     where newPr = getNewPr br
 
 atRule _ _ = error "atRule error"
-
--- ¬a
-negNomRule :: PrFormula -> Branch -> Rule
-negNomRule f@(PrFormula _ bprs (NegLit n@(N _))) br
- = NegNomRule f (PrFormula newPr bprs (PosLit n))
-    where newPr = getNewPr br
-
-negNomRule _ _ = error "negNomRule error"
 
 -- negation
 negRule :: PrFormula -> Branch -> Rule
