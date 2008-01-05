@@ -16,7 +16,6 @@ bps_union, bps_unions, bps_insert, bps_member,
 bps_empty, deps_min, PrFormula(..), AccFormula(..),
 LanguageInfo(..),
 nnf, neg, isTrue, isFalse,
-NewToOldNomsMap, renameNominals,
 box, diamond, at, conj, disj, univMod, existMod, taut,
 dimp, imp,
 prop, nom, formulaLanguageInfo, prefixList ,
@@ -28,9 +27,7 @@ firstPrefixedFormula
 
 import LatexOutputHelper
 import qualified Data.Set as Set
-import Data.List(elemIndex)
 import qualified Data.IntSet as IntSet
-import qualified Data.Map as Map
 
 import HyLo.Signature.Simple( PropSymbol(..),
                               NomSymbol(..),
@@ -310,16 +307,18 @@ neg2 (PosLit a)   = (NegLit a)       --
 neg2 (NegLit a)   = (PosLit a)       -- cases where it doesn't go deeper
 neg2 (Neg f)      = f                --
 
-data LanguageInfo = LanguageInfo { languageNoms :: Int,
-                                   languageUniv :: Bool }
+data LanguageInfo = LanguageInfo { languageNbNoms :: Int,
+                                     languageNoms :: [NomSymbol], -- ascending list
+                                     languageUniv :: Bool }
  deriving (Show)
 
 formulaLanguageInfo :: Formula -> LanguageInfo
-formulaLanguageInfo f = LanguageInfo {languageNoms = countNominals f,
-                                      languageUniv = hasUnivModality f}
-
-countNominals :: Formula -> Int
-countNominals f = Set.size $ extractNominals f 
+formulaLanguageInfo f
+ = LanguageInfo {languageNbNoms = nbNoms,
+                   languageNoms = noms,
+                   languageUniv = hasUnivModality f}
+    where noms = Set.toAscList $ extractNominals f
+          nbNoms = length noms
 
 extractNominals :: Formula -> Set.Set NomSymbol
 extractNominals (PosLit (N n)) = Set.singleton n
@@ -344,62 +343,4 @@ hasUnivModality (At _ f)  = hasUnivModality f
 hasUnivModality (A _)     = True
 hasUnivModality (E _)     = True  -- will be ' hasUnivModality f ' when formulas are nnf
 hasUnivModality _         = False -- PosLit , NegLit
-
-
---
-
-type NewToOldNomsMap = Map.Map NomSymbol NomSymbol
-
-
-renameNominals :: Formula -> (Formula, NewToOldNomsMap)
-renameNominals f = (newFormula, newToOldNomsMap)
-                    where rawRenamed      = renameNominals_ f []
-                          newFormula      = fst rawRenamed
-                          newToOldNomsMap = convertNomListInMap $ snd rawRenamed
-
-
-convertNomListInMap :: [NomSymbol] -> NewToOldNomsMap
--- the initial name of the nominals are the one of the nominals in the list
--- the new name of the nominals are their place in the list
--- ( the list has unique elements )
-convertNomListInMap l = foldr (\(new_nom, old_nom) map_ -> Map.insert  new_nom old_nom map_) Map.empty (zip (map NomSymbol [0..]) l)
-
--- scans the whole formula, building a list of Nominals in the order of which they
--- have been found, and replace each nominal by its place in the list
-
-renameNominals_ :: Formula -> [NomSymbol] -> (Formula,[NomSymbol])
-renameNominals_ (PosLit (N n)) l = (PosLit (N newN),newL)
-      where (newN,newL) = indexInNominalList n l
-renameNominals_ (NegLit (N n)) l = (NegLit (N newN),newL)
-      where (newN,newL) = indexInNominalList n l
-renameNominals_ (At n f) l = ((At newN newF),newNewL)
-      where (newN,newL) = indexInNominalList n l
-            (newF,newNewL) = renameNominals_ f newL
-renameNominals_ (Dia r f) l = (Dia r newF,newL)
-      where (newF,newL) = renameNominals_ f l
-renameNominals_ (Box r f) l = (Box r newF,newL)
-      where (newF,newL) = renameNominals_ f l
-renameNominals_ (A f) l = (A newF,newL)
-      where (newF,newL) = renameNominals_ f l
-renameNominals_ (E f) l = (E newF,newL)
-      where (newF,newL) = renameNominals_ f l
-renameNominals_ (Neg f)  l = (Neg newF,newL)
-      where (newF,newL) = renameNominals_ f l
-renameNominals_ (Con fs) l = (Con newFs,newL)
-      where (newFs,newL) =  (renameNominals_formulas fs l)
-renameNominals_ (Dis fs) l = (Dis newFs,newL)
-      where (newFs,newL) =  (renameNominals_formulas fs l)
-renameNominals_ f l = (f,l)
-
-indexInNominalList :: NomSymbol -> [NomSymbol] -> (NomSymbol,[NomSymbol])
-indexInNominalList n l =  case (elemIndex n l) of
-                           Just i  -> (NomSymbol i,l)
-                           Nothing -> (NomSymbol (length l), l++[n])
-
-renameNominals_formulas :: [Formula] -> [NomSymbol] -> ([Formula],[NomSymbol])
-renameNominals_formulas (hd:tl) l = ((newHd:newTl),newDeepL)
-      where (newHd,newL) = (renameNominals_ hd l)
-            (newTl,newDeepL) =  renameNominals_formulas tl newL
-
-renameNominals_formulas [] l = ([],l)
 

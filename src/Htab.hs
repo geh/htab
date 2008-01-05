@@ -14,7 +14,7 @@ import Timeout( timeout )
 import Statistics( Statistics, initialStatisticsStateFor, printOutAllMetrics' )
 import Base( vPutStrLn )
 import Tableau( liftStats, tableau, OpenFlag(..) )
-import Formula( firstPrefixedFormula,nnf,formulaLanguageInfo,renameNominals )
+import Formula( firstPrefixedFormula,nnf,formulaLanguageInfo)
 import LatexOutput
 import ModelGen ( HerbrandModel, inducedModel )
 
@@ -93,12 +93,12 @@ runWithParams clp =
      let fLang = formulaLanguageInfo f
      latexInit clp
      --
-     let (f2,newToOldNomsMap) = renameNominals $ if (fullClash clp) then f else nnf f
+     let f2 = if (fullClash clp) then f else nnf f
      --
      f `seq` myPutStrLn ("\nInput:\n{ " ++ (show f2) ++" }\nEnd of input\n\n");
      --
      let branchInfo = addFormula clp
-                                 (emptyBranch fLang newToOldNomsMap)
+                                 (emptyBranch fLang)
                                  (firstPrefixedFormula f2)
      --
      result <- if (not ((maxtimeout clp) == 0))

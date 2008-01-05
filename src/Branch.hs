@@ -12,7 +12,7 @@ addFormulas, addFormula, addAccFormula, remFormula,
 addBoxRuleCheck, addDiaRuleCheck, addAtRuleCheck, addNegNomRuleCheck,
 addExistRuleCheck, addUnivRuleCheck, BranchData(..),branch_depth,
 emptyBranch,initialBranchStateFor,getCLParams,
-addZeroInPath,incPathHead,nominals,prefixes,Box_rule_chart,
+addZeroInPath,incPathHead,prefixes,Box_rule_chart,
 getUrfather, isInclusionUrfather,
 getInclusionUrfather, hasUnivMod, inclusionUrfathers,
 calculateStepInfo, BlockingMode(..)
@@ -112,7 +112,6 @@ data Branch = Branch { seenStr :: Seen_structure,
                    prToBrPrefs :: PrefToBrPrefs,
                 nomPrefClasses :: EquivClasses,
                  inputLanguage :: LanguageInfo,
-                  newToOldNoms :: NewToOldNomsMap,
                      inclUrMap :: Maybe InclusionUrfathersMap,
                        incrPrs :: AugmentedPrefixes,
                      blockMode :: BlockingMode}
@@ -123,8 +122,8 @@ branch_depth :: BranchData -> Int
 branch_depth b = length $ branch_path b
 
 --
-emptyBranch :: LanguageInfo -> NewToOldNomsMap -> Branch
-emptyBranch l ntom =
+emptyBranch :: LanguageInfo -> Branch
+emptyBranch l =
                 Branch
                 { seenStr= Map.empty::Seen_structure,
                   conjStr= Set.empty::Conj_structure,
@@ -148,7 +147,6 @@ emptyBranch l ntom =
                   prToBrPrefs= Map.empty::PrefToBrPrefs,
                   nomPrefClasses= DS.mkDSet::EquivClasses,
                   inputLanguage = l,
-                  newToOldNoms = ntom,
                   inclUrMap = Nothing,
                   incrPrs = [],
                   blockMode = NoBlocking
@@ -645,13 +643,10 @@ updateMap ss (pre,f) (bool,bprs)
 
 
 isModal :: Branch -> Bool
-isModal br = (languageNoms $ inputLanguage br) == 0
+isModal br = (languageNbNoms $ inputLanguage br) == 0
 
 hasUnivMod :: Branch -> Bool
 hasUnivMod br = languageUniv $ inputLanguage br
-
-nominals :: Branch -> [NomSymbol]
-nominals br = map NomSymbol $ range (0,(languageNoms $ inputLanguage br) - 1)
 
 prefixes :: Branch -> [Prefix]
 prefixes br = range (0,lastPr br)

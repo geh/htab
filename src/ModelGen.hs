@@ -11,13 +11,13 @@ import qualified HyLo.Model.Herbrand as H
 import qualified HyLo.Formula.NNF as NNF
 
 import Formula( Prefix, Formula (..), Atom (..), Rel,
-                NomSymbol(..), RelSymbol(..), PropSymbol(..), StateVar)
-import Branch( Branch(..) , nominals, prefixes,getUrfather,
+                NomSymbol(..), RelSymbol(..), PropSymbol(..), StateVar,
+                LanguageInfo(..) )
+import Branch( Branch(..) , prefixes,getUrfather,
                isInclusionUrfather, getInclusionUrfather,
                BlockingMode(..) )
 
 import qualified DisjSet as DS
-
 
 type HerbrandModel = H.HerbrandModel NomSymbol PropSymbol RelSymbol
 
@@ -27,16 +27,15 @@ buildHerbrandModel branch =
   NoBlocking        -> H.herbrand es ps rs
   InclusionBlocking -> buildHerbrandModel_univMod branch
  where
-       newToOldNomsMap = newToOldNoms branch
-       bias = if Map.null newToOldNomsMap then 0
-                                          else 1 + (maximum (map unpackNomSymbol $ Map.elems newToOldNomsMap))
+       bias = if null $ languageNoms $ inputLanguage branch
+               then 0
+               else 1 + (maximum $ map unpackNomSymbol $ languageNoms $ inputLanguage branch)
        prefixAndPropCouples = prefixAndProps branch
        es = Set.union
              (Set.fromList
                [NNF.At
-                (NomSymbol ((urfatherOrPrefixZero branch n_) + bias))
-                (NNF.Nom n) | n_ <- (nominals branch),
-                            let n = (Map.!) newToOldNomsMap n_]
+                (NomSymbol ((urfatherOrPrefixZero branch n) + bias))
+                (NNF.Nom n) | n <- (languageNoms $ inputLanguage branch)]
              )
              (Set.fromList
                [NNF.At
@@ -56,16 +55,15 @@ buildHerbrandModel_univMod :: Branch -> HerbrandModel
 buildHerbrandModel_univMod branch =
   H.herbrand es ps rs
  where
-       newToOldNomsMap = newToOldNoms branch
-       bias = if Map.null newToOldNomsMap then 0
-                                          else 1 + (maximum (map unpackNomSymbol $ Map.elems newToOldNomsMap))
+       bias = if null $ languageNoms $ inputLanguage branch
+               then 0
+               else 1 + (maximum $ map unpackNomSymbol $ languageNoms $ inputLanguage branch)
        prefixAndPropCouples = prefixAndProps branch
        es = Set.union
              (Set.fromList
                [NNF.At
-                (NomSymbol ((urfatherOrPrefixZero branch n_) + bias))
-                (NNF.Nom n) | n_ <- (nominals branch),
-                              let n = (Map.!) newToOldNomsMap n_]
+                (NomSymbol ((urfatherOrPrefixZero branch n) + bias))
+                (NNF.Nom n) | n <- (languageNoms $ inputLanguage branch)]
              )
              (Set.fromList
                [NNF.At
@@ -109,3 +107,4 @@ isPosLitProp _ = False
 
 unpackNomSymbol :: NomSymbol -> Int
 unpackNomSymbol (NomSymbol n) = n
+
