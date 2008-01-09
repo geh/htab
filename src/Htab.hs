@@ -35,7 +35,7 @@ import Prelude hiding ( catch )
 import Control.Exception   ( catch )
 
 
-import Rules(BranchModification(..), applyMods)
+import Rules(BranchModification(..), applyMod)
 
 data SatFlagAndStats = SAT HerbrandModel Statistics | UNSAT Statistics | TIMEOUT
 
@@ -169,9 +169,8 @@ gpl_tag = unlines [
 
 addFirstFormulas :: CmdLineParams -> Branch -> Formula -> [NomSymbol] -> BranchInfo
 addFirstFormulas clp br_ f ns
- = applyMods clp br
-     ( BM_AddFormulas [pf]
-       : (map (\(p,n) -> BM_AddFormulas [PrFormula p bps_empty (PosLit (N n))]) $ zip [1..] ns)
+ = applyMod clp br
+     ( BM_AddFormulas ( pf : ( map (\(p,n) ->  PrFormula p bps_empty (PosLit (N n))) $ zip [1..] ns))
      )
     where nbNs = length ns
           br = br_{lastPr = (lastPr br_) + nbNs}

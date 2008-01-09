@@ -2,7 +2,7 @@ module Rules
 (
 Rule(..),BranchModification(..),
 applicableRules, applyRule, ruleToId,
-applyMods
+applyMod
 ) where
 
 import Formula( RelSymbol(..), Atom(..), Formula(..), PrFormula(..), neg,
