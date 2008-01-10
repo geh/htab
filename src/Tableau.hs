@@ -41,22 +41,17 @@ tableau =
               let currentBranchingDepth = (branch_depth bd) + 1 -- `+ 1` because it's only when we know if there is an applicable rule
                                                                 -- that we increase the depth of the branch
               let br = calculateStepInfo br_
-              case (chooseRule $ applicableRules br clp currentBranchingDepth) of
-               Just rule ->
+              case (applicableRules br clp currentBranchingDepth) of
+               (rule:_) ->
                 do debugMsg_BranchOK_applicableRule rule
                    liftStats $ recordFiredRule $ ruleToId rule
                    let possibleBranches = applyRule clp rule br
                    modify addZeroInPath
                    chooseBranch possibleBranches
-               Nothing   ->
+               []   ->
                 do debugMsg_BranchOK_saturated
                    return $ OPEN (buildHerbrandModel br)
 
-
--- simple rule-choosing strategy
-chooseRule :: [Rule] -> Maybe Rule
-chooseRule (hd:_)  = Just hd
-chooseRule [] = Nothing
 
 -- depth-first branch-choosing strategy
 chooseBranch :: [BranchInfo] ->  BranchMonad OpenFlag
