@@ -7,10 +7,10 @@
 
 module Branch
 (
-Branch(..), BranchMonad, incLastPr, BranchInfo(..),
+Branch(..), BranchMonad, createNewPr, BranchInfo(..),
 addFormulas, addFormula, addAccFormula, remFormula,
 addBoxRuleCheck, addDiaRuleCheck, addAtRuleCheck,
-addExistRuleCheck, addUnivRuleCheck, BranchData(..),branch_depth,
+addExistRuleCheck, addUnivConstraint, BranchData(..),branch_depth,
 emptyBranch,initialBranchStateFor,getCLParams,
 addZeroInPath,incPathHead,prefixes,Box_rule_chart,
 getUrfather, isInclusionUrfather,
@@ -66,7 +66,6 @@ type Dia_structure    = Set.Set PrFormula
 type Neg_structure    = Set.Set PrFormula
 type At_structure     = Set.Set PrFormula
 type Exist_structure  = Set.Set PrFormula
-type Univ_structure   = Set.Set PrFormula
 type Box_structure    = Map.Map (Prefix,Rel) [(BranchingPrefixes,Formula)]
 type Acc_structure    = Map.Map (Prefix,Rel) [(BranchingPrefixes,Prefix)]
 type Box_rule_chart   = Map.Map (Prefix,Rel,Prefix) (Set.Set Formula)
@@ -75,7 +74,7 @@ type Dia_rule_chart    = Map.Map Prefix (Set.Set Formula)
 type At_rule_chart     = Map.Map Prefix (Set.Set Formula) -- | used only if the input formula has the universal modality
 type Exist_rule_chart  = Map.Map Prefix (Set.Set Formula) -- |
 
-type Univ_rule_chart  = Map.Map Formula Prefix
+type Univ_constraints  = [(BranchingPrefixes,Formula)] -- TODO try Map.Map Formula BranchingPrefixes for dependency merge
 
 type PrefToFormulas    = Map.Map Prefix [(BranchingPrefixes,Formula)]
 type PrefToBrPrefs     = Map.Map Prefix BranchingPrefixes
@@ -93,7 +92,6 @@ data Branch = Branch { seenStr :: Seen_structure,
                        disjStr :: Disj_structure,
                         diaStr :: Dia_structure,
                         boxStr :: Box_structure,
-                       univStr :: Univ_structure,
                       existStr :: Exist_structure,
                         negStr :: Neg_structure,
                          atStr :: At_structure,
@@ -102,7 +100,7 @@ data Branch = Branch { seenStr :: Seen_structure,
                        diaRlCh :: Dia_rule_chart,    -- saturation of the diamond rule
                         atRlCh :: At_rule_chart,     -- saturation of the @ rule
                      existRlCh :: Exist_rule_chart,  -- saturation of the exist rule
-                      univRlCh :: Univ_rule_chart,
+                      univCons :: Univ_constraints,
                         lastPr :: Prefix,
                    prefToForms :: PrefToFormulas,
                    prToBrPrefs :: PrefToBrPrefs,
@@ -126,7 +124,6 @@ emptyBranch l =
                   disjStr= Set.empty::Disj_structure,
                   diaStr = Set.empty::Dia_structure,
                   boxStr = Map.empty::Box_structure,
-                  univStr  = Set.empty::Univ_structure,
                   existStr = Set.empty::Exist_structure,
                   negStr = Set.empty::Neg_structure,
                   atStr= Set.empty::At_structure,
@@ -135,7 +132,7 @@ emptyBranch l =
                   diaRlCh=Map.empty::Dia_rule_chart,
                   atRlCh=Map.empty::At_rule_chart,
                   existRlCh=Map.empty::Exist_rule_chart,
-                  univRlCh=Map.empty::Univ_rule_chart,
+                  univCons=[],
                   lastPr= 0 ,
                   prefToForms= Map.empty::PrefToFormulas,
                   prToBrPrefs= Map.empty::PrefToBrPrefs,
@@ -153,7 +150,6 @@ instance Show Branch where
               "\nDisjunctions: "   ++ show (disjStr br)  ++
               "\nDiamonds: "       ++ show (diaStr br)   ++
               "\nBoxes: "          ++ show (boxStr br)   ++
-              "\nUnivs: "          ++ show (univStr br)  ++
               "\nExists: "         ++ show (existStr br) ++
               "\nNegations: "      ++ show (negStr br)   ++
               "\nAts: "            ++ show (atStr br)    ++
@@ -162,7 +158,7 @@ instance Show Branch where
               "\nDia rule chart: " ++ show (diaRlCh br)  ++
               "\n@ rule chart: "   ++ show (atRlCh br) ++
               "\nExist rule chart:" ++ show (existRlCh br) ++
-              "\nUniv rule chart: "++ show (univRlCh br) ++
+              "\nUniv constraints: "++ show (univCons br) ++
               "\nBiggest prefix: " ++ show (lastPr br) ++
               "\nPrefix to branching prefixes: " ++ show (Map.toList $ prToBrPrefs br) ++
               "\nPrefix to formulas: "  ++ show (Map.toList $ prefToForms br) ++
@@ -179,7 +175,6 @@ instance ShowLatex Branch where
               "\nDisjunctions: "   ++ (putEol $ math $ show $ disjStr br)  ++
               "\nDiamonds: "       ++ (putEol $ math $ show $ diaStr br)   ++
               "\nBoxes: "          ++ (putEol $ math $ show $ Map.toList $ boxStr br)   ++
-              "\nUnivs: "          ++ (putEol $ math $ show $ univStr br)  ++
               "\nExists: "         ++ (putEol $ math $ show $ existStr br) ++
               "\nNegations: "      ++ (putEol $ math $ show $ negStr br)   ++
               "\nAts: "            ++ (putEol $ math $ show $ atStr br)   ++
@@ -188,7 +183,7 @@ instance ShowLatex Branch where
               "\nDia rule chart: " ++ (putEol $ math $ show $ Map.toList $ diaRlCh br)  ++
               "\n@ rule chart: "   ++ (putEol $ math $ show $ Map.toList $ atRlCh br)  ++
               "\nExist rule chart:" ++ (putEol $ math $ show $ Map.toList $ existRlCh br)  ++
-              "\nUniv rule chart: "++ (putEol $ math $ show $ Map.toList $ univRlCh br) ++
+              "\nUniv constraints: "++ (putEol $ math $ show $ univCons br) ++
               "\nBiggest prefix: " ++ (putEol $ show $ lastPr br) ++
               "\nPrefix to branching prefixes: " ++ (putEol $ math $ show $ Map.toList $ prToBrPrefs br) ++
               "\nPrefix to formulas: \\\\"      ++ (putEol $ math $ showLatex $ prefToForms br) ++
@@ -231,6 +226,8 @@ addFormulas _ br [] = BranchOK br
 addFormula :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
 -- Case 1 :
 -- p : a (a nominal)
+--
+-- TODO: remove all the pending formulas of the previous urfather
 addFormula clp br f@(PrFormula pr bprs f2@(PosLit (N (NomSymbol n))))
   = addFormulas2 clp brUpdated nubbedNewFormulas       -- addFormulas2 updates the prefix to formulas map
      where classes = nomPrefClasses br
@@ -258,6 +255,12 @@ addFormula clp br f@(PrFormula pr bprs f2@(PosLit (N (NomSymbol n))))
            brUpdated         = br{nomPrefClasses = classes4,
                                   prToBrPrefs    = updatedPrToBrPrefs}
 
+
+-- Case 1,5
+-- universal constraint
+addFormula clp br (PrFormula _ bprs (A f))
+ = addUnivConstraint clp blockedBr bprs f
+    where blockedBr = br{blockMode = InclusionBlocking}
 
 -- Case 2
 -- p : phi (not nominal)
@@ -305,6 +308,10 @@ addToPrefToForms br (PrFormula pre bprs f) =
  where currentMap = prefToForms br
        newMap = Map.insertWith (\x y -> x++y) pre [(bprs,f)] currentMap
 
+
+isUrfather :: Branch -> Prefix -> Bool
+isUrfather b p = DS.isRoot (DS.Prefix p) classes
+                  where classes = nomPrefClasses b
 
 getUrfather :: Branch -> DS.Pointer -> Prefix
 getUrfather b p = u
@@ -442,13 +449,8 @@ addFormula3 clp br pf@(PrFormula _ _ (Dia _ _))
                                              -> b{diaStr  = if diaAlreadyDone b pr f2            -- diamond rule saturation
                                                               then diaStr b
                                                               else Set.insert f (diaStr b)}
-addFormula3 clp br pf@(PrFormula _ _ (A _))
-           = modBranchCaseFC clp enableBlockModeBr pf
-                   $ \b f -> b{univStr  = Set.insert f (univStr b)}
-                where enableBlockModeBr = case blockMode br of
-                                            NoBlocking        -> br{blockMode = InclusionBlocking} -- to get a warning here when the
-                                            InclusionBlocking -> br{blockMode = InclusionBlocking} -- BlockingMode type is changed
- -- (because we could directly do " br{blockMode = InclusionBlockin}" for every case)
+addFormula3 _ _ (PrFormula _ _ (A _))
+           = error " 'A' formulas should have been treated before"
 
 addFormula3 clp br pf@(PrFormula _ _ (E _))
            = modBranchCaseFC clp br pf $ \b f@(PrFormula pr _ f2) ->
@@ -476,11 +478,12 @@ modBranchCaseFC :: CmdLineParams -> Branch -> PrFormula
                    -> (Branch -> PrFormula -> Branch)
                    -> BranchInfo
 -- if full clash is enabled, we and all formulas to the seen structure
-modBranchCaseFC clp br f modBr =    -- (**) and when we get rid of full clash, still keep this function to update pref to forms
+modBranchCaseFC clp br f branchModifier
+ =    -- (**) and when we get rid of full clash, still keep this function to update pref to forms
  if (fullClash clp) then case (addAndUpdateMap br f) of
-                          BranchOK bok             -> BranchOK $ modBr bok f
+                          BranchOK bok             -> BranchOK $ branchModifier bok f
                           bc@(BranchClash _ _ _ _) -> bc
-                    else  BranchOK $ modBr br f
+                    else  BranchOK $ branchModifier br f
 
 
 {-
@@ -549,29 +552,33 @@ atAlreadyDone _ _ _ = error "at already done : wrong formula kind"
 
 --
 
-addUnivRuleCheck :: Branch -> (Formula,Prefix) -> Branch
-addUnivRuleCheck br (f,p) =
-  br{univRlCh = Map.insert f p (univRlCh br)}
+addUnivConstraint :: CmdLineParams -> Branch -> BranchingPrefixes -> Formula -> BranchInfo
+addUnivConstraint clp br bps f
+ = addFormulas clp newBr
+               $ map (\p -> PrFormula p bps f) $ urfathers
+   where newBr = br{univCons = (bps,f):(univCons br)}
+         prefs = [0..(lastPr br)]
+         urfathers = filter (isUrfather br) prefs
 
 --
 
-incLastPr :: Branch -> Branch
-incLastPr br = br{lastPr = ((lastPr br)+1)}
+createNewPr :: CmdLineParams -> Branch -> BranchInfo
+createNewPr clp br
+ = addFormulas clp newBr $ map (\(bps,f) -> PrFormula newPr bps f) univConstraints
+   where newPr = (lastPr br) + 1
+         newBr = br{lastPr = newPr}
+         univConstraints = univCons br
 
 --
 
 remFormula :: Branch  -> PrFormula -> Branch
 remFormula br f@(PrFormula _ _ (Con _))        = br{conjStr=(Set.delete f (conjStr br))}
 remFormula br f@(PrFormula _ _ (Dia _ _))      = br{diaStr=(Set.delete f (diaStr br))}
-remFormula br f@(PrFormula _ _ (A _))          = br{univStr=(Set.delete f (univStr br))}
 remFormula br f@(PrFormula _ _ (E _))          = br{existStr=(Set.delete f (existStr br))}
 remFormula br f@(PrFormula _ _ (Dis _))        = br{disjStr=(Set.delete f (disjStr br))}
 remFormula br f@(PrFormula _ _ (Neg _))        = br{negStr=(Set.delete f (negStr br))}
-remFormula _    (PrFormula _ _ (Box _ _))      = error "that formula should never be deleted"
 remFormula br f@(PrFormula _ _ (At _ _))       = br{atStr=(Set.delete f (atStr br))}
-remFormula _    (PrFormula _ _ (PosLit _))     = error "that formula should never be deleted"
-remFormula _    (PrFormula _ _ (NegLit _))     = error "that formula should never be deleted"
-
+remFormula _  _                                = error "that formula should never be deleted"
 
 
 {-

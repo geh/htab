@@ -9,10 +9,10 @@ import Formula( RelSymbol(..), Atom(..), Formula(..), PrFormula(..), neg,
                 BranchingPrefix, BranchingPrefixes,
                 bps_insert, bps_union, prefixList, AccFormula(..),
                 Rel, Prefix )
-import Branch( Branch(..), incLastPr, BranchInfo(..),
+import Branch( Branch(..), createNewPr, BranchInfo(..),
                addFormulas, addAccFormula, remFormula,
                addBoxRuleCheck, addDiaRuleCheck, addExistRuleCheck,
-               addAtRuleCheck, addUnivRuleCheck, Box_rule_chart,
+               addAtRuleCheck, Box_rule_chart,
                isInclusionUrfather, BlockingMode(..), hasUnivMod )
 import CommandLine(CmdLineParams, semBranch, fullClash)
 import RuleMetadata(RuleId(..))
@@ -30,9 +30,8 @@ data BranchModification =    BM_AddFormulas   [PrFormula]
                            | BM_AddDiaRuleCheck Prefix Formula
                            | BM_AddAtRuleCheck Prefix Formula
                            | BM_AddExistRuleCheck Prefix Formula
-                           | BM_AddUnivRuleCheck (Formula,Prefix)
                            | BM_RemFormula PrFormula
-                           | BM_IncLastPr
+                           | BM_CreateNewPr
 
 -- each rule constructor contains exactly the needed data to know the effect of the rule
 data Rule =  ConjRule   PrFormula [PrFormula]
@@ -42,7 +41,6 @@ data Rule =  ConjRule   PrFormula [PrFormula]
            | SemBrRule  PrFormula [[PrFormula]]
            | NegRule    PrFormula PrFormula
            | AtRule     PrFormula PrFormula PrFormula          -- creates a prefix
-           | UnivModRule   [PrFormula] (Formula,Prefix)
            | ExistModRule  PrFormula PrFormula                 -- creates a prefix
 
 getMods :: Branch -> Rule -> [[BranchModification]]
@@ -53,17 +51,14 @@ getMods _ (DiaRule todelete@(PrFormula pr _ f) acctoadd toadd) =
  [[BM_RemFormula todelete, BM_AddAccFormula acctoadd,
    BM_AddFormulas [toadd],
    BM_AddDiaRuleCheck pr f,
-   BM_IncLastPr]]
+   BM_CreateNewPr]]
 
 getMods _ (BoxRule checktoadd ftoadd) =
  [[BM_AddBoxRuleCheck checktoadd, BM_AddFormulas [ftoadd]]]
 
-getMods _ (UnivModRule toadds tocheck) =
- [[BM_AddFormulas toadds, BM_AddUnivRuleCheck tocheck]]
-
 getMods br (ExistModRule todelete@(PrFormula pr _ f) toadd) =
  [[BM_RemFormula todelete, BM_AddFormulas [toadd],
-   BM_IncLastPr]
+   BM_CreateNewPr]
    ++ if (hasUnivMod br) then [BM_AddExistRuleCheck pr f] else [] ]
 
 getMods _ (DisjRule todelete toadds) =
@@ -76,7 +71,7 @@ getMods _ (NegRule todelete toadd) =
  [[BM_RemFormula todelete, BM_AddFormulas [toadd]]]
 
 getMods br (AtRule todelete@(PrFormula pr _ f) toadd1 toadd2) =
- [[BM_RemFormula todelete, BM_AddFormulas [toadd1, toadd2], BM_IncLastPr]
+ [[BM_RemFormula todelete, BM_AddFormulas [toadd1, toadd2], BM_CreateNewPr]
   ++ if (hasUnivMod br) then [BM_AddAtRuleCheck pr f] else [] ]
 
 
@@ -89,7 +84,6 @@ instance Show Rule where
    show (NegRule   todelete _ )    = "negation : " ++ (show todelete)
    show (AtRule    todelete _ _ )  = "at : " ++ (show todelete)
    show (ExistModRule todelete _)  = "E : " ++ (show todelete)
-   show (UnivModRule toadds _)     = "A : " ++ (show toadds)
 
 instance ShowLatex Rule where
    showLatex (ConjRule   todelete _ ) = "conjunction : " ++  (math $ showLatex todelete)
@@ -101,8 +95,6 @@ instance ShowLatex Rule where
    showLatex (NegRule    todelete _ ) = "negation : " ++ (math $ showLatex todelete)
    showLatex (AtRule     todelete _ _ ) = "at : " ++ (math $ showLatex todelete)
    showLatex (ExistModRule todelete _)  = "E : " ++ (math $ showLatex todelete)
-   showLatex (UnivModRule toadds _)   = "A : " ++ (math $ showLatex toadds)
-
 
 --
 ruleToId :: Rule -> RuleId
@@ -114,7 +106,6 @@ ruleToId r = case r of
               (SemBrRule _ _)  -> R_SemBr
               (NegRule _ _)    -> R_Neg
               (AtRule _ _ _)   -> R_At
-              (UnivModRule _ _)   -> R_Univ
               (ExistModRule _ _)  -> R_Exist
 
 --
@@ -128,7 +119,6 @@ applicableRules br clp d =
  ++ (applicableBoxRules br)
  ++ (applicableAtRules br)
  ++ (applicableExistRules br)
- ++ (applicableUnivRules br)
  ++ if semBranch clp then (applicableSemBrRules br d)
                      else (applicableDisjRules br d)
 
@@ -173,14 +163,6 @@ applicableExistRules br =
   else [existRule f br | f <- Set.toAscList $ existStr br]
  where prefGenBlock = (blockMode br) == InclusionBlocking
 
-
-applicableUnivRules :: Branch -> [Rule]
-applicableUnivRules br = [univRule f br | f@(PrFormula _ _ (A innerF)) <- Set.toAscList $ univStr br,
-                                          let lastPr_ = lastPr br,
-                                          let univRlCh_ = univRlCh br,
-                                          maybe True (\appliedPr ->  appliedPr < lastPr_)
-                                                (Map.lookup innerF univRlCh_)]
-
 unCheckedBoxPairs :: Branch -> [(AccFormula,(BranchingPrefixes,Formula))]
 unCheckedBoxPairs br
   = [(AccFormula bps2 (RelSymbol r2) p2 p3, (bps1,f))
@@ -221,8 +203,7 @@ applyMod  _  br (BM_AddBoxRuleCheck check) = BranchOK (addBoxRuleCheck br check)
 applyMod  _  br (BM_AddDiaRuleCheck pr f) = BranchOK (addDiaRuleCheck br pr f)
 applyMod  _  br (BM_AddAtRuleCheck pr f) = BranchOK (addAtRuleCheck br pr f)
 applyMod  _  br (BM_AddExistRuleCheck pr f) = BranchOK (addExistRuleCheck br pr f)
-applyMod  _  br (BM_AddUnivRuleCheck check) = BranchOK (addUnivRuleCheck br check)
-applyMod  _  br (BM_IncLastPr) = BranchOK (incLastPr br)
+applyMod clp br (BM_CreateNewPr) = createNewPr clp br
 applyMod  _  br (BM_RemFormula f) = BranchOK (remFormula br f)
 
 -- the actual rules and their helper functions
@@ -256,17 +237,6 @@ boxRule (AccFormula bprs1 (RelSymbol r1) pr1 pr2) (bprs2,f) _
 
 boxRule (AccFormula _ (InvRelSymbol _) _ _) _ _
  = error "inverse modality not supported"
-
--- A
-univRule :: PrFormula -> Branch -> Rule
-univRule (PrFormula _ bprs (A f2)) br
-  = UnivModRule (map (\p -> PrFormula p bprs f2) prefixesToHandle) check
-     where m_currentPrefix = Map.lookup f2 (univRlCh br)
-           prefixToStartWith = maybe 0 ((+)1) m_currentPrefix
-           prefixToEndWith   = lastPr br
-           prefixesToHandle  = range (prefixToStartWith,prefixToEndWith)
-           check = (f2,prefixToEndWith)
-univRule _ _ = error $ "univRule"
 
 -- E
 existRule :: PrFormula -> Branch -> Rule
