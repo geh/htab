@@ -273,12 +273,11 @@ addFormula clp br f | isModal br =
 
 -- if we work with the hybrid language
 addFormula clp br f@(PrFormula pr bprs f2)
- = addFormulas2 clp newBr (f:newFormula)              -- addFormulas updates the prefix to formulas map
-    where   (urfather,bprs2,newClasses) = getUrfatherAndDeps br (DS.Prefix pr)
-            newFormula = if urfather == pr
-                          then []
-                          else [PrFormula urfather (bps_union bprs bprs2) f2]
-            newBr = br{nomPrefClasses = newClasses}
+ = if urfather == pr
+    then addFormula2_withPrefToFormUpdate clp newBr f
+    else addFormula2_withPrefToFormUpdate clp newBr (PrFormula urfather (bps_union bprs bprs2) f2) -- only treat the formula at the urfather
+    where  (urfather,bprs2,newClasses) = getUrfatherAndDeps br (DS.Prefix pr)
+           newBr = br{nomPrefClasses = newClasses}
 
 
 nubAndMergeDeps :: [PrFormula] -> [PrFormula]
