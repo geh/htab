@@ -13,7 +13,7 @@ addBoxRuleCheck, addDiaRuleCheck, addAtRuleCheck,
 addExistRuleCheck, addUnivConstraint, BranchData(..),branch_depth,
 emptyBranch,initialBranchStateFor,getCLParams,
 addZeroInPath,incPathHead,prefixes,Box_rule_chart,
-getUrfather, isInclusionUrfather,
+getUrfather, isUrfather, isInclusionUrfather,
 getInclusionUrfather, hasUnivMod, inclusionUrfathers,
 calculateStepInfo, BlockingMode(..)
 ) where
@@ -48,7 +48,6 @@ import qualified Data.Set as Set
 import qualified DisjSet as DS
 
 import LatexOutputHelper
-import Ix(range)
 
 import Maybe(fromJust)
 
@@ -246,14 +245,17 @@ addFormula clp br f@(PrFormula pr bprs f2@(PosLit (N (NomSymbol n))))
            currentDependencies = bps_unions $ bprs:(map (findDeps br) oldUrfathers)
            updatedPrToBrPrefs = Map.insert newUrfather currentDependencies (prToBrPrefs br)
 
-           urfathersToRetrieveFormulasFrom = delete newUrfather oldUrfathers -- avoid copying into the same prefix
+           exUrfathers = delete newUrfather oldUrfathers -- avoid copying into the same prefix
 
-           formulasToCopy = concatMap (getFormulas br) urfathersToRetrieveFormulasFrom
+           formulasToCopy = concatMap (getFormulas br) exUrfathers
            formulasToCopy2 = (PrFormula newUrfather bprs f2):(map (\(bprs2,f_) -> PrFormula newUrfather (bps_union currentDependencies bprs2) f_) formulasToCopy)
+
+           newPrefixToFormulas = foldr (\exUrfather prefToForms_ -> Map.delete exUrfather prefToForms_) (prefToForms br) exUrfathers -- delete useless data
 
            nubbedNewFormulas = nubAndMergeDeps (f:formulasToCopy2)
            brUpdated         = br{nomPrefClasses = classes4,
-                                  prToBrPrefs    = updatedPrToBrPrefs}
+                                  prToBrPrefs    = updatedPrToBrPrefs,
+                                  prefToForms    = newPrefixToFormulas}
 
 
 -- Case 1,5
@@ -336,10 +338,15 @@ findDeps br pr = Map.findWithDefault bps_empty pr (prToBrPrefs br)
 -}
 
 isInclusionUrfather :: Branch -> Prefix -> Bool
-isInclusionUrfather br pr = (getInclusionUrfather br pr) == pr
+isInclusionUrfather br pr
+ = if isUrfather br pr
+    then (getInclusionUrfather br pr) == pr
+    else False
 
 getInclusionUrfather :: Branch -> Prefix -> Prefix
-getInclusionUrfather br pr = giu_get_oldest (fromJust $ inclUrMap br) pr
+getInclusionUrfather br pr
+ = let nomUrfather = getUrfather br (DS.Prefix pr) in
+   giu_get_oldest (fromJust $ inclUrMap br) nomUrfather
 
 giu_get_oldest :: InclusionUrfathersMap -> Prefix -> Prefix
 giu_get_oldest ium pr = if parent == pr then pr else giu_get_oldest ium parent
@@ -354,16 +361,14 @@ calculateInclusionUrfathers :: Branch -> Branch
 -- if not, we let it as it is
 calculateInclusionUrfathers br =
     br{inclUrMap = newInclUrMap}
--- where newInclUrMap =  case blockMode br of
---                        NoBlocking        -> Nothing
---                        InclusionBlocking -> Just $ calculateInclusionUrfathersMap br 
-    where newInclUrMap = Just $ calculateInclusionUrfathersMap br
+     where newInclUrMap =  case blockMode br of
+                            NoBlocking        -> Nothing
+                            InclusionBlocking -> Just $ calculateInclusionUrfathersMap br
 
 calculateInclusionUrfathersMap :: Branch -> InclusionUrfathersMap
 calculateInclusionUrfathersMap br = 
-  case inclUrMap br of -- see if we have to construct it from scratch or re-use the previous one
-   Just previousM -> updatedInclUrMap previousM  -- it works assuming that there is no tableau step such that a prefix is created without being
-                                                 -- in the augmented prefixes list
+  case inclUrMap br of
+   Just previousM -> updatedInclUrMap previousM  -- works, provided that the augmented prefixes list is correctly filled
    Nothing        -> fromScratchInclUrMap
 
  where smallestModifiedPrefix = minimum $ incrPrs br 
@@ -373,11 +378,11 @@ calculateInclusionUrfathersMap br =
          if formulasIncluded br pref p2
              then (Map.insert pref p2 iuMap,False) -- stop
              else (iuMap, True)
-       updateM pref currentM_ = condFoldr (oneStep pref) currentM        (reverse [0..pref-1])
+       updateM pref currentM_ = condFoldr (oneStep pref) currentM        (filter (isUrfather br) (reverse [0..pref-1]))
                                  where currentM = Map.insert pref pref currentM_
-       updatedInclUrMap prevM = foldr     updateM        prevM           [pr..(lastPr br)]
+       updatedInclUrMap prevM = foldr     updateM        prevM           (filter (isUrfather br) [pr..(lastPr br)])
 
-       fromScratchInclUrMap   = foldr     updateM        emptyM          [0..(lastPr br)]
+       fromScratchInclUrMap   = foldr     updateM        emptyM          (filter (isUrfather br) (prefixes br))
 
 
 condFoldr :: (a -> b -> (b,Bool)) -> b -> [a] -> b
@@ -622,7 +627,7 @@ hasUnivMod :: Branch -> Bool
 hasUnivMod br = languageUniv $ inputLanguage br
 
 prefixes :: Branch -> [Prefix]
-prefixes br = range (0,lastPr br)
+prefixes br = [0..(lastPr br)]
 
 inclusionUrfathers :: Branch -> [Prefix]
 inclusionUrfathers br = filter (isInclusionUrfather br) (prefixes br)
