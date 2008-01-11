@@ -49,7 +49,7 @@ buildHerbrandModel branch =
        rs = Set.fromList $ map accToNNF
               $ concatMap (\((p1,r),bp_ps) -> map (\(_,p2) -> (p1 + bias, r, (getUrfather branch (DS.Prefix p2)) + bias))
                                                   bp_ps)
-                          (Map.assocs $ accStr branch)
+                          (flattenDMap $ accStr branch)
 
 buildHerbrandModel_univMod :: Branch -> HerbrandModel
 buildHerbrandModel_univMod branch =
@@ -79,8 +79,12 @@ buildHerbrandModel_univMod branch =
        rs = Set.fromList $ map accToNNF
               $ concatMap (\((p1,rel),bp_ps) -> map (\(_,p2) -> (p1 + bias, rel, (getInclusionUrfather branch p2) + bias))
                                                     bp_ps)
-                          (filter (isInclusionUrfather branch . fst . fst) $ Map.assocs $ accStr branch)
+                          (filter (isInclusionUrfather branch . fst . fst) $ flattenDMap $ accStr branch)
 
+flattenDMap :: Map.Map a (Map.Map b c) -> [((a,b),c)]
+flattenDMap m
+ = let ambcs = Map.assocs m  in --  [(a,Map.Map b c)]
+    concatMap (\(a_,innerM_) ->  map  (\(b_,c_) -> ((a_,b_),c_))  (Map.assocs innerM_  {- [(b,c)] -} )) ambcs
 
 accToNNF :: (Prefix,Rel,Prefix)
              -> NNF.Formula NomSymbol PropSymbol RelSymbol StateVar (NNF.At NNF.Nom (NNF.Diam NNF.Nom))

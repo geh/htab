@@ -168,11 +168,14 @@ applicableExistRules br =
 unCheckedBoxPairs :: Branch -> [(AccFormula,(BranchingPrefixes,Formula))]
 unCheckedBoxPairs br
   = [(AccFormula bps2 (RelSymbol r2) p2 p3, (bps1,f))
-                 | bk@(p1,r1) <- Map.keys (boxStr br),
-                   ak@(p2,r2) <- Map.keys (accStr br),
-                   p1 == p2 , r1 == r2,
-                   (bps1,f) <- (Map.!) (boxStr br) bk,
-                   (bps2,p3) <- (Map.!) (accStr br) ak,
+                 | p1 <- Map.keys (boxStr br),
+                   p2 <- Map.keys (accStr br),
+                   p1 == p2 ,
+                   r1 <- Map.keys ((Map.!) (boxStr br) p1),
+                   r2 <- Map.keys ((Map.!) (boxStr br) p2),
+                   r1 == r2,
+                   (bps1,f)  <- (Map.!) ((Map.!) (boxStr br) p1) r1,
+                   (bps2,p3) <- (Map.!) ((Map.!) (accStr br) p2) r2,
                    reallyNotIn (p1,r1,p3,f) (boxRlCh br)]
 
 reallyNotIn :: (Prefix,Rel,Prefix,Formula) -> Box_rule_chart -> Bool

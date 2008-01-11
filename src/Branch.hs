@@ -65,8 +65,8 @@ type Dia_structure    = Set.Set PrFormula
 type Neg_structure    = Set.Set PrFormula
 type At_structure     = Set.Set PrFormula
 type Exist_structure  = Set.Set PrFormula
-type Box_structure    = Map.Map (Prefix,Rel) [(BranchingPrefixes,Formula)]
-type Acc_structure    = Map.Map (Prefix,Rel) [(BranchingPrefixes,Prefix)]
+type Box_structure    = Map.Map Prefix (Map.Map Rel [(BranchingPrefixes,Formula)])
+type Acc_structure    = Map.Map Prefix (Map.Map Rel [(BranchingPrefixes,Prefix )])
 type Box_rule_chart   = Map.Map (Prefix,Rel,Prefix) (Set.Set Formula)
 
 type Dia_rule_chart    = Map.Map Prefix (Set.Set Formula)
@@ -252,8 +252,15 @@ addFormula clp br f@(PrFormula pr bprs f2@(PosLit (N (NomSymbol n))))
 
            newPrefixToFormulas = foldr (\exUrfather prefToForms_ -> Map.delete exUrfather prefToForms_) (prefToForms br) exUrfathers -- delete useless data
 
+
+           newBoxStr  = foldr (\exUrfather boxStr_  -> Map.delete  exUrfather boxStr_)                    (boxStr br)  exUrfathers
+           newAccStr  = foldr (\exUrfather accStr_  -> Map.delete  exUrfather accStr_)                    (accStr br)  exUrfathers
+-- TODO: better, copy them to the new urfather, but then remove the diamond formulas from the prefix to form map , instead of copying them to the new urfather
+
            nubbedNewFormulas = nubAndMergeDeps (f:formulasToCopy2)
            brUpdated         = br{nomPrefClasses = classes4,
+                                  boxStr         = newBoxStr,
+                                  accStr         = newAccStr,
                                   prToBrPrefs    = updatedPrToBrPrefs,
                                   prefToForms    = newPrefixToFormulas}
 
@@ -446,7 +453,15 @@ addFormula3 clp br pf@(PrFormula _ _ (Dis _))
 
 addFormula3 clp br pf@(PrFormula _ _ (Box _ _))
            = modBranchCaseFC clp br pf
-              $ \b (PrFormula pr bprs (Box (RelSymbol r) f)) -> b{boxStr = Map.insertWith (++) (pr,r) [(bprs,f)] (boxStr b)}
+              $ \b (PrFormula pr bprs (Box (RelSymbol r) f)) -> b{boxStr = updateBoxStr pr r bprs f (boxStr b)}
+
+              where updateBoxStr pr r bprs f boxStr_ =
+                     case Map.lookup pr boxStr_ of
+                      Nothing -> Map.insert pr (Map.singleton r [(bprs,f)]) boxStr_
+                      Just innerMap -> case Map.lookup r innerMap of
+                                        Nothing -> Map.insert pr (Map.insert r [(bprs,f)] innerMap) boxStr_
+                                        Just innerInnerList -> Map.insert pr (Map.insert r ((bprs,f):innerInnerList) innerMap) boxStr_
+
 
 addFormula3 clp br pf@(PrFormula _ _ (Dia _ _))
            = modBranchCaseFC clp br pf $ \b f@(PrFormula pr _ f2)
@@ -497,7 +512,15 @@ modBranchCaseFC clp br f branchModifier
 
 addAccFormula :: Branch -> AccFormula -> Branch
 addAccFormula br (AccFormula bprs (RelSymbol r) p1 p2) =
-  br{accStr=Map.insertWith (++) (p1,r) [(bprs,p2)] (accStr br)}
+  br{accStr=updateAccStr p1 r bprs p2 (accStr br)}
+   where
+    updateAccStr p1_ r_ bprs_ p2_ accStr_ =
+     case Map.lookup p1_ accStr_ of
+      Nothing -> Map.insert p1_ (Map.singleton r_ [(bprs_,p2_)]) accStr_
+      Just innerMap -> case Map.lookup r_ innerMap of
+                        Nothing -> Map.insert p1_ (Map.insert r_ [(bprs_,p2_)] innerMap) accStr_
+                        Just innerInnerList -> Map.insert p1_ (Map.insert r_ ((bprs_,p2_):innerInnerList) innerMap) accStr_
+
 
 addAccFormula _ (AccFormula _ (InvRelSymbol _) _ _ ) = error "inverse modality not handled"
 --
