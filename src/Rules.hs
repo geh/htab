@@ -28,8 +28,8 @@ data BranchModification =    BM_AddFormulas   [PrFormula]
                            | BM_AddAccFormula AccFormula
                            | BM_AddBoxRuleCheck (Prefix,Rel,Prefix,Formula)
                            | BM_AddDiaRuleCheck Prefix Formula
-                           | BM_AddAtRuleCheck Prefix Formula
-                           | BM_AddExistRuleCheck Prefix Formula
+                           | BM_AddAtRuleCheck Formula
+                           | BM_AddExistRuleCheck Formula
                            | BM_RemFormula PrFormula
                            | BM_CreateNewPr
 
@@ -56,10 +56,10 @@ getMods _ (DiaRule todelete@(PrFormula pr _ f) acctoadd toadd) =
 getMods _ (BoxRule checktoadd ftoadd) =
  [[BM_AddBoxRuleCheck checktoadd, BM_AddFormulas [ftoadd]]]
 
-getMods br (ExistModRule todelete@(PrFormula pr _ f) toadd) =
+getMods br (ExistModRule todelete@(PrFormula _ _ f) toadd) =
  [[BM_RemFormula todelete, BM_AddFormulas [toadd],
    BM_CreateNewPr]
-   ++ if (hasUnivMod br) then [BM_AddExistRuleCheck pr f] else [] ]
+   ++ if (hasUnivMod br) then [BM_AddExistRuleCheck f] else [] ]
 
 getMods _ (DisjRule todelete toadds) =
  [[BM_RemFormula todelete, BM_AddFormulas [toadd]] | toadd <- toadds]
@@ -70,9 +70,9 @@ getMods _ (SemBrRule todelete toaddss) =
 getMods _ (NegRule todelete toadd) =
  [[BM_RemFormula todelete, BM_AddFormulas [toadd]]]
 
-getMods br (AtRule todelete@(PrFormula pr _ f) toadd1 toadd2) =
+getMods br (AtRule todelete@(PrFormula _ _ f) toadd1 toadd2) =
  [[BM_RemFormula todelete, BM_AddFormulas [toadd1, toadd2], BM_CreateNewPr]
-  ++ if (hasUnivMod br) then [BM_AddAtRuleCheck pr f] else [] ]
+  ++ if (hasUnivMod br) then [BM_AddAtRuleCheck f] else [] ]
 
 
 instance Show Rule where
@@ -206,8 +206,8 @@ applyMod clp br (BM_AddFormulas li) = addFormulas clp br li
 applyMod  _  br (BM_AddAccFormula accFor) = BranchOK (addAccFormula br accFor)
 applyMod  _  br (BM_AddBoxRuleCheck check) = BranchOK (addBoxRuleCheck br check)
 applyMod  _  br (BM_AddDiaRuleCheck pr f) = BranchOK (addDiaRuleCheck br pr f)
-applyMod  _  br (BM_AddAtRuleCheck pr f) = BranchOK (addAtRuleCheck br pr f)
-applyMod  _  br (BM_AddExistRuleCheck pr f) = BranchOK (addExistRuleCheck br pr f)
+applyMod  _  br (BM_AddAtRuleCheck f) = BranchOK (addAtRuleCheck br f)
+applyMod  _  br (BM_AddExistRuleCheck f) = BranchOK (addExistRuleCheck br f)
 applyMod clp br (BM_CreateNewPr) = createNewPr clp br
 applyMod  _  br (BM_RemFormula f) = BranchOK (remFormula br f)
 

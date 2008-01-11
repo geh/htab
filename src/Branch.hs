@@ -70,8 +70,8 @@ type Acc_structure    = Map.Map Prefix (Map.Map Rel [(BranchingPrefixes,Prefix )
 type Box_rule_chart   = Map.Map (Prefix,Rel,Prefix) (Set.Set Formula)
 
 type Dia_rule_chart    = Map.Map Prefix (Set.Set Formula)
-type At_rule_chart     = Map.Map Prefix (Set.Set Formula) -- | used only if the input formula has the universal modality
-type Exist_rule_chart  = Map.Map Prefix (Set.Set Formula) -- |
+type At_rule_chart     = Set.Set Formula                  -- | used only if the input formula has the universal modality
+type Exist_rule_chart  = Set.Set Formula                  -- |
 
 type Univ_constraints  = [(BranchingPrefixes,Formula)] -- TODO try Map.Map Formula BranchingPrefixes for dependency merge
 
@@ -129,8 +129,8 @@ emptyBranch l =
                   accStr=Map.empty::Acc_structure,
                   boxRlCh=Map.empty::Box_rule_chart,
                   diaRlCh=Map.empty::Dia_rule_chart,
-                  atRlCh=Map.empty::At_rule_chart,
-                  existRlCh=Map.empty::Exist_rule_chart,
+                  atRlCh=Set.empty::At_rule_chart,
+                  existRlCh=Set.empty::Exist_rule_chart,
                   univCons=[],
                   lastPr= 0 ,
                   prefToForms= Map.empty::PrefToFormulas,
@@ -180,8 +180,8 @@ instance ShowLatex Branch where
               "\nAccesibility: "   ++ (putEol $ math $ show $ Map.toList $ accStr br)   ++
               "\nBox rule chart: " ++ (putEol $ math $ show $ Map.toList $ boxRlCh br)  ++
               "\nDia rule chart: " ++ (putEol $ math $ show $ Map.toList $ diaRlCh br)  ++
-              "\n@ rule chart: "   ++ (putEol $ math $ show $ Map.toList $ atRlCh br)  ++
-              "\nExist rule chart:" ++ (putEol $ math $ show $ Map.toList $ existRlCh br)  ++
+              "\n@ rule chart: "   ++ (putEol $ math $ show $ Set.toList $ atRlCh br)  ++
+              "\nExist rule chart:" ++ (putEol $ math $ show $ Set.toList $ existRlCh br)  ++
               "\nUniv constraints: "++ (putEol $ math $ show $ univCons br) ++
               "\nBiggest prefix: " ++ (putEol $ show $ lastPr br) ++
               "\nPrefix to branching prefixes: " ++ (putEol $ math $ show $ Map.toList $ prToBrPrefs br) ++
@@ -472,14 +472,14 @@ addFormula3 _ _ (PrFormula _ _ (A _))
            = error " 'A' formulas should have been treated before"
 
 addFormula3 clp br pf@(PrFormula _ _ (E _))
-           = modBranchCaseFC clp br pf $ \b f@(PrFormula pr _ f2) ->
-                                                  b{existStr = if existAlreadyDone b pr f2      -- exist rule saturation
+           = modBranchCaseFC clp br pf $ \b f@(PrFormula _ _ f2) ->
+                                                  b{existStr = if existAlreadyDone b f2      -- exist rule saturation
                                                                  then existStr b
                                                                  else Set.insert f (existStr b)}
 
 addFormula3 clp br pf@(PrFormula _ _ (At _ _))
-           = modBranchCaseFC clp br pf $ \b f@(PrFormula pr _ f2)  ->
-                                                  b{atStr    = if atAlreadyDone b pr f2
+           = modBranchCaseFC clp br pf $ \b f@(PrFormula _ _ f2)  ->
+                                                  b{atStr    = if atAlreadyDone b f2
                                                                  then atStr b
                                                                  else Set.insert f (atStr b)}
 
@@ -547,35 +547,27 @@ diaAlreadyDone _ _ _ = error "dia already done : wrong formula kind"
 
 --
 
-addExistRuleCheck :: Branch -> Prefix -> Formula -> Branch
-addExistRuleCheck br pr f =
-  br{existRlCh=Map.insertWith Set.union pr (Set.singleton f) (existRlCh br)}
+addExistRuleCheck :: Branch -> Formula -> Branch
+addExistRuleCheck br f =
+  br{existRlCh=Set.insert f (existRlCh br)}
 
 --
 
-existAlreadyDone :: Branch -> Prefix -> Formula -> Bool
-existAlreadyDone b p f@(E _) =
-  case Map.lookup p (existRlCh b) of
-     Nothing  -> False
-     Just fset -> Set.member f fset
-
-existAlreadyDone _ _ _ = error "exist already done : wrong formula kind"
+existAlreadyDone :: Branch -> Formula -> Bool
+existAlreadyDone b f@(E _) = Set.member f (existRlCh b)
+existAlreadyDone _ _ = error "exist already done : wrong formula kind"
 
 --
 
-addAtRuleCheck :: Branch -> Prefix -> Formula -> Branch
-addAtRuleCheck br pr f =
-  br{atRlCh=Map.insertWith Set.union pr (Set.singleton f) (atRlCh br)}
+addAtRuleCheck :: Branch -> Formula -> Branch
+addAtRuleCheck br f =
+  br{atRlCh=Set.insert f (atRlCh br)}
 
 --
 
-atAlreadyDone :: Branch -> Prefix -> Formula -> Bool
-atAlreadyDone b p f@(At _ _) =
-  case Map.lookup p (atRlCh b) of
-     Nothing  -> False
-     Just fset -> Set.member f fset
-
-atAlreadyDone _ _ _ = error "at already done : wrong formula kind"
+atAlreadyDone :: Branch -> Formula -> Bool
+atAlreadyDone b f@(At _ _) = Set.member f (atRlCh b)
+atAlreadyDone _ _ = error "at already done : wrong formula kind"
 
 --
 
