@@ -40,7 +40,11 @@ mkDSet = Map.empty::DisjSet x
 
 
 data Pointer = Prefix Int | Nominal Int
- deriving (Eq,Show)
+ deriving (Eq)
+
+instance Show Pointer where
+ show (Prefix p)  = "P" ++ show p
+ show (Nominal n) = "N" ++ show n
 
 instance Ord Pointer where
  compare (Prefix i1)  (Prefix i2)  = compare i1 i2
