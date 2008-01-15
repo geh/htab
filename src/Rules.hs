@@ -172,7 +172,7 @@ unCheckedBoxPairs br
                    p2 <- Map.keys (accStr br),
                    p1 == p2 ,
                    r1 <- Map.keys ((Map.!) (boxStr br) p1),
-                   r2 <- Map.keys ((Map.!) (boxStr br) p2),
+                   r2 <- Map.keys ((Map.!) (accStr br) p2),
                    r1 == r2,
                    (bps1,f)  <- (Map.!) ((Map.!) (boxStr br) p1) r1,
                    (bps2,p3) <- (Map.!) ((Map.!) (accStr br) p2) r2,
