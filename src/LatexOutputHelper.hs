@@ -29,7 +29,7 @@ lseparate _ [] = ""
 lseparate s os = foldl1 (\a1 a2 -> (a1 ++ s ++ a2)) $ map showLatex os
 
 math :: String -> String
-math s = if (length s) > 0 then ("$" ++ s ++ "$") else ""
+math s = if (not $ null s) then ("$" ++ s ++ "$") else ""
 
 bold :: String -> String
 bold s = "\\textbf{" ++ s ++ "}"

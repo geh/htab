@@ -37,12 +37,10 @@ import Data.Ix
 
 data RuleId = R_Conj    -- Conjunction
             | R_Dia     -- Diamond <r>
-            | R_Box     -- Box  [r]
             | R_Disj    -- Disjunction
             | R_SemBr   -- Semantic Branching
             | R_Neg     -- Negation rule
             | R_At      -- Satisfaction operator (@) rule
             | R_NegNom  -- Negation before nominal rule
-            | R_Univ    -- Universal modality
             | R_Exist   -- Existential modality
         deriving(Eq, Ord, Ix, Show)

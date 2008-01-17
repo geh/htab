@@ -3,7 +3,6 @@ module ModelGen (HerbrandModel, buildHerbrandModel, inducedModel )
 where
 
 import qualified Data.Set as Set
-import qualified Data.Map as Map
 
 import HyLo.Model.Herbrand ( inducedModel )
 import qualified HyLo.Model.Herbrand as H
@@ -18,6 +17,8 @@ import Branch( Branch(..) , prefixes,getUrfather,
                BlockingMode(..) )
 
 import qualified DisjSet as DS
+
+import DMap
 
 type HerbrandModel = H.HerbrandModel NomSymbol PropSymbol RelSymbol
 
@@ -81,11 +82,6 @@ buildHerbrandModel_univMod branch =
                                                     bp_ps)
                           (filter (isInclusionUrfather branch . fst . fst) $ flattenDMap $ accStr branch)
 
-flattenDMap :: Map.Map a (Map.Map b c) -> [((a,b),c)]
-flattenDMap m
- = let ambcs = Map.assocs m  in --  [(a,Map.Map b c)]
-    concatMap (\(a_,innerM_) ->  map  (\(b_,c_) -> ((a_,b_),c_))  (Map.assocs innerM_  {- [(b,c)] -} )) ambcs
-
 accToNNF :: (Prefix,Rel,Prefix)
              -> NNF.Formula NomSymbol PropSymbol RelSymbol StateVar (NNF.At NNF.Nom (NNF.Diam NNF.Nom))
 accToNNF (p1,r,p2) =
@@ -101,8 +97,8 @@ urfatherOrPrefixZero br (NomSymbol n) =
 prefixAndProps :: Branch -> [(Prefix,PropSymbol)]
 prefixAndProps br =
   [(pr,p_) | (pr , PosLit (P p_)) <- prPosLitProp]
- where seen = seenStr br
-       prPosLitProp = filter isPosLitProp $ map fst $ filter (fst . snd) $ Map.toList seen
+ where clashable = clashStr br
+       prPosLitProp = filter isPosLitProp $ map fst $ filter (fst . snd) $ flattenDMap clashable
 
 isPosLitProp :: (Prefix,Formula) -> Bool
 isPosLitProp (_, PosLit (P _)) = True

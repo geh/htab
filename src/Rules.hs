@@ -5,28 +5,25 @@ applicableRules, applyRule, ruleToId,
 applyMod
 ) where
 
-import Formula( RelSymbol(..), Atom(..), Formula(..), PrFormula(..), neg,
-                BranchingPrefix, BranchingPrefixes,
-                bps_insert, bps_union, prefixList, AccFormula(..),
-                Rel, Prefix )
+import Formula( Atom(..), Formula(..), PrFormula(..), neg,
+                BranchingPrefix,
+                bps_insert, prefixList, AccFormula(..),
+                Prefix )
 import Branch( Branch(..), createNewPr, BranchInfo(..),
                addFormulas, addAccFormula, remFormula,
-               addBoxRuleCheck, addDiaRuleCheck, addExistRuleCheck,
-               addAtRuleCheck, Box_rule_chart,
+               addDiaRuleCheck, addExistRuleCheck,
+               addAtRuleCheck,
                isInclusionUrfather, BlockingMode(..), hasUnivMod )
 import CommandLine(CmdLineParams, semBranch, fullClash)
 import RuleMetadata(RuleId(..))
 import LatexOutput()
 import LatexOutputHelper
-import qualified Data.Map as Map
 import qualified Data.Set as Set
-import Ix(range)
 
 -- a "rule" is basically a list of modifications of the structures
 
 data BranchModification =    BM_AddFormulas   [PrFormula]
                            | BM_AddAccFormula AccFormula
-                           | BM_AddBoxRuleCheck (Prefix,Rel,Prefix,Formula)
                            | BM_AddDiaRuleCheck Prefix Formula
                            | BM_AddAtRuleCheck Formula
                            | BM_AddExistRuleCheck Formula
@@ -36,7 +33,6 @@ data BranchModification =    BM_AddFormulas   [PrFormula]
 -- each rule constructor contains exactly the needed data to know the effect of the rule
 data Rule =  ConjRule   PrFormula [PrFormula]
            | DiaRule    PrFormula AccFormula PrFormula         -- creates a prefix
-           | BoxRule    (Prefix,Rel,Prefix,Formula) PrFormula
            | DisjRule   PrFormula [PrFormula]
            | SemBrRule  PrFormula [[PrFormula]]
            | NegRule    PrFormula PrFormula
@@ -52,9 +48,6 @@ getMods _ (DiaRule todelete@(PrFormula pr _ f) acctoadd toadd) =
    BM_AddFormulas [toadd],
    BM_AddDiaRuleCheck pr f,
    BM_CreateNewPr]]
-
-getMods _ (BoxRule checktoadd ftoadd) =
- [[BM_AddBoxRuleCheck checktoadd, BM_AddFormulas [ftoadd]]]
 
 getMods br (ExistModRule todelete@(PrFormula _ _ f) toadd) =
  [[BM_RemFormula todelete, BM_AddFormulas [toadd],
@@ -78,7 +71,6 @@ getMods br (AtRule todelete@(PrFormula _ _ f) toadd1 toadd2) =
 instance Show Rule where
    show (ConjRule  todelete _ )    = "conjunction : " ++ (show todelete)
    show (DiaRule   todelete _ _ )  = "diamond : " ++ (show todelete)
-   show (BoxRule   boxRuleCheck _ )= "box : " ++ (show boxRuleCheck)
    show (DisjRule  todelete _ )    = "disjunction : " ++ (show todelete)
    show (SemBrRule todelete _ )    = "semantic branching : " ++ (show todelete)
    show (NegRule   todelete _ )    = "negation : " ++ (show todelete)
@@ -88,8 +80,6 @@ instance Show Rule where
 instance ShowLatex Rule where
    showLatex (ConjRule   todelete _ ) = "conjunction : " ++  (math $ showLatex todelete)
    showLatex (DiaRule    todelete _ _ ) = "diamond : " ++  (math $ showLatex todelete)
-   showLatex (BoxRule    boxRuleCheck _ ) = "box : " ++ (showLat boxRuleCheck)
-    where showLat (p1,r,p2,f) = "(" ++ show p1 ++ "," ++ show r ++ "," ++ show p2 ++ "," ++ (math $ showLatex f) ++ ")"
    showLatex (DisjRule   todelete _ ) = "disjunction : " ++ (math $ showLatex todelete)
    showLatex (SemBrRule  todelete _ ) = "semantic branching : " ++ (math $ showLatex todelete)
    showLatex (NegRule    todelete _ ) = "negation : " ++ (math $ showLatex todelete)
@@ -101,7 +91,6 @@ ruleToId :: Rule -> RuleId
 ruleToId r = case r of
               (ConjRule _ _)   -> R_Conj
               (DiaRule _ _ _)  -> R_Dia
-              (BoxRule _ _)    -> R_Box
               (DisjRule _ _)   -> R_Disj
               (SemBrRule _ _)  -> R_SemBr
               (NegRule _ _)    -> R_Neg
@@ -118,7 +107,6 @@ applicableRules br clp d =
                        else [] )
  ++ (applicableConjRules br)
  ++ (applicableDiaRules br)
- ++ (applicableBoxRules br)
  ++ (applicableAtRules br)
  ++ (applicableExistRules br)
  ++ if semBranch clp then (applicableSemBrRules br d)
@@ -134,10 +122,6 @@ applicableDiaRules br =
                        isInclusionUrfather br pr]
   else [diaRule f br | f <- Set.toAscList $ diaStr br]
  where prefGenBlock = (blockMode br) == InclusionBlocking
-
-applicableBoxRules :: Branch -> [Rule]
-applicableBoxRules br
-  = [boxRule prF accF br | (prF,accF) <- (unCheckedBoxPairs br)]
 
 applicableDisjRules :: Branch -> BranchingPrefix -> [Rule]
 applicableDisjRules br d = [disjRule f br d | f <- Set.toAscList $ disjStr br]
@@ -165,26 +149,6 @@ applicableExistRules br =
   else [existRule f br | f <- Set.toAscList $ existStr br]
  where prefGenBlock = (blockMode br) == InclusionBlocking
 
-unCheckedBoxPairs :: Branch -> [(AccFormula,(BranchingPrefixes,Formula))]
-unCheckedBoxPairs br
-  = [(AccFormula bps2 (RelSymbol r2) p2 p3, (bps1,f))
-                 | p1 <- Map.keys (boxStr br),
-                   p2 <- Map.keys (accStr br),
-                   p1 == p2 ,
-                   r1 <- Map.keys ((Map.!) (boxStr br) p1),
-                   r2 <- Map.keys ((Map.!) (accStr br) p2),
-                   r1 == r2,
-                   (bps1,f)  <- (Map.!) ((Map.!) (boxStr br) p1) r1,
-                   (bps2,p3) <- (Map.!) ((Map.!) (accStr br) p2) r2,
-                   reallyNotIn (p1,r1,p3,f) (boxRlCh br)]
-
-reallyNotIn :: (Prefix,Rel,Prefix,Formula) -> Box_rule_chart -> Bool
-reallyNotIn (p1,r,p2,f) brc =
- case (Map.lookup (p1,r,p2) brc) of
-    Nothing -> True
-    Just fs -> Set.notMember f fs
-
-
 applyRule :: CmdLineParams -> Rule -> Branch -> [BranchInfo]
 applyRule clp rule br = applySetOfMods clp br (getMods br rule)
 
@@ -203,8 +167,7 @@ applyMods _ br [] = BranchOK br
 
 applyMod :: CmdLineParams -> Branch -> BranchModification -> BranchInfo
 applyMod clp br (BM_AddFormulas li) = addFormulas clp br li
-applyMod  _  br (BM_AddAccFormula accFor) = BranchOK (addAccFormula br accFor)
-applyMod  _  br (BM_AddBoxRuleCheck check) = BranchOK (addBoxRuleCheck br check)
+applyMod clp br (BM_AddAccFormula accFor) = addAccFormula clp br accFor
 applyMod  _  br (BM_AddDiaRuleCheck pr f) = BranchOK (addDiaRuleCheck br pr f)
 applyMod  _  br (BM_AddAtRuleCheck f) = BranchOK (addAtRuleCheck br f)
 applyMod  _  br (BM_AddExistRuleCheck f) = BranchOK (addExistRuleCheck br f)
@@ -234,14 +197,6 @@ diaRule _ _ = error $ "diaRule"
 --
 getNewPr :: Branch -> Prefix
 getNewPr br = (lastPr br)+1
-
--- box
-boxRule :: AccFormula -> (BranchingPrefixes,Formula) -> Branch -> Rule
-boxRule (AccFormula bprs1 (RelSymbol r1) pr1 pr2) (bprs2,f) _
- =  BoxRule (pr1,r1,pr2,f) (PrFormula pr2 (bps_union bprs1 bprs2) f)
-
-boxRule (AccFormula _ (InvRelSymbol _) _ _) _ _
- = error "inverse modality not supported"
 
 -- E
 existRule :: PrFormula -> Branch -> Rule

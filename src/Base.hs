@@ -32,8 +32,7 @@ module Base
 where
 
 import Data.List(intersperse)
-import Data.Map(Map, insertWith, insertLookupWithKey)
-
+import qualified Data.Map as Map
 
 infixr $.
 ($.) :: (c -> c') -> (a -> b -> c) -> (a -> b -> c')
@@ -83,11 +82,11 @@ both p1 p2 x = (p1 x) && (p2 x)
 atLeastOne :: (a -> Bool) -> (a -> Bool) -> (a -> Bool)
 atLeastOne p1 p2 x = (p1 x) || (p2 x)
 
-insertLookup :: Ord k => k -> v -> Map k v -> (Maybe v, Map k v)
-insertLookup = insertLookupWithKey (\_ _ oldVal -> oldVal)
+insertLookup :: Ord k => k -> v -> Map.Map k v -> (Maybe v, Map.Map k v)
+insertLookup = Map.insertLookupWithKey (\_ _ oldVal -> oldVal)
 
-adjustOrInsert ::  Ord k => (v -> v) -> k -> v -> Map k v -> Map k v
-adjustOrInsert f = insertWith (const f)
+adjustOrInsert ::  Ord k => (v -> v) -> k -> v -> Map.Map k v -> Map.Map k v
+adjustOrInsert f = Map.insertWith (const f)
 
 {- separate: Given
 
@@ -156,3 +155,27 @@ listIncluded :: Eq a => [a] -> [a] -> Bool
 -- is the first list included in the second list ?
 -- (like a set inclusion, but with lists, ie, no multi-valuation)
 listIncluded l1 l2 = and $ map (\e -> elem e l2) l1
+
+
+almostCartesianProduct :: [a] -> [b] -> [(a,b)]
+-- example:
+-- acp [a1,a2,a3] [b1,b2,b3] = [(a1,b2),(a1,b3),(a2,b1),(a2,b3),(a3,b1),(a3,b2)]
+--
+-- require : as and bs must be of the same size
+almostCartesianProduct [] _  = error "almostCartesianProduct: first list empty"
+almostCartesianProduct _  [] = error "almostCartesianProduct: second list empty"
+almostCartesianProduct as bs = [(a,b) | (idxA,a) <- zip [(0::Int)..] as,
+                                        (idxB,b) <- zip [(0::Int)..] bs,
+                                        idxA /= idxB]
+
+
+moveInMap :: Ord a => Map.Map a b -> a -> a -> (b -> b -> b) -> Map.Map a b
+moveInMap m origKey destKey mergeF
+ = result
+   where mOrigValue = Map.lookup origKey m
+         prunedM = Map.delete origKey m
+         result = case mOrigValue of
+                   Nothing -> m
+                   Just origValue -> Map.insertWith mergeF destKey origValue prunedM
+
+
