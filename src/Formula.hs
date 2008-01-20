@@ -112,9 +112,9 @@ bps_empty  = IntSet.empty
 
 deps_min :: BranchingPrefixes -> Int
 deps_min deps
-  =  case IntSet.toList deps of  -- with GHC 6.8.1 , use IntSet.toAscList
-       [] -> 0
-       l  -> minimum l           -- (hd:_) -> hd
+  =  case IntSet.toList deps of
+       []    -> 0
+       (hd:_)-> hd
 
 data PrFormula = PrFormula Prefix BranchingPrefixes Formula
  deriving Eq
