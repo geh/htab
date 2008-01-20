@@ -147,7 +147,7 @@ defaultParams = CLP {showHelp = False,
                      maxtimeout = 0,
                      statsStr = ":0:c",
                      semBranch = True,
-                     fullClash = True,
+                     fullClash = False,
                      genModel = Nothing,
                      quietMode = False}
 
