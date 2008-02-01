@@ -112,7 +112,7 @@ bps_empty  = IntSet.empty
 
 deps_min :: BranchingPrefixes -> Int
 deps_min deps
-  =  case IntSet.toList deps of
+  =  case IntSet.toAscList deps of
        []    -> 0
        (hd:_)-> hd
 
