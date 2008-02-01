@@ -13,7 +13,8 @@ RelSymbol(..), Rel, Prefix,
 Formula(..), Atom(..),
 BranchingPrefix, BranchingPrefixes,
 bps_union, bps_unions, bps_insert, bps_member,
-bps_empty, deps_min, PrFormula(..), AccFormula(..),
+bps_empty, deps_min, bps_show,
+PrFormula(..), AccFormula(..),
 LanguageInfo(..),
 nnf, neg, isTrue, isFalse,
 box, diamond, at, conj, disj, univMod, existMod, taut,
@@ -115,6 +116,9 @@ deps_min deps
   =  case IntSet.toAscList deps of
        []    -> 0
        (hd:_)-> hd
+
+bps_show :: BranchingPrefixes -> String
+bps_show = show . IntSet.toList
 
 data PrFormula = PrFormula Prefix BranchingPrefixes Formula
  deriving Eq

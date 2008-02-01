@@ -126,26 +126,26 @@ emptyBranch l =
 
 instance Show Branch where
     show br = "Input language: " ++ show (inputLanguage br) ++
-              "\nClashable formulas: "  ++ show (Map.toList $ clashStr br)   ++
-              "\nConjunctions: "   ++ show (conjStr br)  ++
-              "\nDisjunctions: "   ++ show (disjStr br)  ++
-              "\nDiamonds: "       ++ show (diaStr br)   ++
-              "\nExists: "         ++ show (existStr br) ++
-              "\nNegations: "      ++ show (negStr br)   ++
-              "\nAts: "            ++ show (atStr br)    ++
-              "\nAccesibility: "   ++ show (accStr br)   ++
-              "\nBox constraints: " ++ show (boxConstr br)  ++
-              "\nDia rule chart: " ++ show (diaRlCh br)  ++
-              "\n@ rule chart: "   ++ show (atRlCh br) ++
-              "\nExist rule chart:" ++ show (existRlCh br) ++
+              "\nClashable formulas: " ++ prettyShowMap_ (clashStr br) (\v -> "(" ++ prettyShowMap_clashable v ++ ")") "\n " ++
+              "\nConjunctions: "   ++ show (Set.toList $ conjStr br)  ++
+              "\nDisjunctions: "   ++ show (Set.toList $ disjStr br)  ++
+              "\nDiamonds: "       ++ show (Set.toList $ diaStr br)   ++
+              "\nExists: "         ++ show (Set.toList $ existStr br) ++
+              "\nNegations: "      ++ show (Set.toList $ negStr br)   ++
+              "\nAts: "            ++ show (Set.toList $ atStr br)    ++
+              "\nAccesibility: "    ++ prettyShowMap_ (accStr br) (\v -> "(" ++ prettyShowMap_rel_bps_x v ++ ")") "\n " ++
+              "\nBox constraints: " ++ prettyShowMap_ (boxConstr br) (\v -> "(" ++ prettyShowMap_rel_bps_x v ++ ")") "\n " ++
+              "\nDia rule chart: "  ++ prettyShowMap_ (diaRlCh br) (show . Set.toList) "\n " ++
+              "\n@ rule chart: "   ++ show (Set.toList $ atRlCh br) ++
+              "\nExist rule chart:" ++ show (Set.toList $ existRlCh br) ++
               "\nUniv constraints: "++ show (univCons br) ++
               "\nBiggest prefix: " ++ show (lastPr br) ++
-              "\nPrefix to branching prefixes: " ++ show (Map.toList $ prToBrPrefs br) ++
-              "\nPrefix to formulas: "  ++ show (Map.toList $ prefToForms br) ++
+              "\nPrefix to branching prefixes: " ++ prettyShowMap_ (prToBrPrefs br) bps_show "\n " ++
+              "\nPrefix to formulas: " ++ prettyShowMap_ (prefToForms br) (show . Set.toList) "\n " ++
               "\nInclusion urfather map: "  ++ show (inclUrMap br) ++
               "\nIncreased prefixes: " ++ show (incrPrs br) ++
               "\nBlocking mode: " ++ show (blockMode br) ++
-              "\nPrefix-Nominal classes : " ++ show (Map.toList $ nomPrefClasses br)
+              "\nPrefix-Nominal classes : " ++ prettyShowMap (nomPrefClasses br) ", "
 
 instance ShowLatex Branch where
  showLatex br = "Input language: " ++ (putEol $ math $ show $ inputLanguage br)   ++ 
@@ -165,7 +165,7 @@ instance ShowLatex Branch where
               "\nBiggest prefix: " ++ (putEol $ show $ lastPr br) ++
               "\nPrefix to branching prefixes: " ++ (putEol $ math $ show $ Map.toList $ prToBrPrefs br) ++
               "\nPrefix to formulas: \\\\"      ++ (putEol $ math $ showLatex $ prefToForms br) ++
-              "\nPrefix-Nominal classes : " ++ (putEol $ verbatim $ show $ nomPrefClasses br) ++
+              "\nPrefix-Nominal classes : " ++ (putEol $ math $ show $ nomPrefClasses br) ++
               "\nInclusion urfather map: "  ++ (putEol $ math $ show $ inclUrMap br) ++
               "\nIncreased prefixes: " ++ (putEol $ show (incrPrs br)) ++
               "\nBlocking mode: " ++ show (blockMode br)
@@ -184,6 +184,30 @@ instance ShowLatex Clashable_info where
 genericSeparate :: (a -> String) ->  String -> [a] -> String
 genericSeparate _ _ [] = ""
 genericSeparate f s os = foldl1 (\a1 a2 -> (a1 ++ s ++ a2)) $ map f os
+
+
+
+prettyShowMap :: (Show x, Show y) => Map.Map x y -> String -> String
+prettyShowMap dasMap separator = prettyShowMap_ dasMap show separator
+
+prettyShowMap_ :: (Show x, Show y) => Map.Map x y -> (y -> String) -> String -> String
+prettyShowMap_ dasMap valueShow separator
+ = concat $ List.intersperse separator $ map (\(k,v) -> show k ++ " -> " ++ valueShow v)
+          $ Map.toList dasMap
+
+
+prettyShowMap_clashable :: Map.Map Formula (Bool,BranchingPrefixes) -> String
+prettyShowMap_clashable dasMap
+ = concat $ List.intersperse ", " $ map (\(f,(bo,bp)) -> (if bo then "" else "!") ++ show f ++ " " ++ bps_show bp)
+          $ Map.toList dasMap
+
+
+prettyShowMap_rel_bps_x :: (Show a) => Map.Map Rel [(BranchingPrefixes,a)] -> String
+prettyShowMap_rel_bps_x dasMap
+ = concat $ List.intersperse ", " $ map (\(r,bp_x_s) -> (++) ("-" ++ show r ++ "-> ") $ concat $ List.intersperse ", "
+                                           $ map (\(bp,x) -> show x ++ " " ++ bps_show bp) bp_x_s
+                                        )
+          $ Map.toList dasMap
 
 --
 
