@@ -13,7 +13,7 @@ addDiaRuleCheck, addAtRuleCheck,
 addExistRuleCheck, addUnivConstraint, BranchData(..),branch_depth,
 emptyBranch,initialBranchStateFor,getCLParams,
 addZeroInPath,incPathHead,prefixes,
-getUrfather, isUrfather, isInclusionUrfather,
+getUrfather, getUrfatherAndDeps, isUrfather, isInclusionUrfather,
 getInclusionUrfather, hasUnivMod, inclusionUrfathers,
 calculateStepInfo, BlockingMode(..)
 ) where
@@ -52,8 +52,8 @@ type Acc_structure    = Map.Map Prefix (Map.Map Rel [(BranchingPrefixes,Prefix )
 type Box_constraints  = Map.Map Prefix (Map.Map Rel [(BranchingPrefixes,Formula)])
 
 type Dia_rule_chart    = Map.Map Prefix (Set.Set Formula)
-type At_rule_chart     = Set.Set Formula                  -- | used only if the input formula has the universal modality
-type Exist_rule_chart  = Set.Set Formula                  -- |
+type At_rule_chart     = Set.Set Formula
+type Exist_rule_chart  = Set.Set Formula
 
 type Univ_constraints  = [(BranchingPrefixes,Formula)]    -- TODO try Map.Map Formula BranchingPrefixes for dependencies update
 

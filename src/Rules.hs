@@ -5,17 +5,18 @@ applicableRules, applyRule, ruleToId,
 applyMod
 ) where
 
-import Formula( Atom(..), Formula(..), PrFormula(..), neg,
+import Formula( Formula(..), PrFormula(..), neg,
                 BranchingPrefix,
                 bps_insert, prefixList, AccFormula(..),
-                Prefix )
+                Prefix, NomSymbol(..), bps_union )
 import Branch( Branch(..), createNewPr, BranchInfo(..),
                addFormulas, addAccFormula, remFormula,
                addDiaRuleCheck, addExistRuleCheck,
-               addAtRuleCheck,
-               isInclusionUrfather, BlockingMode(..), hasUnivMod )
+               addAtRuleCheck, getUrfatherAndDeps,
+               isInclusionUrfather, BlockingMode(..))
 import CommandLine(CmdLineParams, semBranch, fullClash)
 import RuleMetadata(RuleId(..))
+import qualified DisjSet as DS
 import LatexOutput()
 import LatexOutputHelper
 import qualified Data.Set as Set
@@ -32,12 +33,12 @@ data BranchModification =    BM_AddFormulas   [PrFormula]
 
 -- each rule constructor contains exactly the needed data to know the effect of the rule
 data Rule =  ConjRule   PrFormula [PrFormula]
-           | DiaRule    PrFormula AccFormula PrFormula         -- creates a prefix
+           | DiaRule    PrFormula AccFormula PrFormula        -- creates a prefix
            | DisjRule   PrFormula [PrFormula]
            | SemBrRule  PrFormula [[PrFormula]]
            | NegRule    PrFormula PrFormula
-           | AtRule     PrFormula PrFormula PrFormula          -- creates a prefix
-           | ExistModRule  PrFormula PrFormula                 -- creates a prefix
+           | AtRule     PrFormula PrFormula
+           | ExistModRule PrFormula PrFormula                 -- creates a prefix
 
 getMods :: Branch -> Rule -> [[BranchModification]]
 getMods _ (ConjRule todelete toadds) =
@@ -49,10 +50,9 @@ getMods _ (DiaRule todelete@(PrFormula pr _ f) acctoadd toadd) =
    BM_AddDiaRuleCheck pr f,
    BM_CreateNewPr]]
 
-getMods br (ExistModRule todelete@(PrFormula _ _ f) toadd) =
+getMods _ (ExistModRule todelete@(PrFormula _ _ f) toadd) =
  [[BM_RemFormula todelete, BM_AddFormulas [toadd],
-   BM_CreateNewPr]
-   ++ if (hasUnivMod br) then [BM_AddExistRuleCheck f] else [] ]
+   BM_CreateNewPr,BM_AddExistRuleCheck f]]
 
 getMods _ (DisjRule todelete toadds) =
  [[BM_RemFormula todelete, BM_AddFormulas [toadd]] | toadd <- toadds]
@@ -63,9 +63,8 @@ getMods _ (SemBrRule todelete toaddss) =
 getMods _ (NegRule todelete toadd) =
  [[BM_RemFormula todelete, BM_AddFormulas [toadd]]]
 
-getMods br (AtRule todelete@(PrFormula _ _ f) toadd1 toadd2) =
- [[BM_RemFormula todelete, BM_AddFormulas [toadd1, toadd2], BM_CreateNewPr]
-  ++ if (hasUnivMod br) then [BM_AddAtRuleCheck f] else [] ]
+getMods _ (AtRule todelete@(PrFormula _ _ f) toadd) =
+ [[BM_RemFormula todelete, BM_AddFormulas [toadd], BM_AddAtRuleCheck f]]
 
 
 instance Show Rule where
@@ -74,7 +73,7 @@ instance Show Rule where
    show (DisjRule  todelete _ )    = "disjunction : " ++ (show todelete)
    show (SemBrRule todelete _ )    = "semantic branching : " ++ (show todelete)
    show (NegRule   todelete _ )    = "negation : " ++ (show todelete)
-   show (AtRule    todelete _ _ )  = "at : " ++ (show todelete)
+   show (AtRule    todelete _ )    = "at : " ++ (show todelete)
    show (ExistModRule todelete _)  = "E : " ++ (show todelete)
 
 instance ShowLatex Rule where
@@ -83,7 +82,7 @@ instance ShowLatex Rule where
    showLatex (DisjRule   todelete _ ) = "disjunction : " ++ (math $ showLatex todelete)
    showLatex (SemBrRule  todelete _ ) = "semantic branching : " ++ (math $ showLatex todelete)
    showLatex (NegRule    todelete _ ) = "negation : " ++ (math $ showLatex todelete)
-   showLatex (AtRule     todelete _ _ ) = "at : " ++ (math $ showLatex todelete)
+   showLatex (AtRule     todelete _ ) = "at : " ++ (math $ showLatex todelete)
    showLatex (ExistModRule todelete _)  = "E : " ++ (math $ showLatex todelete)
 
 --
@@ -94,7 +93,7 @@ ruleToId r = case r of
               (DisjRule _ _)   -> R_Disj
               (SemBrRule _ _)  -> R_SemBr
               (NegRule _ _)    -> R_Neg
-              (AtRule _ _ _)   -> R_At
+              (AtRule _ _ )    -> R_At
               (ExistModRule _ _)  -> R_Exist
 
 --
@@ -133,30 +132,17 @@ applicableNegRules :: Branch -> [Rule]
 applicableNegRules br = [negRule f br | f <- Set.toAscList $ negStr br]
 
 applicableAtRules :: Branch -> [Rule]
-applicableAtRules br =
- if prefGenBlock
-  then [atRule f br | f@(PrFormula pr _ _) <- Set.toAscList $ atStr br,
-                      isInclusionUrfather br pr]
-  else [atRule f br | f <- Set.toAscList $ atStr br]
- where prefGenBlock = (blockMode br) == InclusionBlocking
-
+applicableAtRules br = [atRule f br | f <- Set.toAscList $ atStr br]
 
 applicableExistRules :: Branch -> [Rule]
-applicableExistRules br =
- if prefGenBlock
-  then [existRule f br | f@(PrFormula pr _ _) <- Set.toAscList $ existStr br,
-                         isInclusionUrfather br pr]
-  else [existRule f br | f <- Set.toAscList $ existStr br]
- where prefGenBlock = (blockMode br) == InclusionBlocking
+applicableExistRules br = [existRule f br | f <- Set.toAscList $ existStr br]
 
 applyRule :: CmdLineParams -> Rule -> Branch -> [BranchInfo]
 applyRule clp rule br = applySetOfMods clp br (getMods br rule)
 
-
 applySetOfMods :: CmdLineParams -> Branch -> [[BranchModification]] -> [BranchInfo]
 applySetOfMods clp br (hd:tl) = (applyMods clp br hd):(applySetOfMods clp br tl)
 applySetOfMods _ _ [] = []
-
 
 applyMods :: CmdLineParams -> Branch -> [BranchModification] -> BranchInfo
 applyMods clp br (hd:tl) = case (applyMod clp br hd) of
@@ -229,9 +215,9 @@ breakDisj _ _ = error $ "breakDisj error"
 
 -- @
 atRule :: PrFormula -> Branch -> Rule
-atRule af@(PrFormula _ bprs (At n f)) br
- = AtRule af (PrFormula newPr bprs (PosLit (N n))) (PrFormula newPr bprs f)
-    where newPr = getNewPr br
+atRule af@(PrFormula _ bprs (At (NomSymbol n) f)) br
+ = AtRule af (PrFormula earliestPrefix (bps_union bprs bprs2) f)
+    where (earliestPrefix,bprs2,_) = getUrfatherAndDeps br (DS.Nominal n)
 
 atRule _ _ = error "atRule error"
 
