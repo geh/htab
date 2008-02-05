@@ -303,7 +303,8 @@ addFormula clp br (PrFormula _ bprs (A f))
 
 -- box constraint
 addFormula clp br (PrFormula pr bprs (Box r f))
- = addBoxConstraint clp br pr r f bprs
+ = addBoxConstraint clp updatedBr pr r f bprs
+     where updatedBr = addToAugmentedPrefixes pr br
 
 -- Case 2
 -- p : phi (not nominal)
@@ -455,7 +456,9 @@ calculateInclusionUrfathers br =
 calculateInclusionUrfathersMap :: Branch -> InclusionUrfathersMap
 calculateInclusionUrfathersMap br = 
   case inclUrMap br of
-   Just previousM -> updatedInclUrMap previousM  -- works, provided that the augmented prefixes list is correctly filled
+   Just previousM -> if null $ incrPrs br
+                      then fromScratchInclUrMap        -- this case is reached if we applied the (A) rule
+                      else updatedInclUrMap previousM  -- works, provided that the augmented prefixes list is correctly filled
    Nothing        -> fromScratchInclUrMap
 
  where smallestModifiedPrefix = minimum $ incrPrs br 
