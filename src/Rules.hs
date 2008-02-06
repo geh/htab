@@ -13,7 +13,8 @@ import Branch( Branch(..), createNewPr, BranchInfo(..),
                addFormulas, addAccFormula, remFormula,
                addDiaRuleCheck, addExistRuleCheck,
                addAtRuleCheck, getUrfatherAndDeps,
-               isInclusionUrfather, BlockingMode(..))
+               isInclusionUrfather, BlockingMode(..),
+               diaAlreadyDone)
 import CommandLine(CmdLineParams, semBranch, fullClash)
 import RuleMetadata(RuleId(..))
 import qualified DisjSet as DS
@@ -39,6 +40,7 @@ data Rule =  ConjRule   PrFormula [PrFormula]
            | NegRule    PrFormula PrFormula
            | AtRule     PrFormula PrFormula
            | ExistModRule PrFormula PrFormula                 -- creates a prefix
+           | DiscardRule PrFormula
 
 getMods :: Branch -> Rule -> [[BranchModification]]
 getMods _ (ConjRule todelete toadds) =
@@ -66,24 +68,30 @@ getMods _ (NegRule todelete toadd) =
 getMods _ (AtRule todelete@(PrFormula _ _ f) toadd) =
  [[BM_RemFormula todelete, BM_AddFormulas [toadd], BM_AddAtRuleCheck f]]
 
+getMods _ (DiscardRule todelete) =
+ [[BM_RemFormula todelete]]
+
+
 
 instance Show Rule where
-   show (ConjRule  todelete _ )    = "conjunction : " ++ (show todelete)
-   show (DiaRule   todelete _ _ )  = "diamond : " ++ (show todelete)
-   show (DisjRule  todelete _ )    = "disjunction : " ++ (show todelete)
-   show (SemBrRule todelete _ )    = "semantic branching : " ++ (show todelete)
-   show (NegRule   todelete _ )    = "negation : " ++ (show todelete)
-   show (AtRule    todelete _ )    = "at : " ++ (show todelete)
-   show (ExistModRule todelete _)  = "E : " ++ (show todelete)
+   show (ConjRule  todelete _ )    = "conjunction: " ++ (show todelete)
+   show (DiaRule   todelete _ _ )  = "diamond: " ++ (show todelete)
+   show (DisjRule  todelete _ )    = "disjunction: " ++ (show todelete)
+   show (SemBrRule todelete _ )    = "semantic branching: " ++ (show todelete)
+   show (NegRule   todelete _ )    = "negation: " ++ (show todelete)
+   show (AtRule    todelete _ )    = "at: " ++ (show todelete)
+   show (ExistModRule todelete _)  = "E: " ++ (show todelete)
+   show (DiscardRule todelete)     = "Discard: " ++ (show todelete)
 
 instance ShowLatex Rule where
-   showLatex (ConjRule   todelete _ ) = "conjunction : " ++  (math $ showLatex todelete)
-   showLatex (DiaRule    todelete _ _ ) = "diamond : " ++  (math $ showLatex todelete)
-   showLatex (DisjRule   todelete _ ) = "disjunction : " ++ (math $ showLatex todelete)
-   showLatex (SemBrRule  todelete _ ) = "semantic branching : " ++ (math $ showLatex todelete)
-   showLatex (NegRule    todelete _ ) = "negation : " ++ (math $ showLatex todelete)
-   showLatex (AtRule     todelete _ ) = "at : " ++ (math $ showLatex todelete)
-   showLatex (ExistModRule todelete _)  = "E : " ++ (math $ showLatex todelete)
+   showLatex (ConjRule   todelete _ )  = "conjunction: " ++  (math $ showLatex todelete)
+   showLatex (DiaRule    todelete _ _) = "diamond: " ++  (math $ showLatex todelete)
+   showLatex (DisjRule   todelete _ )  = "disjunction: " ++ (math $ showLatex todelete)
+   showLatex (SemBrRule  todelete _ )  = "semantic branching: " ++ (math $ showLatex todelete)
+   showLatex (NegRule    todelete _ )  = "negation: " ++ (math $ showLatex todelete)
+   showLatex (AtRule     todelete _ )  = "at: " ++ (math $ showLatex todelete)
+   showLatex (ExistModRule todelete _) = "E: " ++ (math $ showLatex todelete)
+   showLatex (DiscardRule todelete)    = "Discard: " ++ (math $ showLatex todelete)
 
 --
 ruleToId :: Rule -> RuleId
@@ -94,7 +102,8 @@ ruleToId r = case r of
               (SemBrRule _ _)  -> R_SemBr
               (NegRule _ _)    -> R_Neg
               (AtRule _ _ )    -> R_At
-              (ExistModRule _ _)  -> R_Exist
+              (ExistModRule _ _) -> R_Exist
+              (DiscardRule _)  -> R_Discard
 
 --
 
@@ -172,12 +181,15 @@ breakConj :: PrFormula -> [PrFormula]
 breakConj (PrFormula pr bprs (Con formulaList)) = prefixList pr bprs formulaList
 breakConj _ = error $ "breakConj error"
 
-
--- dia
+-- dia (may create a discard rule)
 diaRule :: PrFormula -> Branch -> Rule
-diaRule f@(PrFormula pr bprs (Dia r f2)) br
-  = DiaRule f (AccFormula bprs r pr newPr) (PrFormula newPr bprs f2)
+diaRule f@(PrFormula pr bprs f1@(Dia r f2)) br
+  = if (diaAlreadyDone br pr f1)
+     then DiscardRule f
+     else DiaRule f (AccFormula bprs r pr newPr) (PrFormula newPr bprs f2)
       where newPr = getNewPr br
+
+
 diaRule _ _ = error $ "diaRule"
 
 --

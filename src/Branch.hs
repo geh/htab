@@ -15,7 +15,7 @@ emptyBranch,initialBranchStateFor,getCLParams,
 addZeroInPath,incPathHead,prefixes,
 getUrfather, getUrfatherAndDeps, isUrfather, isInclusionUrfather,
 getInclusionUrfather, hasUnivMod, inclusionUrfathers,
-calculateStepInfo, BlockingMode(..)
+calculateStepInfo, BlockingMode(..), diaAlreadyDone
 ) where
 
 import Control.Monad.State(StateT, MonadState, get)
@@ -596,16 +596,18 @@ modBranchCaseFC clp br f branchModifier
 --
 
 addDiaRuleCheck :: Branch -> Prefix -> Formula -> Branch
-addDiaRuleCheck br pr f =
-  br{diaRlCh=Map.insertWith Set.union pr (Set.singleton f) (diaRlCh br)}
+addDiaRuleCheck br pr f =  -- TODO take pr's urfather ?
+  br{diaRlCh=Map.insertWith Set.union ur (Set.singleton f) (diaRlCh br)}
+   where ur = getUrfather br (DS.Prefix pr)
 
 --
 
 diaAlreadyDone :: Branch -> Prefix -> Formula -> Bool
 diaAlreadyDone b p f@(Dia _ _) =
-  case Map.lookup p (diaRlCh b) of
+  case Map.lookup ur (diaRlCh b) of
      Nothing  -> False
      Just fset -> Set.member f fset
+ where ur = getUrfather b (DS.Prefix p)
 
 diaAlreadyDone _ _ _ = error "dia already done : wrong formula kind"
 

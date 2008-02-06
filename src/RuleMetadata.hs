@@ -43,4 +43,5 @@ data RuleId = R_Conj    -- Conjunction
             | R_At      -- Satisfaction operator (@) rule
             | R_NegNom  -- Negation before nominal rule
             | R_Exist   -- Existential modality
+            | R_Discard -- Discarding a formula
         deriving(Eq, Ord, Ix, Show)
