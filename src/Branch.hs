@@ -257,7 +257,7 @@ addFormula clp br (PrFormula pr newFormulaBprs f2@(PosLit (N (NomSymbol n))))
 
            result = case successOrFailure_newClashableSlotUrfather of
                      Slot_UpdateFailure clashingDeps ->
-{-clash-}                 BranchClash br pr (bps_union clashingDeps currentDependencies) f2 -- if clash, it's because of: clashable formulas deps, new formula desps, involved classes deps 
+{-clash-}                 BranchClash br pr (bps_union clashingDeps currentDependencies) f2 -- if clash, it's because of: clashable formulas deps, new formula desps, involved classes deps
                      Slot_UpdateSuccess urfatherSlot ->
 {-success-}           let newClashable_info = Map.insert newUrfather urfatherSlot (clashStr br)
 
@@ -279,7 +279,7 @@ addFormula clp br (PrFormula pr newFormulaBprs f2@(PosLit (N (NomSymbol n))))
                           -- same for (<>) rule chart
                           newDiaRlCh = foldr (\exUrfather diaRlCh_ -> moveInMap diaRlCh_ exUrfather newUrfather Set.union)   (diaRlCh br) exUrfathers
 
-                          nubbedNewFormulas = nubAndMergeDeps $ [PrFormula newUrfather newFormulaBprs f2] ++ formulasToSend   -- TODO NPROGRESS no longer add f
+                          nubbedNewFormulas = nubAndMergeDeps $ [PrFormula newUrfather newFormulaBprs f2] ++ formulasToSend
                           brUpdated         = br{nomPrefClasses = classes4,
                                                  boxConstr      = newBoxConstr,
                                                  accStr         = newAccStr,
@@ -394,7 +394,7 @@ addBoxConstraint clp br nonRepresentativePr (RelSymbol r) f bprs
                                 Nothing             -> Map.insert p1_ (Map.insert r_ [(bprs_,f_)] innerMap)                boxConstr_
                                 Just innerInnerList -> Map.insert p1_ (Map.insert r_ ((bprs_,f_):innerInnerList) innerMap) boxConstr_
 
-         accessibleBprsPrs = Map.findWithDefault [] r $ Map.findWithDefault Map.empty pr (accStr br)  -- [(BranchingPrefixes,Prefix)]   -- TODO we have duplications, if two destination prefixes are in the same class
+         accessibleBprsPrs = Map.findWithDefault [] r $ Map.findWithDefault Map.empty pr (accStr br)  -- [(BranchingPrefixes,Prefix)]
 
 addBoxConstraint _ _ _ (InvRelSymbol _) _ _ = error "inverse modality not handled"
 
