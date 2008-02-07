@@ -266,10 +266,11 @@ addFormula clp br (PrFormula pr newFormulaBprs f2@(PosLit (N (NomSymbol n))))
                                                   then foldr (\exUrfather prefToForms_ -> moveInMap prefToForms_ exUrfather newUrfather Set.union) (prefToForms br) exUrfathers
                                                   else (prefToForms br)
 
-                          -- add the new formulas that should be send to accessible prefixes to the branch
+                          -- add the new formulas that should be sent to accessible prefixes to the branch
                           mapBoxs = map (\idx -> Map.findWithDefault (Map.empty) idx (boxConstr br) ) involvedUrfathers
                           mapAccs = map (\idx -> Map.findWithDefault (Map.empty) idx (accStr br)    ) involvedUrfathers
-                          formulasToSend = concatMap (uncurry newFormulasToSend) $ almostCartesianProduct mapBoxs mapAccs
+                          formulasToSend = concatMap (uncurry $ newFormulasToSend newFormulaBprs)
+                                                     $ almostCartesianProduct mapBoxs mapAccs
 
                           -- move box constraint and accessibility relation data to the new urfather
                           newBoxConstr = foldr (\exUrfather boxStr_  -> moveInnerDataDMapPlusDeps newFormulaBprs boxStr_  exUrfather newUrfather)   (boxConstr br)  exUrfathers
@@ -372,13 +373,13 @@ findDeps br pr = Map.findWithDefault bps_empty pr (prToBrPrefs br)
    box-related constraints
 -}
 
-newFormulasToSend :: Map.Map Rel [(BranchingPrefixes,Formula)] -> Map.Map Rel [(BranchingPrefixes,Prefix)] -> [PrFormula]
-newFormulasToSend mapBox mapAcc
- = [PrFormula p (bps_union bps1 bps2) f | r1 <- Map.keys mapBox,
-                                          r2 <- Map.keys mapAcc,
-                                          r1 == r2,
-                                          (bps1,f) <- (Map.!) mapBox r1,
-                                          (bps2,p) <- (Map.!) mapAcc r2]
+newFormulasToSend :: BranchingPrefixes -> Map.Map Rel [(BranchingPrefixes,Formula)] -> Map.Map Rel [(BranchingPrefixes,Prefix)] -> [PrFormula]
+newFormulasToSend deps mapBox mapAcc
+ = [PrFormula p (bps_unions [deps,bps1,bps2]) f |
+                      r1 <- Map.keys mapBox,
+                      r2 <- Map.keys mapAcc,    r1 == r2,
+                      (bps1,f) <- (Map.!) mapBox r1,
+                      (bps2,p) <- (Map.!) mapAcc r2     ]
 
 addBoxConstraint :: CmdLineParams -> Branch -> Prefix -> RelSymbol -> Formula -> BranchingPrefixes -> BranchInfo
 addBoxConstraint clp br nonRepresentativePr (RelSymbol r) f bprs
