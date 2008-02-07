@@ -9,8 +9,7 @@ module Branch
 (
 Branch(..), BranchMonad, createNewPr, BranchInfo(..),
 addFormulas, addFormula, addAccFormula, remFormula,
-addDiaRuleCheck, addAtRuleCheck,
-addExistRuleCheck, addUnivConstraint, BranchData(..),branch_depth,
+addDiaRuleCheck, addUnivConstraint, BranchData(..),branch_depth,
 emptyBranch,initialBranchStateFor,getCLParams,
 addZeroInPath,incPathHead,prefixes,
 getUrfather, getUrfatherAndDeps, isUrfather, isInclusionUrfather, isInInclusionUrfatherClass,
@@ -557,15 +556,17 @@ addFormula3 _ _ (PrFormula _ _ (A _))
 
 addFormula3 clp br pf@(PrFormula _ _ (E _))
            = modBranchCaseFC clp br pf $ \b f@(PrFormula _ _ f2) ->
-                                                  b{existStr = if existAlreadyDone b f2      -- exist rule saturation
-                                                                 then existStr b
-                                                                 else Set.insert f (existStr b)}
+                                                  if existAlreadyDone b f2  -- exist rule saturation
+                                                   then b
+                                                   else b{existStr = Set.insert f (existStr b),
+                                                          existRlCh = Set.insert f2 (existRlCh b)}
 
 addFormula3 clp br pf@(PrFormula _ _ (At _ _))
            = modBranchCaseFC clp br pf $ \b f@(PrFormula _ _ f2)  ->
-                                                  b{atStr    = if atAlreadyDone b f2
-                                                                 then atStr b
-                                                                 else Set.insert f (atStr b)}
+                                                  if atAlreadyDone b f2  -- exist rule saturation
+                                                   then b
+                                                   else b{atStr = Set.insert f (atStr b),
+                                                          atRlCh = Set.insert f2 (atRlCh b)}
 
 addFormula3 clp br pf@(PrFormula _ _ (Neg _))
            = modBranchCaseFC clp br pf $ \b f -> b{negStr  = Set.insert f (negStr b)}
@@ -597,7 +598,7 @@ modBranchCaseFC clp br f branchModifier
 --
 
 addDiaRuleCheck :: Branch -> Prefix -> Formula -> Branch
-addDiaRuleCheck br pr f =  -- TODO take pr's urfather ?
+addDiaRuleCheck br pr f =
   br{diaRlCh=Map.insertWith Set.union ur (Set.singleton f) (diaRlCh br)}
    where ur = getUrfather br (DS.Prefix pr)
 
@@ -614,21 +615,9 @@ diaAlreadyDone _ _ _ = error "dia already done : wrong formula kind"
 
 --
 
-addExistRuleCheck :: Branch -> Formula -> Branch
-addExistRuleCheck br f =
-  br{existRlCh=Set.insert f (existRlCh br)}
-
---
-
 existAlreadyDone :: Branch -> Formula -> Bool
 existAlreadyDone b f@(E _) = Set.member f (existRlCh b)
 existAlreadyDone _ _ = error "exist already done : wrong formula kind"
-
---
-
-addAtRuleCheck :: Branch -> Formula -> Branch
-addAtRuleCheck br f =
-  br{atRlCh=Set.insert f (atRlCh br)}
 
 --
 

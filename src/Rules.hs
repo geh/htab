@@ -11,8 +11,7 @@ import Formula( Formula(..), PrFormula(..), neg,
                 Prefix, NomSymbol(..), bps_union )
 import Branch( Branch(..), createNewPr, BranchInfo(..),
                addFormulas, addAccFormula, remFormula,
-               addDiaRuleCheck, addExistRuleCheck,
-               addAtRuleCheck, getUrfatherAndDeps,
+               addDiaRuleCheck, getUrfatherAndDeps,
                isInInclusionUrfatherClass, BlockingMode(..),
                diaAlreadyDone)
 import CommandLine(CmdLineParams, semBranch, fullClash)
@@ -27,8 +26,6 @@ import qualified Data.Set as Set
 data BranchModification =    BM_AddFormulas   [PrFormula]
                            | BM_AddAccFormula AccFormula
                            | BM_AddDiaRuleCheck Prefix Formula
-                           | BM_AddAtRuleCheck Formula
-                           | BM_AddExistRuleCheck Formula
                            | BM_RemFormula PrFormula
                            | BM_CreateNewPr
 
@@ -52,9 +49,9 @@ getMods _ (DiaRule todelete@(PrFormula pr _ f) acctoadd toadd) =
    BM_AddDiaRuleCheck pr f,
    BM_CreateNewPr]]
 
-getMods _ (ExistModRule todelete@(PrFormula _ _ f) toadd) =
+getMods _ (ExistModRule todelete toadd) =
  [[BM_RemFormula todelete, BM_AddFormulas [toadd],
-   BM_CreateNewPr,BM_AddExistRuleCheck f]]
+   BM_CreateNewPr]]
 
 getMods _ (DisjRule todelete toadds) =
  [[BM_RemFormula todelete, BM_AddFormulas [toadd]] | toadd <- toadds]
@@ -65,12 +62,11 @@ getMods _ (SemBrRule todelete toaddss) =
 getMods _ (NegRule todelete toadd) =
  [[BM_RemFormula todelete, BM_AddFormulas [toadd]]]
 
-getMods _ (AtRule todelete@(PrFormula _ _ f) toadd) =
- [[BM_RemFormula todelete, BM_AddFormulas [toadd], BM_AddAtRuleCheck f]]
+getMods _ (AtRule todelete toadd) =
+ [[BM_RemFormula todelete, BM_AddFormulas [toadd]]]
 
 getMods _ (DiscardRule todelete) =
  [[BM_RemFormula todelete]]
-
 
 
 instance Show Rule where
@@ -164,8 +160,6 @@ applyMod :: CmdLineParams -> Branch -> BranchModification -> BranchInfo
 applyMod clp br (BM_AddFormulas li) = addFormulas clp br li
 applyMod clp br (BM_AddAccFormula accFor) = addAccFormula clp br accFor
 applyMod  _  br (BM_AddDiaRuleCheck pr f) = BranchOK (addDiaRuleCheck br pr f)
-applyMod  _  br (BM_AddAtRuleCheck f) = BranchOK (addAtRuleCheck br f)
-applyMod  _  br (BM_AddExistRuleCheck f) = BranchOK (addExistRuleCheck br f)
 applyMod clp br (BM_CreateNewPr) = createNewPr clp br
 applyMod  _  br (BM_RemFormula f) = BranchOK (remFormula br f)
 
