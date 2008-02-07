@@ -251,14 +251,9 @@ addFormula clp br (PrFormula pr newFormulaBprs f2@(PosLit (N (NomSymbol n))))
            -- get clashable formulas from ex urfathers, add the current dependencies, union and see if there is a clash or not
            mClashableInfoSlots = map        (\exUrfather -> Map.lookup exUrfather (clashStr br))  involvedUrfathers
            clashableInfoSlots  = concatMap  (\(mSlot) -> maybe [] (\slot -> [slot]) mSlot )       mClashableInfoSlots
-           clashableInfoSlotsWithDeps = map (\slot -> addDepsToClashableSlot slot newFormulaBprs)                          -- all of this is caused by the input formula of the function: add its dependencies
-                                            clashableInfoSlots
 
-           -- TODO OPTIM : instead of doing this previous action, define a function "clashableInfoSlotsUnions" that takes a set of "forced depths" as argument
-
-           successOrFailure_newClashableSlotUrfather = if not $ null clashableInfoSlotsWithDeps
-                                                         then clashableInfoSlotsUnions clashableInfoSlotsWithDeps
-                                                         else Slot_UpdateSuccess (Map.empty::Clashable_info_slot) -- in case there was no clashable info at any urfather
+           successOrFailure_newClashableSlotUrfather = addDepsToClashableSlot (clashableInfoSlotsUnions clashableInfoSlots) newFormulaBprs
+                           -- all of this is caused by the input formula of the function: add its dependencies
 
            result = case successOrFailure_newClashableSlotUrfather of
                      Slot_UpdateFailure clashingDeps ->
@@ -709,7 +704,7 @@ data Slot_UpdateResult =   Slot_UpdateSuccess Clashable_info_slot               
 
 -- Union an arbitrary number of clashable info slots
 clashableInfoSlotsUnions :: [Clashable_info_slot] -> Slot_UpdateResult
-clashableInfoSlotsUnions [] = error "cis unions"
+clashableInfoSlotsUnions [] = Slot_UpdateSuccess (Map.empty::Clashable_info_slot)
 clashableInfoSlotsUnions [cis] = Slot_UpdateSuccess cis
 clashableInfoSlotsUnions (cis1:cis2:tl)
  = case unionClashableInfoSlots cis1 cis2 of
@@ -759,8 +754,11 @@ updateClashableInfoSlot cis f             bool  bprs
 
 -- Other functions related to clashable information
 
-addDepsToClashableSlot :: Clashable_info_slot -> BranchingPrefixes -> Clashable_info_slot
-addDepsToClashableSlot cis bps = Map.map (\(f,currentBps) -> (f,bps_union currentBps bps)) cis
+addDepsToClashableSlot :: Slot_UpdateResult -> BranchingPrefixes -> Slot_UpdateResult
+addDepsToClashableSlot res_cis bps =
+ case res_cis of
+  Slot_UpdateSuccess cis ->  Slot_UpdateSuccess $ Map.map (\(f,currentBps) -> (f,bps_union currentBps bps)) cis
+  failure@(Slot_UpdateFailure _) -> failure
 
 {-
      other functions
