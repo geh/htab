@@ -13,7 +13,7 @@ import Branch( Branch(..), createNewPr, BranchInfo(..),
                addFormulas, addAccFormula, remFormula,
                addDiaRuleCheck, addExistRuleCheck,
                addAtRuleCheck, getUrfatherAndDeps,
-               isInclusionUrfather, BlockingMode(..),
+               isInInclusionUrfatherClass, BlockingMode(..),
                diaAlreadyDone)
 import CommandLine(CmdLineParams, semBranch, fullClash)
 import RuleMetadata(RuleId(..))
@@ -127,7 +127,7 @@ applicableDiaRules :: Branch -> [Rule]
 applicableDiaRules br =
  if prefGenBlock
   then [diaRule f br | f@(PrFormula pr _ _) <- Set.toAscList $ diaStr br,
-                       isInclusionUrfather br pr]
+                       isInInclusionUrfatherClass br pr]
   else [diaRule f br | f <- Set.toAscList $ diaStr br]
  where prefGenBlock = (blockMode br) == InclusionBlocking
 

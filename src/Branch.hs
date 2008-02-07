@@ -13,7 +13,7 @@ addDiaRuleCheck, addAtRuleCheck,
 addExistRuleCheck, addUnivConstraint, BranchData(..),branch_depth,
 emptyBranch,initialBranchStateFor,getCLParams,
 addZeroInPath,incPathHead,prefixes,
-getUrfather, getUrfatherAndDeps, isUrfather, isInclusionUrfather,
+getUrfather, getUrfatherAndDeps, isUrfather, isInclusionUrfather, isInInclusionUrfatherClass,
 getInclusionUrfather, hasUnivMod, inclusionUrfathers,
 calculateStepInfo, BlockingMode(..), diaAlreadyDone
 ) where
@@ -424,6 +424,11 @@ addAccFormula _ _ (AccFormula _ (InvRelSymbol _) _ _ ) = error "inverse modality
 {-
   universal modality-related machinery
 -}
+
+isInInclusionUrfatherClass :: Branch -> Prefix -> Bool
+isInInclusionUrfatherClass br pr
+ = let ur =  getUrfather br (DS.Prefix pr) in
+   (getInclusionUrfather br ur) == ur
 
 isInclusionUrfather :: Branch -> Prefix -> Bool
 isInclusionUrfather br pr
