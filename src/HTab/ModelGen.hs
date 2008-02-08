@@ -1,4 +1,4 @@
-module ModelGen (HerbrandModel, buildHerbrandModel, inducedModel )
+module HTab.ModelGen (HerbrandModel, buildHerbrandModel, inducedModel )
 
 where
 
@@ -9,16 +9,15 @@ import qualified HyLo.Model.Herbrand as H
 
 import qualified HyLo.Formula.NNF as NNF
 
-import Formula( Prefix, Formula (..), Atom (..), Rel,
-                NomSymbol(..), RelSymbol(..), PropSymbol(..), StateVar,
-                LanguageInfo(..) )
-import Branch( Branch(..) , prefixes,getUrfather,
-               isInclusionUrfather, getInclusionUrfather,
-               BlockingMode(..) )
+import HTab.Formula( Prefix, Formula (..), Atom (..), Rel,
+                     NomSymbol(..), RelSymbol(..), PropSymbol(..), StateVar,
+                     LanguageInfo(..) )
+import HTab.Branch( Branch(..) , prefixes,getUrfather,
+                    isInclusionUrfather, getInclusionUrfather,
+                    BlockingMode(..) )
 
-import qualified DisjSet as DS
-
-import DMap
+import qualified HTab.DisjSet as DS
+import HTab.DMap
 
 type HerbrandModel = H.HerbrandModel NomSymbol PropSymbol RelSymbol
 

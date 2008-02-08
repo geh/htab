@@ -6,7 +6,7 @@
 --                                                --
 ----------------------------------------------------
 
-module Formula
+module HTab.Formula
 
 (PropSymbol(..), NomSymbol(..), StateVar,
 RelSymbol(..), Rel, Prefix,
@@ -26,7 +26,6 @@ firstPrefixedFormula
 
  where
 
-import LatexOutputHelper
 import qualified Data.Set as Set
 import qualified Data.IntSet as IntSet
 
@@ -34,6 +33,9 @@ import HyLo.Signature.Simple( PropSymbol(..),
                               NomSymbol(..),
                               RelSymbol(..),
                               StateVar)
+
+import HTab.LatexOutputHelper
+
 type Prefix = Int
 type Rel = Int
 data Atom = Taut

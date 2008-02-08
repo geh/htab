@@ -1,25 +1,25 @@
-module Rules
+module HTab.Rules
 (
 Rule(..),BranchModification(..),
 applicableRules, applyRule, ruleToId,
 applyMod
 ) where
 
-import Formula( Formula(..), PrFormula(..), neg,
-                BranchingPrefix,
-                bps_insert, prefixList, AccFormula(..),
-                Prefix, NomSymbol(..), bps_union )
-import Branch( Branch(..), createNewPr, BranchInfo(..),
-               addFormulas, addAccFormula, remFormula,
-               addDiaRuleCheck, getUrfatherAndDeps,
-               isInInclusionUrfatherClass, BlockingMode(..),
-               diaAlreadyDone)
-import CommandLine(CmdLineParams, semBranch, fullClash)
-import RuleMetadata(RuleId(..))
-import qualified DisjSet as DS
-import LatexOutput()
-import LatexOutputHelper
 import qualified Data.Set as Set
+import HTab.Formula( Formula(..), PrFormula(..), neg,
+                     BranchingPrefix,
+                     bps_insert, prefixList, AccFormula(..),
+                     Prefix, NomSymbol(..), bps_union )
+import HTab.Branch( Branch(..), createNewPr, BranchInfo(..),
+                    addFormulas, addAccFormula, remFormula,
+                    addDiaRuleCheck, getUrfatherAndDeps,
+                    isInInclusionUrfatherClass, BlockingMode(..),
+                    diaAlreadyDone)
+import HTab.CommandLine(CmdLineParams, semBranch, fullClash)
+import HTab.RuleMetadata(RuleId(..))
+import qualified HTab.DisjSet as DS
+import HTab.LatexOutput()
+import HTab.LatexOutputHelper
 
 -- a "rule" is basically a list of modifications of the structures
 

@@ -1,4 +1,4 @@
-module DisjSet where
+module HTab.DisjSet where
 import qualified Data.Map as Map
 
 -- a disjoint-set forest

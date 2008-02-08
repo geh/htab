@@ -6,16 +6,12 @@
 --                                                --
 ----------------------------------------------------
 
-module CommandLine (
+module HTab.CommandLine (
     CmdLineParams(..), getCmdLineParams, defaultParams,
     usage, configureMetrics
 ) where
 
-import Statistics(Metric,closedBranches,StatisticsState,
-                  addMetric, addInspectionMetric, setPrintOutInterval,
-                  ruleApplicationCount)
 import Char(isDigit)
-import Base(intToBool)
 import System.FilePath(FilePath)
 import System.Console.GetOpt ( OptDescr(..), ArgDescr(..), ArgOrder(..),
                                getOpt, usageInfo )
@@ -26,6 +22,11 @@ import System.Environment    ( getArgs )
 import Data.Maybe ( isJust )
 import Control.Monad.Error (MonadError(..))
 import Control.Applicative ( (<$>) )
+
+import HTab.Base(intToBool)
+import HTab.Statistics(Metric,closedBranches,StatisticsState,
+                       addMetric, addInspectionMetric, setPrintOutInterval,
+                       ruleApplicationCount)
 
 data CmdLineParams = CLP {
            showHelp      :: Bool,

@@ -1,4 +1,4 @@
-module Timeout where
+module HTab.Timeout where
 
 import Control.Exception
 import Control.Concurrent

@@ -29,7 +29,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307,
 USA.
 -}
 
-module Statistics(Statistics, StatisticsState, StatisticsStateIO,
+module HTab.Statistics
+(   Statistics, StatisticsState, StatisticsStateIO,
     recordFiredRule, recordClosedBranch,
 
     printOutAllMetrics, printOutAllMetrics', printOutInspectionMetrics,
@@ -51,9 +52,8 @@ import qualified Control.Monad.State as State(liftIO)
 import Data.Map(Map)
 import qualified Data.Map as Map(insertWith, toList, empty)
 
-import Base (separate)
-
-import RuleMetadata(RuleId(..))
+import HTab.Base (separate)
+import HTab.RuleMetadata(RuleId(..))
 
 
 -------------------------------------------

@@ -1,4 +1,4 @@
-module LatexOutputHelper where
+module HTab.LatexOutputHelper where
 
 import qualified Data.IntSet as IntSet
 

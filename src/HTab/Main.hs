@@ -1,85 +1,37 @@
-module Main (main)
+module HTab.Main
+
+( runWithParams, SatFlagAndStats(..) )
 
 where
-
-import qualified HyLo.InputFile.Lexer as L
-import qualified HyLoParse as P
-
-import CommandLine( filename, getCmdLineParams, usage,
-                    maxtimeout, showHelp, CmdLineParams, logState, genModel,
-                    configureMetrics,fullClash,quietMode )
-import Branch( Branch, BranchInfo(..),initialBranchStateFor,BranchMonad, BranchData(..),
-               emptyBranch, lastPr )
-import Timeout( timeout )
-import Statistics( Statistics, initialStatisticsStateFor, printOutAllMetrics' )
-import Base( vPutStrLn )
-import Tableau( liftStats, tableau, OpenFlag(..) )
-import Formula( firstPrefixedFormula,nnf,formulaLanguageInfo, bps_empty,
-                PrFormula(..), LanguageInfo(..), NomSymbol, Formula(..), Atom(..))
-import LatexOutput
-import ModelGen ( HerbrandModel, inducedModel )
-
 import Control.Applicative ( (<$>) )
 import Control.Monad       ( unless )
 import Control.Monad.State( runStateT )
 
-import System.IO           ( hPrint, stderr, hSetBuffering, stdin, BufferMode(LineBuffering)) 
-import System.Exit         ( exitWith, ExitCode(ExitFailure) )
-import System.Environment( getProgName )
+import System.IO           ( hSetBuffering, stdin, BufferMode(LineBuffering)) 
 import System.CPUTime( getCPUTime )
 
-import Data.Version        ( showVersion )
-import Paths_HTab ( version )
+import qualified HyLo.InputFile.Lexer as L
+import qualified HTab.HyLoParse as P
 
-import Prelude hiding ( catch )
-import Control.Exception   ( catch )
+import HTab.CommandLine( filename, maxtimeout, CmdLineParams, logState, genModel,
+                         configureMetrics,fullClash,quietMode )
+import HTab.Branch( Branch, BranchInfo(..),initialBranchStateFor,BranchMonad, BranchData(..),
+                    emptyBranch, lastPr )
+import HTab.Timeout( timeout )
+import HTab.Statistics( Statistics, initialStatisticsStateFor, printOutAllMetrics' )
+import HTab.Base( vPutStrLn )
+import HTab.Tableau( liftStats, tableau, OpenFlag(..) )
+import HTab.Formula( firstPrefixedFormula,nnf,formulaLanguageInfo, bps_empty,
+                     PrFormula(..), LanguageInfo(..), NomSymbol, Formula(..), Atom(..))
+import HTab.LatexOutput
+import HTab.ModelGen ( HerbrandModel, inducedModel )
 
 
-import Rules(BranchModification(..), applyMod)
+
+import HTab.Rules(BranchModification(..), applyMod)
 
 data SatFlagAndStats = SAT HerbrandModel Statistics | UNSAT Statistics | TIMEOUT
 
-main :: IO ()
-main = do r <- runCmdLineVersion
-                `catch` \e -> do
-                    hPrint stderr (show e)
-                    exit r_RUNTIME_ERROR
-          --
-          case r of
-            Nothing        -> exit r_DID_NOT_RUN
-            Just (SAT _ _) -> exit r_SAT
-            Just (UNSAT _) -> exit r_UNSAT
-            Just TIMEOUT   -> exit r_TIMEOUT
-    --
-    where r_SAT           = 1
-          r_UNSAT         = 2
-          r_TIMEOUT       = 3
-          r_DID_NOT_RUN   = 10
-          r_RUNTIME_ERROR = 13
-
-exit :: Int -> IO a
-exit = exitWith . ExitFailure
-
-
-runCmdLineVersion :: IO (Maybe SatFlagAndStats)
-runCmdLineVersion =
-    do p_clp <- getCmdLineParams
-       case p_clp of
-         Left  err -> do putStrLn header
-                         putStrLn err
-                         progName <- getProgName
-                         putStrLn $ "Try `" ++ progName ++ " --help' " ++
-                                     "for more information"
-                         return Nothing
-         --
-         Right clp -> if showHelp clp
-                        then do putStrLn header
-                                progName <- getProgName
-                                putStrLn $ usage (progName ++ " [OPTIONS]")
-                                putStrLn gpl_tag
-                                return Nothing
-                        --
-                        else Just <$> runWithParams clp
 
 runWithParams :: CmdLineParams -> IO (SatFlagAndStats)
 runWithParams clp =
@@ -150,18 +102,6 @@ tableauStart :: CmdLineParams -> BranchMonad OpenFlag
 tableauStart clp =
  do liftStats $ configureMetrics clp
     tableau
-
-header :: String
-header = unlines ["HTab " ++ showVersion version,
-                  "G. Hoffmann, C. Areces, D.Gorin and J. Heguiabehere. (c) 2002-2007."]
-
-gpl_tag :: String
-gpl_tag = unlines [
-    "This program is distributed in the hope that it will be useful,",
-    "but WITHOUT ANY WARRANTY; without even the implied warranty of",
-    "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
-    "GNU General Public License for more details."]
-
 
 -- preparation of the branch at the beginning of the calculus:
 -- add the input formula at prefix 0

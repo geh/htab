@@ -26,13 +26,13 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307,
 USA.
 -}
 
-module HyLoParse (parse)
+module HTab.HyLoParse (parse)
 
 where
 
 import HyLo.InputFile.Lexer ( Token(..), FilePos, line, col )
 
-import Formula
+import HTab.Formula
 }
 
 %name parse

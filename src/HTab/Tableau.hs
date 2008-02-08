@@ -1,19 +1,19 @@
-module Tableau where
+module HTab.Tableau where
 
-import Base(vPutStrLn)
 import Control.Monad.State(StateT,lift,modify, put, get)
-import Statistics(updateStep,printOutInspectionMetrics,
-                  recordClosedBranch,recordFiredRule)
-import Branch(BranchInfo(..),Branch,BranchMonad, BranchData(..),branch_depth,
-              addZeroInPath, incPathHead, calculateStepInfo )
-import CommandLine(logState,CmdLineParams)
-import Rules(Rule,applyRule,
-             applicableRules,ruleToId)
-import Statistics(Statistics)
-import Formula(Prefix,BranchingPrefixes,Formula,bps_empty,bps_member,bps_union)
-import LatexOutput
-import LatexOutputHelper
-import ModelGen ( HerbrandModel, buildHerbrandModel )
+import HTab.Base(vPutStrLn)
+import HTab.Statistics(updateStep,printOutInspectionMetrics,
+                       recordClosedBranch,recordFiredRule)
+import HTab.Branch(BranchInfo(..),Branch,BranchMonad, BranchData(..),branch_depth,
+                   addZeroInPath, incPathHead, calculateStepInfo )
+import HTab.CommandLine(logState,CmdLineParams)
+import HTab.Rules(Rule,applyRule,
+                  applicableRules,ruleToId)
+import HTab.Statistics(Statistics)
+import HTab.Formula(Prefix,BranchingPrefixes,Formula,bps_empty,bps_member,bps_union)
+import HTab.LatexOutput
+import HTab.LatexOutputHelper
+import HTab.ModelGen ( HerbrandModel, buildHerbrandModel )
 
 --
 

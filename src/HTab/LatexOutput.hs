@@ -1,9 +1,7 @@
-module LatexOutput where
+module HTab.LatexOutput where
 
-
-import CommandLine
 import Control.Monad.State(lift,StateT)
-
+import HTab.CommandLine
 
 latexHeader :: String
 latexHeader = "\\documentclass[a4paper,10pt]{article}\n\\usepackage{geometry}\\geometry{hmargin=0cm}\n\\usepackage{amssymb}\n\\begin{document}\n"

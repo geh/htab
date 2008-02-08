@@ -5,7 +5,7 @@
 ----------------------------------------------------
 
 
-module Branch
+module HTab.Branch
 (
 Branch(..), BranchMonad, createNewPr, BranchInfo(..),
 addFormulas, addFormula, addAccFormula, remFormula,
@@ -22,20 +22,20 @@ import Data.List(delete, nub, minimumBy)
 
 import qualified Data.Map as Map
 import qualified Data.List as List
-
-import Statistics(Statistics)
-import CommandLine(CmdLineParams, fullClash)
-
-import Formula
 import qualified Data.Set as Set
 
-import qualified DisjSet as DS
-
-import LatexOutputHelper
+import qualified HTab.DisjSet as DS
 
 import Maybe(fromJust)
-import DMap
-import Base(moveInMap, almostCartesianProduct)
+
+import HTab.Statistics(Statistics)
+import HTab.CommandLine(CmdLineParams, fullClash)
+
+import HTab.Formula
+import HTab.LatexOutputHelper
+
+import HTab.DMap
+import HTab.Base(moveInMap, almostCartesianProduct)
 
 data BranchInfo = BranchOK Branch |
                   BranchClash Branch Prefix BranchingPrefixes Formula

@@ -1,7 +1,7 @@
-module DMap where
+module HTab.DMap where
 
 import qualified Data.Map as Map
-import Formula(BranchingPrefixes, bps_union)
+import HTab.Formula(BranchingPrefixes, bps_union)
 
 
 
