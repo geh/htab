@@ -165,7 +165,6 @@ existMod   = E
 
 {- Hybrid operators -}
 at             :: NomSymbol -> Formula -> Formula
-at  _  f@(At _ _)    = f
 at  n  f             = At n f
 
 {- Conjunction and disjunction -}
