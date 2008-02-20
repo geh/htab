@@ -6,15 +6,20 @@ applyMod
 ) where
 
 import qualified Data.Set as Set
-import HTab.Formula( Formula(..), PrFormula(..), neg,
+import qualified Data.Map as Map
+
+import HTab.Formula( Formula(..), PrFormula(..), neg, Atom(..),
                      BranchingPrefix,
                      bps_insert, prefixList, AccFormula(..),
-                     Prefix, NomSymbol(..), bps_union )
-import HTab.Branch( Branch(..), createNewPr, BranchInfo(..),
+                     Prefix, NomSymbol(..), PropSymbol(..),
+                     BranchingPrefixes, bps_union )
+import HTab.Branch( Branch(..), createNewPref, createNewProp,
+                    BranchInfo(..),
                     addFormulas, addAccFormula, remFormula,
-                    addDiaRuleCheck, getUrfatherAndDeps,
+                    addDiaRuleCheck, addDiffRuleCheck,
+                    getUrfatherAndDeps,
                     isInInclusionUrfatherClass, BlockingMode(..),
-                    diaAlreadyDone)
+                    diaAlreadyDone, incPropSymbol )
 import HTab.CommandLine(CmdLineParams, semBranch, fullClash)
 import HTab.RuleMetadata(RuleId(..))
 import qualified HTab.DisjSet as DS
@@ -26,8 +31,10 @@ import HTab.LatexOutputHelper
 data BranchModification =    BM_AddFormulas   [PrFormula]
                            | BM_AddAccFormula AccFormula
                            | BM_AddDiaRuleCheck Prefix Formula
+                           | BM_AddDiffRuleCheck Formula PropSymbol
                            | BM_RemFormula PrFormula
-                           | BM_CreateNewPr
+                           | BM_CreateNewPref
+                           | BM_CreateNewProp
 
 -- each rule constructor contains exactly the needed data to know the effect of the rule
 data Rule =  ConjRule   PrFormula [PrFormula]
@@ -36,8 +43,12 @@ data Rule =  ConjRule   PrFormula [PrFormula]
            | SemBrRule  PrFormula [[PrFormula]]
            | NegRule    PrFormula PrFormula
            | AtRule     PrFormula PrFormula
+           | DiffRule   (Prefix, BranchingPrefixes, Formula)
            | ExistModRule PrFormula PrFormula                 -- creates a prefix
            | DiscardRule PrFormula
+
+-- from the description of a rule application, creates the list of lists of modifications to the branch
+-- for certain rules, we need to look in the branch to see what modifications we do
 
 getMods :: Branch -> Rule -> [[BranchModification]]
 getMods _ (ConjRule todelete toadds) =
@@ -47,11 +58,11 @@ getMods _ (DiaRule todelete@(PrFormula pr _ f) acctoadd toadd) =
  [[BM_RemFormula todelete, BM_AddAccFormula acctoadd,
    BM_AddFormulas [toadd],
    BM_AddDiaRuleCheck pr f,
-   BM_CreateNewPr]]
+   BM_CreateNewPref]]
 
 getMods _ (ExistModRule todelete toadd) =
  [[BM_RemFormula todelete, BM_AddFormulas [toadd],
-   BM_CreateNewPr]]
+   BM_CreateNewPref]]
 
 getMods _ (DisjRule todelete toadds) =
  [[BM_RemFormula todelete, BM_AddFormulas [toadd]] | toadd <- toadds]
@@ -65,6 +76,37 @@ getMods _ (NegRule todelete toadd) =
 getMods _ (AtRule todelete toadd) =
  [[BM_RemFormula todelete, BM_AddFormulas [toadd]]]
 
+getMods br (DiffRule (pr, bprs , f2)) =
+ case Map.lookup f2 (dDiaRlCh br) of
+  Nothing -> [[BM_RemFormula todelete,
+               BM_CreateNewPref, BM_CreateNewProp, BM_AddFormulas [PrFormula newPref bprs f2,
+                                                                   PrFormula newPref bprs (PosLit $ P newProp),
+                                                                   PrFormula pr      bprs (NegLit $ P newProp)],
+               BM_AddDiffRuleCheck f2 newProp
+             ]]
+              where newPref = getNewPref br
+                    newProp = getNewProp br
+
+  Just diffProp -> -- the D-formula has already be seen, its associated prop. symbol is diffProp
+                   case (do clashSlot <- Map.lookup pr (clashStr br)
+                            Map.lookup (PosLit $ P diffProp) clashSlot ) of
+                    Nothing -> [[BM_RemFormula (PrFormula pr bprs (D f2)),
+                                 BM_AddFormulas [PrFormula pr bprs (NegLit $ P diffProp)]]]
+                    Just (bool_,bprs_) ->
+                     if bool_  -- are we already there ? 
+                      then let newPref = getNewPref br
+                               newProp = getNewProp br
+                           in
+                           [[BM_RemFormula todelete,
+                             BM_CreateNewPref, BM_CreateNewProp,
+                             BM_AddFormulas [PrFormula newPref (bps_union bprs bprs_) f2,
+                                             PrFormula newPref (bps_union bprs bprs_) (PosLit $ P newProp),
+                                             PrFormula pr      (bps_union bprs bprs_) (NegLit $ P newProp)]
+                           ]]
+                      else [[BM_RemFormula todelete]]
+
+ where todelete = PrFormula pr bprs (D f2)
+
 getMods _ (DiscardRule todelete) =
  [[BM_RemFormula todelete]]
 
@@ -77,6 +119,7 @@ instance Show Rule where
    show (NegRule   todelete _ )    = "negation: " ++ (show todelete)
    show (AtRule    todelete _ )    = "at: " ++ (show todelete)
    show (ExistModRule todelete _)  = "E: " ++ (show todelete)
+   show (DiffRule todelete )       = "D: " ++ (show todelete)
    show (DiscardRule todelete)     = "Discard: " ++ (show todelete)
 
 instance ShowLatex Rule where
@@ -87,6 +130,7 @@ instance ShowLatex Rule where
    showLatex (NegRule    todelete _ )  = "negation: " ++ (math $ showLatex todelete)
    showLatex (AtRule     todelete _ )  = "at: " ++ (math $ showLatex todelete)
    showLatex (ExistModRule todelete _) = "E: " ++ (math $ showLatex todelete)
+   showLatex (DiffRule todelete )      = "D: " ++ (math $ showLatex todelete)
    showLatex (DiscardRule todelete)    = "Discard: " ++ (math $ showLatex todelete)
 
 --
@@ -99,6 +143,7 @@ ruleToId r = case r of
               (NegRule _ _)    -> R_Neg
               (AtRule _ _ )    -> R_At
               (ExistModRule _ _) -> R_Exist
+              (DiffRule _ )    -> R_Diff
               (DiscardRule _)  -> R_Discard
 
 --
@@ -113,6 +158,7 @@ applicableRules br clp d =
  ++ (applicableDiaRules br)
  ++ (applicableAtRules br)
  ++ (applicableExistRules br)
+ ++ (applicableDiffRules br)
  ++ if semBranch clp then (applicableSemBrRules br d)
                      else (applicableDisjRules br d)
 
@@ -142,6 +188,9 @@ applicableAtRules br = [atRule f br | f <- Set.toAscList $ atStr br]
 applicableExistRules :: Branch -> [Rule]
 applicableExistRules br = [existRule f br | f <- Set.toAscList $ existStr br]
 
+applicableDiffRules :: Branch -> [Rule]
+applicableDiffRules br = [diffRule f br | f <- Set.toAscList $ diffStr br]
+
 applyRule :: CmdLineParams -> Rule -> Branch -> [BranchInfo]
 applyRule clp rule br = applySetOfMods clp br (getMods br rule)
 
@@ -160,8 +209,10 @@ applyMod :: CmdLineParams -> Branch -> BranchModification -> BranchInfo
 applyMod clp br (BM_AddFormulas li) = addFormulas clp br li
 applyMod clp br (BM_AddAccFormula accFor) = addAccFormula clp br accFor
 applyMod  _  br (BM_AddDiaRuleCheck pr f) = BranchOK (addDiaRuleCheck br pr f)
-applyMod clp br (BM_CreateNewPr) = createNewPr clp br
+applyMod clp br (BM_CreateNewPref) = createNewPref clp br
+applyMod  _  br (BM_CreateNewProp) = BranchOK $ createNewProp br
 applyMod  _  br (BM_RemFormula f) = BranchOK (remFormula br f)
+applyMod  _  br (BM_AddDiffRuleCheck f prop) = BranchOK (addDiffRuleCheck br f prop)
 
 -- the actual rules and their helper functions
 
@@ -181,21 +232,34 @@ diaRule f@(PrFormula pr bprs f1@(Dia r f2)) br
   = if (diaAlreadyDone br pr f1)
      then DiscardRule f
      else DiaRule f (AccFormula bprs r pr newPr) (PrFormula newPr bprs f2)
-      where newPr = getNewPr br
+      where newPr = getNewPref br
 
 
 diaRule _ _ = error $ "diaRule"
 
 --
-getNewPr :: Branch -> Prefix
-getNewPr br = (lastPr br)+1
+
+getNewPref :: Branch -> Prefix
+getNewPref br = (lastPref br)+1
+
+--
+
+getNewProp :: Branch -> PropSymbol
+getNewProp br = maybe (PropSymbol 0) incPropSymbol (lastProp br)
 
 -- E
 existRule :: PrFormula -> Branch -> Rule
 existRule f@(PrFormula _ bprs (E f2)) br
   = ExistModRule f (PrFormula newPr bprs f2)
-     where newPr = getNewPr br
+     where newPr = getNewPref br
 existRule _ _ = error $ "existRule"
+
+-- D
+diffRule :: PrFormula -> Branch -> Rule
+diffRule (PrFormula pr bprs (D f2)) _
+  = DiffRule (pr, bprs, f2)
+
+diffRule _ _ = error $ "diffRule"
 
 -- disjunction
 disjRule :: PrFormula -> Branch -> BranchingPrefix -> Rule
@@ -242,6 +306,8 @@ neg1 (Box n f)  = Dia n (neg f)
 neg1 (Dia n f)  = Box n (neg f)
 neg1 (A f)      = E (neg f)
 neg1 (E f)      = A (neg f)
+neg1 (D f)      = B (neg f)
+neg1 (B f)      = D (neg f)
 neg1 (Neg f)    = f
 neg1 (PosLit a) = NegLit a
 neg1 (NegLit a) = PosLit a

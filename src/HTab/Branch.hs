@@ -9,14 +9,15 @@
 
 module HTab.Branch
 (
-Branch(..), BranchMonad, createNewPr, BranchInfo(..),
+Branch(..), BranchMonad, createNewProp, createNewPref, BranchInfo(..),
 addFormulas, addFormula, addAccFormula, remFormula,
-addDiaRuleCheck, addUnivConstraint, BranchData(..),branch_depth,
+addDiaRuleCheck, addDiffRuleCheck, addUnivConstraint,
+BranchData(..),branch_depth,
 emptyBranch,initialBranchStateFor,getCLParams,
 addZeroInPath,incPathHead,prefixes,
 getUrfather, getUrfatherAndDeps, isUrfather, isInclusionUrfather, isInInclusionUrfatherClass,
 getInclusionUrfather, hasUnivMod, inclusionUrfathers,
-calculateStepInfo, BlockingMode(..), diaAlreadyDone
+calculateStepInfo, BlockingMode(..), diaAlreadyDone, incPropSymbol
 ) where
 
 import Control.Monad.State(StateT, MonadState, get)
@@ -49,12 +50,17 @@ type Dia_structure    = Set.Set PrFormula
 type Neg_structure    = Set.Set PrFormula
 type At_structure     = Set.Set PrFormula
 type Exist_structure  = Set.Set PrFormula
+type Diff_structure   = Set.Set PrFormula
 type Acc_structure    = Map.Map Prefix (Map.Map Rel [(BranchingPrefixes,Prefix )])
 type Box_constraints  = Map.Map Prefix (Map.Map Rel [(BranchingPrefixes,Formula)])
 
 type Dia_rule_chart    = Map.Map Prefix (Set.Set Formula)
 type At_rule_chart     = Set.Set Formula
 type Exist_rule_chart  = Set.Set Formula
+type Diff_Dia_rule_chart  = Map.Map Formula PropSymbol  -- maps D(phi) formulas to the prop symbol used to differentiate
+                                                        -- the current prefix from the one used to contain (phi)
+
+type Diff_Box_constraints = [(BranchingPrefixes,Formula,NomSymbol)]
 
 type Univ_constraints  = [(BranchingPrefixes,Formula)]    -- TODO try Map.Map Formula BranchingPrefixes for dependencies update
 
@@ -77,14 +83,19 @@ data Branch = Branch {clashStr :: Clashable_info,
                       existStr :: Exist_structure,
                         negStr :: Neg_structure,
                          atStr :: At_structure,
+                       diffStr :: Diff_structure, -- D
                  -- other data
                         accStr :: Acc_structure,
                      boxConstr :: Box_constraints,
                        diaRlCh :: Dia_rule_chart,    -- saturation of the diamond rule
                         atRlCh :: At_rule_chart,     -- saturation of the @ rule
                      existRlCh :: Exist_rule_chart,  -- saturation of the exist rule
+                      dDiaRlCh :: Diff_Dia_rule_chart, -- saturation of the diff diamond rule chart (D)
                       univCons :: Univ_constraints,
-                        lastPr :: Prefix,
+                      dBoxCons :: Diff_Box_constraints, -- constraints of the (B) modality
+                      lastPref :: Prefix,
+                       lastNom :: Maybe NomSymbol,
+                      lastProp :: Maybe PropSymbol,
                    prefToForms :: PrefToFormulas,
                    prToBrPrefs :: PrefToBrPrefs,
                 nomPrefClasses :: EquivClasses,
@@ -109,13 +120,18 @@ emptyBranch l =
                   existStr = Set.empty::Exist_structure,
                   negStr = Set.empty::Neg_structure,
                   atStr= Set.empty::At_structure,
+                  diffStr = Set.empty::Diff_structure,
                   accStr=Map.empty::Acc_structure,
                   boxConstr=Map.empty::Box_constraints,
                   diaRlCh=Map.empty::Dia_rule_chart,
                   atRlCh=Set.empty::At_rule_chart,
                   existRlCh=Set.empty::Exist_rule_chart,
+                  dDiaRlCh = Map.empty::Diff_Dia_rule_chart,
+                  dBoxCons = [],
                   univCons=[],
-                  lastPr= 0 ,
+                  lastPref = 0,
+                  lastNom  = if null (languageNoms l) then Nothing else Just (maximum $ languageNoms l),   -- | TODO
+                  lastProp = if null (languageProps l) then Nothing else Just (maximum $ languageProps l), -- |   avoid this
                   prefToForms= Map.empty::PrefToFormulas,
                   prToBrPrefs= Map.empty::PrefToBrPrefs,
                   nomPrefClasses= DS.mkDSet::EquivClasses,
@@ -134,13 +150,18 @@ instance Show Branch where
               "\nExists: "         ++ show (Set.toList $ existStr br) ++
               "\nNegations: "      ++ show (Set.toList $ negStr br)   ++
               "\nAts: "            ++ show (Set.toList $ atStr br)    ++
+              "\nDiff exists: "    ++ show (Set.toList $ diffStr br)  ++
               "\nAccesibility: "    ++ prettyShowMap_ (accStr br) (\v -> "(" ++ prettyShowMap_rel_bps_x v ++ ")") "\n " ++
               "\nBox constraints: " ++ prettyShowMap_ (boxConstr br) (\v -> "(" ++ prettyShowMap_rel_bps_x v ++ ")") "\n " ++
               "\nDia rule chart: "  ++ prettyShowMap_ (diaRlCh br) (show . Set.toList) "\n " ++
               "\n@ rule chart: "   ++ show (Set.toList $ atRlCh br) ++
               "\nExist rule chart:" ++ show (Set.toList $ existRlCh br) ++
+              "\nDiff dia rule chart: "  ++ prettyShowMap_ (dDiaRlCh br) show "\n " ++
               "\nUniv constraints: "++ show (univCons br) ++
-              "\nBiggest prefix: " ++ show (lastPr br) ++
+              "\nDiff box constraints: "++ show (dBoxCons br) ++
+              "\nBiggest prefix: " ++ show (lastPref br) ++
+              "\nBiggest nominal: " ++ show (lastNom br) ++
+              "\nBiggest prop: " ++ show (lastProp br) ++
               "\nPrefix to branching prefixes: " ++ prettyShowMap_ (prToBrPrefs br) bps_show "\n " ++
               "\nPrefix to formulas: " ++ prettyShowMap_ (prefToForms br) (show . Set.toList) "\n " ++
               "\nInclusion urfather map: "  ++ show (inclUrMap br) ++
@@ -156,14 +177,19 @@ instance ShowLatex Branch where
               "\nDiamonds: "       ++ (putEol $ math $ show $ diaStr br)   ++
               "\nExists: "         ++ (putEol $ math $ show $ existStr br) ++
               "\nNegations: "      ++ (putEol $ math $ show $ negStr br)   ++
-              "\nAts: "            ++ (putEol $ math $ show $ atStr br)   ++
+              "\nAts: "            ++ (putEol $ math $ show $ atStr br)    ++
+              "\nDiff exists: "    ++ (putEol $ math $ show $ diffStr br)  ++
               "\nAccesibility: "   ++ (putEol $ math $ show $ Map.toList $ accStr br)   ++
               "\nBox constraints: " ++ (putEol $ math $ show $ Map.toList $ boxConstr br)  ++
               "\nDia rule chart: " ++ (putEol $ math $ show $ Map.toList $ diaRlCh br)  ++
               "\n@ rule chart: "   ++ (putEol $ math $ show $ Set.toList $ atRlCh br)  ++
               "\nExist rule chart:" ++ (putEol $ math $ show $ Set.toList $ existRlCh br)  ++
+              "\nDiff dia rule chart: "  ++ (putEol $ math $ show $ Map.toList $ dDiaRlCh br) ++
               "\nUniv constraints: "++ (putEol $ math $ show $ univCons br) ++
-              "\nBiggest prefix: " ++ (putEol $ show $ lastPr br) ++
+              "\nDiff box constraints: "++ (putEol $ math $ show $ dBoxCons br) ++
+              "\nBiggest prefix: " ++ (putEol $ show $ lastPref br) ++
+              "\nBiggest nom: " ++ (putEol $ show $ lastNom br) ++
+              "\nBiggest prop: " ++ (putEol $ show $ lastProp br) ++
               "\nPrefix to branching prefixes: " ++ (putEol $ math $ show $ Map.toList $ prToBrPrefs br) ++
               "\nPrefix to formulas: \\\\"      ++ (putEol $ math $ showLatex $ prefToForms br) ++
               "\nPrefix-Nominal classes : " ++ (putEol $ math $ show $ nomPrefClasses br) ++
@@ -297,6 +323,11 @@ addFormula clp br (PrFormula pr newFormulaBprs f2@(PosLit (N (NomSymbol n))))
 addFormula clp br (PrFormula _ bprs (A f))
  = addUnivConstraint clp blockedBr bprs f
     where blockedBr = br{blockMode = InclusionBlocking}
+
+-- diff universal constraint
+addFormula clp br (PrFormula pr bprs (B f))
+ = addDiffUnivConstraint clp blockedBr bprs f pr
+    where blockedBr = br{blockMode = InclusionBlocking} -- TODO not sure we need this
 
 -- box constraint
 addFormula clp br pf@(PrFormula pr bprs (Box r f))
@@ -478,7 +509,7 @@ calculateInclusionUrfathersMap br =
              else (iuMap, True)
        updateM pref currentM_ = condFoldr (oneStep pref) currentM        (filter (isUrfather br) (reverse [0..pref-1]))
                                  where currentM = Map.insert pref pref currentM_
-       updatedInclUrMap prevM = foldr     updateM        prevM           (filter (isUrfather br) [pr..(lastPr br)])
+       updatedInclUrMap prevM = foldr     updateM        prevM           (filter (isUrfather br) [pr..(lastPref br)])
 
        fromScratchInclUrMap   = foldr     updateM        emptyM          (filter (isUrfather br) (prefixes br))
 
@@ -538,23 +569,30 @@ addFormula2_withPrefToFormUpdate :: CmdLineParams -> Branch -> PrFormula -> Bran
 addFormula2_withPrefToFormUpdate clp br pf@(PrFormula _ _ f)
  = addFormula2 clp updatedPrefToFormsBr pf -- TODO more readable flow
     where updatedPrefToFormsBr
-             = if forInclusion f
+             = if forInclusion br f
                 then addToPrefToForms br pf
                 else br
 
-forInclusion :: Formula -> Bool
+forInclusion :: Branch -> Formula -> Bool
 -- is the formula useful to calculate inclusion urfathers ?
-forInclusion (PosLit _) = True -- TODO remove false and true
-forInclusion (NegLit _) = True
-forInclusion (Con _) = False
-forInclusion (Dis _) = False
-forInclusion (At _ _) = False
-forInclusion (Box _ _) = True
-forInclusion (Dia _ _) = True
-forInclusion (A _) = False
-forInclusion (E _) = False
-forInclusion (Neg _) = False
+forInclusion br (PosLit atom) = forInclAtom br atom
+forInclusion br (NegLit atom) = forInclAtom br atom
+forInclusion _ (Con _) = False
+forInclusion _ (Dis _) = False
+forInclusion _ (At _ _) = False
+forInclusion _ (Box _ _) = True
+forInclusion _ (Dia _ _) = True
+forInclusion _ (A _) = False
+forInclusion _ (E _) = False
+forInclusion _ (D _) = False -- TODO
+forInclusion _ (B _) = False --   not sure
+forInclusion _ (Neg _) = False
 
+forInclAtom :: Branch -> Atom -> Bool
+forInclAtom _ Taut = False
+forInclAtom br (N n) = elem n (languageNoms $ inputLanguage br)  -- if added during calculus: False, otherwise true
+forInclAtom _  (P _) = True -- but here we need all the prop. symbols, because the additional prop. symbols are added for
+                            -- prefix inequality
 
 addFormula2 :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
 addFormula2 clp br pf@(PrFormula pr _ _) =
@@ -579,6 +617,9 @@ addFormula3 clp br pf@(PrFormula _ _ (Dia _ _))
 addFormula3 _ _ (PrFormula _ _ (A _))
            = error " 'A' formulas should have been treated before"
 
+addFormula3 _ _ (PrFormula _ _ (B _))
+           = error " 'B' formulas should have been treated before"   -- TODO elsewhere (addFormula (B f))
+
 addFormula3 clp br pf@(PrFormula _ _ (E _))
            = modBranchCaseFC clp br pf $ \b f@(PrFormula _ _ f2) ->
                                                   if existAlreadyDone b f2  -- exist rule saturation
@@ -586,9 +627,12 @@ addFormula3 clp br pf@(PrFormula _ _ (E _))
                                                    else b{existStr = Set.insert f (existStr b),
                                                           existRlCh = Set.insert f2 (existRlCh b)}
 
+addFormula3 clp br pf@(PrFormula _ _ (D _)) -- TODO saturation test ? or is it only useful afterwards? (i bet yes)
+           = modBranchCaseFC clp br pf $ \b f -> b{diffStr = Set.insert f (diffStr b)}
+
 addFormula3 clp br pf@(PrFormula _ _ (At _ _))
            = modBranchCaseFC clp br pf $ \b f@(PrFormula _ _ f2)  ->
-                                                  if atAlreadyDone b f2  -- exist rule saturation
+                                                  if atAlreadyDone b f2  -- at rule saturation
                                                    then b
                                                    else b{atStr = Set.insert f (atStr b),
                                                           atRlCh = Set.insert f2 (atRlCh b)}
@@ -657,17 +701,55 @@ addUnivConstraint clp br bps f
  = addFormulas clp newBr
                $ map (\p -> PrFormula p bps f) $ urfathers
    where newBr = br{univCons = (bps,f):(univCons br)}
-         prefs = [0..(lastPr br)]
+         prefs = [0..(lastPref br)]
          urfathers = filter (isUrfather br) prefs
 
 --
 
-createNewPr :: CmdLineParams -> Branch -> BranchInfo
-createNewPr clp br
- = addFormulas clp newBr $ map (\(bps,f) -> PrFormula newPr bps f) univConstraints
-   where newPr = (lastPr br) + 1
-         newBr = br{lastPr = newPr}
+addDiffUnivConstraint :: CmdLineParams -> Branch -> BranchingPrefixes -> Formula -> Prefix -> BranchInfo
+addDiffUnivConstraint clp br bprs f pr
+ = addFormulas clp newBr
+               $ (PrFormula pr bprs $ nom newNom)
+                 :(map (\somePrefix -> PrFormula somePrefix bprs (Dis [f, nom newNom])) otherUrfathers)
+   where currentUrfather = getUrfather br (DS.Prefix pr)
+         prefs = [0..(lastPref br)]
+         otherUrfathers = delete currentUrfather $ filter (isUrfather br) prefs
+         newNom =  maybe (NomSymbol 0) incNomSymbol (lastNom br)
+         newBr = br{dBoxCons = (bprs,f,newNom):(dBoxCons br),
+                    lastNom = Just newNom}
+
+--
+
+addDiffRuleCheck :: Branch -> Formula -> PropSymbol -> Branch
+addDiffRuleCheck br f propsym =
+  br{dDiaRlCh=Map.insert f propsym (dDiaRlCh br)}
+
+--
+
+incNomSymbol :: NomSymbol -> NomSymbol
+incNomSymbol (NomSymbol n) = NomSymbol (n+1)
+
+
+createNewPref :: CmdLineParams -> Branch -> BranchInfo
+createNewPref clp br
+ = addFormulas clp newBr $ (   map (\(bps,f) -> PrFormula newPr bps f) univConstraints
+                            ++ map (\(bps,f,newNom) -> PrFormula newPr bps (Dis [f, nom newNom])) diffBoxConstraints)
+   where newPr = (lastPref br) + 1
+         newBr = br{lastPref = newPr}
          univConstraints = univCons br
+         diffBoxConstraints = dBoxCons br
+
+
+--
+
+incPropSymbol :: PropSymbol -> PropSymbol
+incPropSymbol (PropSymbol n) = PropSymbol (n+1)
+
+
+createNewProp :: Branch -> Branch
+createNewProp br
+ = br{lastProp = Just newProp}
+    where newProp = maybe (PropSymbol 0) incPropSymbol (lastProp br)
 
 --
 
@@ -678,6 +760,7 @@ remFormula br f@(PrFormula _ _ (E _))          = br{existStr=(Set.delete f (exis
 remFormula br f@(PrFormula _ _ (Dis _))        = br{disjStr=(Set.delete f (disjStr br))}
 remFormula br f@(PrFormula _ _ (Neg _))        = br{negStr=(Set.delete f (negStr br))}
 remFormula br f@(PrFormula _ _ (At _ _))       = br{atStr=(Set.delete f (atStr br))}
+remFormula br f@(PrFormula _ _ (D _))          = br{diffStr=(Set.delete f (diffStr br))}
 remFormula _  _                                = error "that formula should never be deleted"
 
 
@@ -780,13 +863,13 @@ addDepsToClashableSlot res_cis bps =
 -}
 
 isModal :: Branch -> Bool
-isModal br = (languageNbNoms $ inputLanguage br) == 0
+isModal br = null $ languageNoms $ inputLanguage br
 
 hasUnivMod :: Branch -> Bool
 hasUnivMod br = languageUniv $ inputLanguage br
 
 prefixes :: Branch -> [Prefix]
-prefixes br = [0..(lastPr br)]
+prefixes br = [0..(lastPref br)]
 
 inclusionUrfathers :: Branch -> [Prefix]
 inclusionUrfathers br = filter (isInclusionUrfather br) (prefixes br)

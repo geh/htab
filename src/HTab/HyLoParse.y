@@ -56,6 +56,8 @@ import HTab.Formula
              dia             { (TokenDia $$   , _) }
              ubox            { (TokenUBox     , _) }
              udia            { (TokenUDia     , _) }
+             dbox            { (TokenDBox     , _) }
+             ddia            { (TokenDDia     , _) }
              '('             { (TokenOB       , _) }
              ')'             { (TokenCB       , _) }
              ';'             { (TokenSC       , _) }
@@ -64,7 +66,7 @@ import HTab.Formula
 %right dimp
 %left or
 %left and
-%left box dia neg ubox udia
+%left box dia neg ubox udia dbox ddia
 %right at
 
 %%
@@ -91,6 +93,8 @@ Formula :
 | box  Formula                {box $1 $2}
 | udia Formula                {existMod $2}
 | ubox Formula                {univMod $2}
+| ddia Formula                {dExistMod $2}
+| dbox Formula                {dUnivMod $2}
 | Formula dimp Formula        {dimp $1 $3}
 | Formula imp Formula         {imp $1 $3}
 | Formula and Formula         {conj $1 $3}

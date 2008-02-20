@@ -10,7 +10,7 @@ Build-Depends:       base >= 2, base < 3,
                      haskell98 >= 1, haskell98 < 2,
                      mtl >= 1, mtl < 2,
                      filepath > 1, filepath <= 2,
-                     hylolib >= 1.0, hylolib < 1.1
+                     hylolib >= 1.1-devel, hylolib < 1.2
 
 Executable:          htab
 Main-is:             htab.hs

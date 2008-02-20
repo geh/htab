@@ -16,7 +16,7 @@ import qualified HTab.HyLoParse as P
 import HTab.CommandLine( filename, maxtimeout, CmdLineParams, logState, genModel,
                          configureMetrics,fullClash,quietMode )
 import HTab.Branch( Branch, BranchInfo(..),initialBranchStateFor,BranchMonad, BranchData(..),
-                    emptyBranch, lastPr )
+                    emptyBranch, lastPref )
 import HTab.Timeout( timeout )
 import HTab.Statistics( Statistics, initialStatisticsStateFor, printOutAllMetrics' )
 import HTab.Base( vPutStrLn )
@@ -113,5 +113,5 @@ addFirstFormulas clp br_ f ns
      ( BM_AddFormulas ( pf : ( map (\(p,n) ->  PrFormula p bps_empty (PosLit (N n))) $ zip [1..] ns))
      )
     where nbNs = length ns
-          br = br_{lastPr = (lastPr br_) + nbNs}
+          br = br_{lastPref = (lastPref br_) + nbNs}
           pf = firstPrefixedFormula f

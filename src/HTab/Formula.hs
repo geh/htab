@@ -17,8 +17,9 @@ bps_empty, deps_min, bps_show,
 PrFormula(..), AccFormula(..),
 LanguageInfo(..),
 nnf, neg, isTrue, isFalse,
-box, diamond, at, conj, disj, univMod, existMod, taut,
-dimp, imp,
+box, diamond, at, conj, disj, univMod, existMod,
+dUnivMod, dExistMod,
+taut, dimp, imp,
 prop, nom, formulaLanguageInfo, prefixList ,
 firstPrefixedFormula
 )
@@ -63,6 +64,8 @@ data Formula
      | Dia    RelSymbol     Formula
      | A      Formula
      | E      Formula
+     | D      Formula
+     | B      Formula
      | Neg Formula
   deriving (Eq, Ord)
 
@@ -77,7 +80,8 @@ instance Show Formula where
  show (Neg f)    = "!" ++ show f
  show (A f)      = "A" ++ show f
  show (E f)      = "E" ++ show f
-
+ show (D f)      = "D" ++ show f
+ show (B f)      = "B" ++ show f
 
 instance ShowLatex Formula where
    showLatex (PosLit a) = showLatex a
@@ -90,6 +94,8 @@ instance ShowLatex Formula where
    showLatex (Neg f)    = "\\neg" ++ showLatex f
    showLatex (A f)      = "A" ++ showLatex f
    showLatex (E f)      = "E" ++ showLatex f
+   showLatex (D f)      = "D" ++ showLatex f
+   showLatex (B f)      = "B" ++ showLatex f
 
 --
 -- Required structures to implement backjumping
@@ -157,11 +163,13 @@ nom  n = PosLit (N n)
 
 {- Modalities -}
 box, diamond :: RelSymbol -> Formula -> Formula
-univMod, existMod :: Formula -> Formula
+univMod, existMod, dUnivMod, dExistMod :: Formula -> Formula
 box        = Box
 diamond    = Dia
 univMod    = A
 existMod   = E
+dUnivMod   = B
+dExistMod  = D
 
 {- Hybrid operators -}
 at             :: NomSymbol -> Formula -> Formula
@@ -295,6 +303,8 @@ nnf (Box r f) = Box r (nnf f)
 nnf (Dia r f) = Dia r (nnf f)
 nnf (A f) = A (nnf f)
 nnf (E f) = E (nnf f)
+nnf (D f) = D (nnf f)
+nnf (B f) = B (nnf f)
 nnf (PosLit a) = PosLit a
 nnf (NegLit a) = NegLit a
 
@@ -308,22 +318,24 @@ neg2 (Box r f)    = Dia r (neg2 f)
 neg2 (Dia r f)    = Box r (neg2 f)
 neg2 (A f)        = E (neg2 f)
 neg2 (E f)        = A (neg2 f)
+neg2 (D f)        = B (neg2 f)
+neg2 (B f)        = D (neg2 f)
 neg2 (PosLit a)   = (NegLit a)       --
 neg2 (NegLit a)   = (PosLit a)       -- cases where it doesn't go deeper
 neg2 (Neg f)      = f                --
 
-data LanguageInfo = LanguageInfo { languageNbNoms :: Int,
-                                     languageNoms :: [NomSymbol], -- ascending list
+data LanguageInfo = LanguageInfo {   languageNoms :: [NomSymbol], -- ascending list
+                                    languageProps :: [PropSymbol], -- ascending list 
                                      languageUniv :: Bool }
  deriving (Show)
 
 formulaLanguageInfo :: Formula -> LanguageInfo
 formulaLanguageInfo f
- = LanguageInfo {languageNbNoms = nbNoms,
-                   languageNoms = noms,
-                   languageUniv = hasUnivModality f}
+ = LanguageInfo {   languageNoms = noms,
+                   languageProps = props,
+                    languageUniv = hasUnivModality f }
     where noms = Set.toAscList $ extractNominals f
-          nbNoms = length noms
+          props = Set.toAscList $ extractProps f
 
 extractNominals :: Formula -> Set.Set NomSymbol
 extractNominals (PosLit (N n)) = Set.singleton n
@@ -334,9 +346,26 @@ extractNominals (Dia _ f) = extractNominals f
 extractNominals (Box _ f) = extractNominals f
 extractNominals (A f) = extractNominals f
 extractNominals (E f) = extractNominals f
+extractNominals (D f) = extractNominals f
+extractNominals (B f) = extractNominals f
 extractNominals (Neg f) = extractNominals f
 extractNominals (At n f) = Set.insert n $ extractNominals f
 extractNominals _ = Set.empty
+
+extractProps :: Formula -> Set.Set PropSymbol
+extractProps (PosLit (P p)) = Set.singleton p
+extractProps (NegLit (P p)) = Set.singleton p
+extractProps (Con fs) = Set.unions $ map extractProps fs
+extractProps (Dis fs) = Set.unions $ map extractProps fs
+extractProps (Dia _ f) = extractProps f
+extractProps (Box _ f) = extractProps f
+extractProps (A f) = extractProps f
+extractProps (E f) = extractProps f
+extractProps (D f) = extractProps f
+extractProps (B f) = extractProps f
+extractProps (Neg f) = extractProps f
+extractProps (At _ f) = extractProps f
+extractProps _ = Set.empty
 
 hasUnivModality :: Formula -> Bool
 hasUnivModality (Con fs)  = or $ map hasUnivModality fs
@@ -347,5 +376,7 @@ hasUnivModality (Neg f)   = hasUnivModality f
 hasUnivModality (At _ f)  = hasUnivModality f
 hasUnivModality (A _)     = True
 hasUnivModality (E _)     = True  -- will be ' hasUnivModality f ' when formulas are nnf
+hasUnivModality (D _)     = True  -- |
+hasUnivModality (B _)     = True  -- | TODO: really?
 hasUnivModality _         = False -- PosLit , NegLit
 
