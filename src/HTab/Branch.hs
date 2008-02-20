@@ -299,9 +299,15 @@ addFormula clp br (PrFormula _ bprs (A f))
     where blockedBr = br{blockMode = InclusionBlocking}
 
 -- box constraint
-addFormula clp br (PrFormula pr bprs (Box r f))
- = addBoxConstraint clp updatedBr pr r f bprs
-     where updatedBr = addToAugmentedPrefixes pr br
+addFormula clp br pf@(PrFormula pr bprs (Box r f))
+ = addBoxConstraint clp br_ pr r f bprs
+   where
+     updatedBr_ = addToAugmentedPrefixes pr br
+     br_ = if hasUnivMod br
+            then let (BranchOK updatedBr) = addFormula2_withPrefToFormUpdate clp updatedBr_ pf
+                 in
+                 updatedBr
+            else updatedBr_
 
 -- Case 2
 -- p : phi (not nominal)
@@ -562,8 +568,8 @@ addFormula3 clp br pf@(PrFormula _ _ (Con _))
 addFormula3 clp br pf@(PrFormula _ _ (Dis _))
            = modBranchCaseFC clp br pf $ \b f -> b{disjStr = Set.insert f (disjStr b)}
 
-addFormula3  _  _ (PrFormula _ _ (Box _ _))
-           = error " '[]' formulas should have been treated before"
+addFormula3  _  br (PrFormula _ _ (Box _ _))
+           = BranchOK br     -- [] formulas have been treated before
 
 addFormula3 clp br pf@(PrFormula _ _ (Dia _ _))
            = modBranchCaseFC clp br pf $ \b f@(PrFormula pr _ f2)
