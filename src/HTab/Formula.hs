@@ -207,7 +207,7 @@ disj    f          f'
     | otherwise            = skipSingleton Dis (sortAndNub2 f f')
 
 dimp :: Formula -> Formula -> Formula
-dimp f1 f2 = conj (disj (neg f1) f2) (disj (neg f2) f1)
+dimp f1 f2 = disj (conj f1 f2) (conj (neg f1) (neg f2))
 
 imp :: Formula -> Formula -> Formula
 imp f1 f2 = disj (neg f1) f2
