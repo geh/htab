@@ -487,7 +487,7 @@ condFoldr f initialB (hd:tl)
 formulasIncluded :: Branch -> Prefix -> Prefix-> Bool
 -- is the set of formulas of the first prefix included in the set of the second prefix?
 formulasIncluded br p1 p2 = Set.isSubsetOf (formulasOf p1) (formulasOf p2)
- where formulasOf p = (prefToForms br) Map.! p
+ where formulasOf p = Map.findWithDefault Set.empty p (prefToForms br)
 
 
 {-
@@ -529,9 +529,26 @@ addFormulas2 _ br [] = BranchOK br
 
 
 addFormula2_withPrefToFormUpdate :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
-addFormula2_withPrefToFormUpdate clp br f
- = addFormula2 clp updatedPrefToFormsBr f -- TODO more readable flow
-    where updatedPrefToFormsBr = addToPrefToForms br f
+addFormula2_withPrefToFormUpdate clp br pf@(PrFormula _ _ f)
+ = addFormula2 clp updatedPrefToFormsBr pf -- TODO more readable flow
+    where updatedPrefToFormsBr
+             = if forInclusion f
+                then addToPrefToForms br pf
+                else br
+
+forInclusion :: Formula -> Bool
+-- is the formula useful to calculate inclusion urfathers ?
+forInclusion (PosLit _) = True -- TODO remove false and true
+forInclusion (NegLit _) = True
+forInclusion (Con _) = False
+forInclusion (Dis _) = False
+forInclusion (At _ _) = False
+forInclusion (Box _ _) = True
+forInclusion (Dia _ _) = True
+forInclusion (A _) = False
+forInclusion (E _) = False
+forInclusion (Neg _) = False
+
 
 addFormula2 :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
 addFormula2 clp br pf@(PrFormula pr _ _) =
