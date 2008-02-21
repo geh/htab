@@ -10,8 +10,6 @@ import Control.Monad.State( runStateT )
 import System.IO           ( hSetBuffering, stdin, BufferMode(LineBuffering)) 
 import System.CPUTime( getCPUTime )
 
-import qualified HyLo.InputFile.Lexer as L
-import qualified HTab.HyLoParse as P
 
 import HTab.CommandLine( filename, maxtimeout, CmdLineParams, logState, genModel,
                          configureMetrics,fullClash,quietMode )
@@ -22,7 +20,8 @@ import HTab.Statistics( Statistics, initialStatisticsStateFor, printOutAllMetric
 import HTab.Base( vPutStrLn )
 import HTab.Tableau( liftStats, tableau, OpenFlag(..) )
 import HTab.Formula( firstPrefixedFormula,nnf,formulaLanguageInfo, bps_empty,
-                     PrFormula(..), LanguageInfo(..), NomSymbol, Formula(..), Atom(..))
+                     PrFormula(..), LanguageInfo(..), NomSymbol, Formula(..), Atom(..),
+                     parse )
 import HTab.LatexOutput
 import HTab.ModelGen ( HerbrandModel, inducedModel )
 
@@ -44,7 +43,7 @@ runWithParams clp =
                         hSetBuffering stdin LineBuffering
                         getContents
 
-     f <- P.parse . L.lexify <$> maybe fromStdIn readFile (filename clp)
+     f <- parse <$> maybe fromStdIn readFile (filename clp)
      --
      let fLang = formulaLanguageInfo f
      latexInit clp

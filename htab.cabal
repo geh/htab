@@ -14,7 +14,6 @@ Build-Depends:       base >= 2, base < 3,
 
 Executable:          htab
 Main-is:             htab.hs
-other-modules:       HTab.HyLoParse
 Hs-Source-Dirs:      src
 Extra-source-files:  INSTALL man/htab.1
 ghc-options:         -O2 -Wall -fglasgow-exts

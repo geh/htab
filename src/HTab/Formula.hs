@@ -21,7 +21,8 @@ box, diamond, at, conj, disj, univMod, existMod,
 dUnivMod, dExistMod,
 taut, dimp, imp,
 prop, nom, formulaLanguageInfo, prefixList ,
-firstPrefixedFormula
+firstPrefixedFormula,
+parse
 )
 
 
@@ -36,6 +37,9 @@ import HyLo.Signature.Simple( PropSymbol(..),
                               StateVar)
 
 import HTab.LatexOutputHelper
+
+import qualified HyLo.InputFile as InputFile
+import qualified HyLo.Formula as F
 
 type Prefix = Int
 type Rel = Int
@@ -96,6 +100,33 @@ instance ShowLatex Formula where
    showLatex (E f)      = "E" ++ showLatex f
    showLatex (D f)      = "D" ++ showLatex f
    showLatex (B f)      = "B" ++ showLatex f
+
+parse :: String -> Formula
+parse = convert . InputFile.parse
+
+convert :: [F.Formula NomSymbol PropSymbol RelSymbol v] -> Formula
+convert fs = conv_ $ foldr (\f1 f2 -> f1 F.:&: f2) F.Top fs
+
+conv_ :: F.Formula NomSymbol PropSymbol RelSymbol v -> Formula
+conv_ F.Top = taut
+conv_ F.Bot = neg taut
+conv_ (F.Prop p) = prop p
+conv_ (F.Nom n) = nom n
+conv_ (F.SVar _) = error "not implemented"
+conv_ (F.Neg f) = neg $ conv_ f
+conv_ (f1 F.:&: f2) = conj (conv_ f1) (conv_ f2)
+conv_ (f1 F.:|: f2) = disj (conv_ f1) (conv_ f2)
+conv_ (f1 F.:-->: f2) = imp (conv_ f1) (conv_ f2)
+conv_ (f1 F.:<-->: f2) = dimp (conv_ f1) (conv_ f2)
+conv_ (F.Diam r f) = diamond r (conv_ f)
+conv_ (F.Box r f) = box r (conv_ f)
+conv_ (F.At n f) = at n (conv_ f)
+conv_ (F.Atv _ _) = error "not implemented"
+conv_ (F.A f) = univMod (conv_ f)
+conv_ (F.E f) = existMod (conv_ f)
+conv_ (F.D f) = dExistMod (conv_ f)
+conv_ (F.B f) = dUnivMod (conv_ f)
+conv_ (F.Down _ _) = error "not implemented"
 
 --
 -- Required structures to implement backjumping
