@@ -70,7 +70,7 @@ chooseBranch_ currentDepSet (hd:tl) =
                                  -- put bd (BranchData) as it was before branching
                                  -- in order to retrieve the path at that stage
                                  chooseBranch_ (bps_union currentDepSet depSet) tl
-                         else return $ CLOSED (bps_union currentDepSet depSet)
+                         else return $ CLOSED depSet
 
 chooseBranch_ currentDepSet [] = return $ CLOSED currentDepSet
 
