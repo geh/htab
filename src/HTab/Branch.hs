@@ -57,8 +57,10 @@ type Box_constraints  = Map.Map Prefix (Map.Map Rel [(BranchingPrefixes,Formula)
 type Dia_rule_chart    = Map.Map Prefix (Set.Set Formula)
 type At_rule_chart     = Set.Set Formula
 type Exist_rule_chart  = Set.Set Formula
-type Diff_Dia_rule_chart  = Map.Map Formula PropSymbol  -- maps D(phi) formulas to the prop symbol used to differentiate
-                                                        -- the current prefix from the one used to contain (phi)
+type Diff_Dia_rule_chart  = Map.Map Formula (PropSymbol,Bool)
+       -- maps D(phi) formulas to the prop symbol used to differentiate
+       -- the current prefix from the one used to contain (phi) , and to a boolean indicating if a second
+       -- different world has already been created
 
 type Diff_Box_constraints = [(BranchingPrefixes,Formula,NomSymbol)]
 
@@ -720,9 +722,9 @@ addDiffUnivConstraint clp br bprs f pr
 
 --
 
-addDiffRuleCheck :: Branch -> Formula -> PropSymbol -> Branch
-addDiffRuleCheck br f propsym =
-  br{dDiaRlCh=Map.insert f propsym (dDiaRlCh br)}
+addDiffRuleCheck :: Branch -> Formula -> PropSymbol -> Bool -> Branch
+addDiffRuleCheck br f propsym b =
+  br{dDiaRlCh=Map.insert f (propsym,b) (dDiaRlCh br)}
 
 --
 

@@ -31,7 +31,7 @@ import HTab.LatexOutputHelper
 data BranchModification =    BM_AddFormulas   [PrFormula]
                            | BM_AddAccFormula AccFormula
                            | BM_AddDiaRuleCheck Prefix Formula
-                           | BM_AddDiffRuleCheck Formula PropSymbol
+                           | BM_AddDiffRuleCheck Formula PropSymbol Bool
                            | BM_RemFormula PrFormula
                            | BM_CreateNewPref
                            | BM_CreateNewProp
@@ -79,31 +79,42 @@ getMods _ (AtRule todelete toadd) =
 getMods br (DiffRule (pr, bprs , f2)) =
  case Map.lookup f2 (dDiaRlCh br) of
   Nothing -> [[BM_RemFormula todelete,
-               BM_CreateNewPref, BM_CreateNewProp, BM_AddFormulas [PrFormula newPref bprs f2,
-                                                                   PrFormula newPref bprs (PosLit $ P newProp),
-                                                                   PrFormula pr      bprs (NegLit $ P newProp)],
-               BM_AddDiffRuleCheck f2 newProp
+               BM_CreateNewPref, BM_CreateNewProp,
+               BM_AddFormulas [PrFormula newPref bprs f2,
+                               PrFormula newPref bprs (PosLit $ P newProp),
+                               PrFormula pr      bprs (NegLit $ P newProp)],
+               BM_AddDiffRuleCheck f2 newProp False
              ]]
               where newPref = getNewPref br
                     newProp = getNewProp br
 
-  Just diffProp -> -- the D-formula has already be seen, its associated prop. symbol is diffProp
+  Just (diffProp,doneTwiceBool)
+          -> -- the "different place" for this D-formula has already been created
                    case (do clashSlot <- Map.lookup pr (clashStr br)
-                            Map.lookup (PosLit $ P diffProp) clashSlot ) of
+                            Map.lookup (PosLit $ P diffProp) clashSlot ) of -- are we already at the "different place" ?
                     Nothing -> [[BM_RemFormula (PrFormula pr bprs (D f2)),
-                                 BM_AddFormulas [PrFormula pr bprs (NegLit $ P diffProp)]]]
+                                 BM_AddFormulas [PrFormula pr bprs (Dis [(NegLit $ P diffProp), D f2])]
+                                 -- no, so mark oneself as different from the "different place"; and when it is no longer true,
+                                 -- we will generate another different world
+                               ]]
                     Just (bool_,bprs_) ->
-                     if bool_  -- are we already there ? 
-                      then let newPref = getNewPref br
+                     if bool_
+                      then  -- we are at the "different place"
+                       if doneTwiceBool
+                         then -- we have already created a "second different place"
+                           [[BM_RemFormula todelete]]
+                         else -- we need to create a "second different place"
+                           let newPref = getNewPref br
                                newProp = getNewProp br
                            in
                            [[BM_RemFormula todelete,
                              BM_CreateNewPref, BM_CreateNewProp,
                              BM_AddFormulas [PrFormula newPref (bps_union bprs bprs_) f2,
                                              PrFormula newPref (bps_union bprs bprs_) (PosLit $ P newProp),
-                                             PrFormula pr      (bps_union bprs bprs_) (NegLit $ P newProp)]
+                                             PrFormula pr      (bps_union bprs bprs_) (NegLit $ P newProp)],
+                             BM_AddDiffRuleCheck f2 newProp True
                            ]]
-                      else [[BM_RemFormula todelete]]
+                      else [[BM_RemFormula todelete]] -- we are already marked as different from the "different place"
 
  where todelete = PrFormula pr bprs (D f2)
 
@@ -212,7 +223,7 @@ applyMod  _  br (BM_AddDiaRuleCheck pr f) = BranchOK (addDiaRuleCheck br pr f)
 applyMod clp br (BM_CreateNewPref) = createNewPref clp br
 applyMod  _  br (BM_CreateNewProp) = BranchOK $ createNewProp br
 applyMod  _  br (BM_RemFormula f) = BranchOK (remFormula br f)
-applyMod  _  br (BM_AddDiffRuleCheck f prop) = BranchOK (addDiffRuleCheck br f prop)
+applyMod  _  br (BM_AddDiffRuleCheck f prop b) = BranchOK (addDiffRuleCheck br f prop b)
 
 -- the actual rules and their helper functions
 
