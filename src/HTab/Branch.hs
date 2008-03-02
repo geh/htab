@@ -246,20 +246,23 @@ prettyShowMap_rel_bps_x dasMap
 -}
 
 
-addFormulas :: CmdLineParams -> Branch -> [PrFormula] -> BranchInfo
-addFormulas clp br (hd:tl)
-       = case addFormula clp br hd of
-          BranchOK br2             -> addFormulas clp br2 tl
+addFormulas :: CmdLineParams -> Branch -> [PrFormula] -> Bool -> BranchInfo
+addFormulas clp br (hd:tl) afterClassMerge
+       = case addFormula clp br hd afterClassMerge of
+          BranchOK br2             -> addFormulas clp br2 tl afterClassMerge
           bi@(BranchClash _ _ _ _) -> bi
 
-addFormulas _ br [] = BranchOK br
+addFormulas _ br [] _ = BranchOK br
 
-addFormula :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
+
+addFormula :: CmdLineParams -> Branch -> PrFormula -> Bool -> BranchInfo
 -- Case 1 :
 -- p : a (a nominal)
 --
-addFormula clp br (PrFormula pr newFormulaBprs f2@(PosLit (N (NomSymbol n))))
-  = result
+addFormula clp br f@(PrFormula pr newFormulaBprs f2@(PosLit (N (NomSymbol n)))) afterClassMerge
+ | afterClassMerge = addFormulaBaseCase clp br f
+ | not afterClassMerge
+   = result
      where classes = nomPrefClasses br
            ((DS.Prefix rootP),classes2) = DS.find (DS.Prefix pr) classes
 
@@ -317,22 +320,21 @@ addFormula clp br (PrFormula pr newFormulaBprs f2@(PosLit (N (NomSymbol n))))
                                                  diaRlCh        = newDiaRlCh,
                                                  clashStr       = newClashable_info}
                          in
-                           if hasUnivMod br then addFormulas2_withPrefToFormUpdate clp brUpdated nubbedNewFormulas
-                                            else addFormulas2 clp brUpdated nubbedNewFormulas
+                             addFormulas clp brUpdated nubbedNewFormulas True
 
 -- Case 1,5
 -- universal constraint
-addFormula clp br (PrFormula _ bprs (A f))
+addFormula clp br (PrFormula _ bprs (A f)) _
  = addUnivConstraint clp blockedBr bprs f
     where blockedBr = br{blockMode = InclusionBlocking}
 
 -- diff universal constraint
-addFormula clp br (PrFormula pr bprs (B f))
+addFormula clp br (PrFormula pr bprs (B f)) _
  = addDiffUnivConstraint clp blockedBr bprs f pr
-    where blockedBr = br{blockMode = InclusionBlocking} -- TODO not sure we need this
+    where blockedBr = br{blockMode = InclusionBlocking}
 
 -- box constraint
-addFormula clp br pf@(PrFormula pr bprs (Box r f))
+addFormula clp br pf@(PrFormula pr bprs (Box r f)) _
  = addBoxConstraint clp br_ pr r f bprs
    where
      updatedBr_ = addToAugmentedPrefixes pr br
@@ -345,21 +347,22 @@ addFormula clp br pf@(PrFormula pr bprs (Box r f))
 -- Case 2
 -- p : phi (not nominal)
 
--- if we work with the modal language
-addFormula clp br f | isModal br =
-  if hasUnivMod br
-    then addFormula2_withPrefToFormUpdate clp br f  -- necessary to compute inclusion urfathers
-    else addFormula2 clp br f   -- this one does not update the prefix to formulas map
+addFormula clp br f _
+ = addFormulaBaseCase clp br f
 
--- if we work with the hybrid language
-addFormula clp br f@(PrFormula pr bprs f2)
- = if urfather == pr
-    then if hasUnivMod br then addFormula2_withPrefToFormUpdate clp newBr f
-                          else addFormula2                      clp newBr f
-    else if hasUnivMod br then addFormula2_withPrefToFormUpdate clp newBr (PrFormula urfather (bps_union bprs bprs2) f2)
-                          else addFormula2                      clp newBr (PrFormula urfather (bps_union bprs bprs2) f2)
-    where  (urfather,bprs2,newClasses) = getUrfatherAndDeps br (DS.Prefix pr)
-           newBr = br{nomPrefClasses = newClasses}
+
+addFormulaBaseCase :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
+addFormulaBaseCase clp br f@(PrFormula pr bprs f2)
+ = if hasUnivMod br
+    then addFormula2_withPrefToFormUpdate clp newBr fToAdd
+    else addFormula2                      clp newBr fToAdd
+   where
+      (urfather,bprs2,newClasses) = getUrfatherAndDeps br (DS.Prefix pr)
+      newBr = br{nomPrefClasses = newClasses}
+      fToAdd = if urfather == pr -- always the case if we are in the modal language
+                then f
+                else (PrFormula urfather (bps_union bprs bprs2) f2)
+
 
 
 nubAndMergeDeps :: [PrFormula] -> [PrFormula]
@@ -424,7 +427,8 @@ newFormulasToSend deps mapBox mapAcc
 addBoxConstraint :: CmdLineParams -> Branch -> Prefix -> RelSymbol -> Formula -> BranchingPrefixes -> BranchInfo
 addBoxConstraint clp br nonRepresentativePr (RelSymbol r) f bprs
  = addFormulas clp newBr
-               $ map (\(bprs2,p) -> PrFormula p (bps_union bprs bprs2) f) accessibleBprsPrs
+               ( map (\(bprs2,p) -> PrFormula p (bps_union bprs bprs2) f) accessibleBprsPrs )
+               False
    where pr = getUrfather br (DS.Prefix nonRepresentativePr)
          newBr = br{boxConstr = updateBoxConstr pr r f bprs (boxConstr br)}
          updateBoxConstr p1_ r_ f_ bprs_ boxConstr_ =
@@ -442,7 +446,8 @@ addBoxConstraint _ _ _ (InvRelSymbol _) _ _ = error "inverse modality not handle
 addAccFormula :: CmdLineParams -> Branch -> AccFormula -> BranchInfo
 addAccFormula clp br (AccFormula bprs (RelSymbol r) nonRepresentativeP1 p2)
  = addFormulas clp newBr
-               $ map (\(bprs2,f) -> PrFormula p2 (bps_union bprs bprs2) f) formulasToSend
+               ( map (\(bprs2,f) -> PrFormula p2 (bps_union bprs bprs2) f) formulasToSend )
+               False
    where p1 = getUrfather br (DS.Prefix nonRepresentativeP1)
          newBr    =      br{accStr=updateAccStr p1 r bprs p2 (accStr br)}
          updateAccStr p1_ r_ bprs_ p2_ accStr_ =
@@ -548,24 +553,6 @@ addToAugmentedPrefixes pr br = br{incrPrs = (pr:incrPrs br)} -- this list never 
    "add formula(s)" functions, that update the "clashable formulas"
    to detect clashes, and store the new formula in the right sub-structure
 -}
-
-addFormulas2_withPrefToFormUpdate :: CmdLineParams -> Branch -> [PrFormula] -> BranchInfo
-addFormulas2_withPrefToFormUpdate clp br (hd:tl) =
-   case (addFormula2_withPrefToFormUpdate clp br hd) of
-     BranchOK br2             -> addFormulas2_withPrefToFormUpdate clp br2 tl
-     bi@(BranchClash _ _ _ _) -> bi
-
-addFormulas2_withPrefToFormUpdate _ br [] = BranchOK br
-
-
-addFormulas2 :: CmdLineParams -> Branch -> [PrFormula] -> BranchInfo
-addFormulas2 clp br (hd:tl) =
-   case (addFormula2 clp br hd) of
-     BranchOK br2             -> addFormulas2 clp br2 tl
-     bi@(BranchClash _ _ _ _) -> bi
-
-addFormulas2 _ br [] = BranchOK br
-
 
 addFormula2_withPrefToFormUpdate :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
 addFormula2_withPrefToFormUpdate clp br pf@(PrFormula _ _ f)
@@ -701,7 +688,8 @@ atAlreadyDone _ _ = error "at already done : wrong formula kind"
 addUnivConstraint :: CmdLineParams -> Branch -> BranchingPrefixes -> Formula -> BranchInfo
 addUnivConstraint clp br bps f
  = addFormulas clp newBr
-               $ map (\p -> PrFormula p bps f) $ urfathers
+               ( map (\p -> PrFormula p bps f) $ urfathers )
+               False
    where newBr = br{univCons = (bps,f):(univCons br)}
          prefs = [0..(lastPref br)]
          urfathers = filter (isUrfather br) prefs
@@ -711,8 +699,10 @@ addUnivConstraint clp br bps f
 addDiffUnivConstraint :: CmdLineParams -> Branch -> BranchingPrefixes -> Formula -> Prefix -> BranchInfo
 addDiffUnivConstraint clp br bprs f pr
  = addFormulas clp newBr
-               $ (PrFormula pr bprs $ nom newNom)
+               ( (PrFormula pr bprs $ nom newNom)
                  :(map (\somePrefix -> PrFormula somePrefix bprs (Dis [f, nom newNom])) otherUrfathers)
+               )
+               False
    where currentUrfather = getUrfather br (DS.Prefix pr)
          prefs = [0..(lastPref br)]
          otherUrfathers = delete currentUrfather $ filter (isUrfather br) prefs
@@ -734,8 +724,9 @@ incNomSymbol (NomSymbol n) = NomSymbol (n+1)
 
 createNewPref :: CmdLineParams -> Branch -> BranchInfo
 createNewPref clp br
- = addFormulas clp newBr $ (   map (\(bps,f) -> PrFormula newPr bps f) univConstraints
-                            ++ map (\(bps,f,newNom) -> PrFormula newPr bps (Dis [f, nom newNom])) diffBoxConstraints)
+ = addFormulas clp newBr (   map (\(bps,f) -> PrFormula newPr bps f) univConstraints
+                          ++ map (\(bps,f,newNom) -> PrFormula newPr bps (Dis [f, nom newNom])) diffBoxConstraints)
+                         False
    where newPr = (lastPref br) + 1
          newBr = br{lastPref = newPr}
          univConstraints = univCons br
@@ -863,9 +854,6 @@ addDepsToClashableSlot res_cis bps =
 {-
      other functions
 -}
-
-isModal :: Branch -> Bool
-isModal br = null $ languageNoms $ inputLanguage br
 
 hasUnivMod :: Branch -> Bool
 hasUnivMod br = languageUniv $ inputLanguage br

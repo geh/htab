@@ -217,7 +217,7 @@ applyMods _ br [] = BranchOK br
 
 
 applyMod :: CmdLineParams -> Branch -> BranchModification -> BranchInfo
-applyMod clp br (BM_AddFormulas li) = addFormulas clp br li
+applyMod clp br (BM_AddFormulas li) = addFormulas clp br li False
 applyMod clp br (BM_AddAccFormula accFor) = addAccFormula clp br accFor
 applyMod  _  br (BM_AddDiaRuleCheck pr f) = BranchOK (addDiaRuleCheck br pr f)
 applyMod clp br (BM_CreateNewPref) = createNewPref clp br
