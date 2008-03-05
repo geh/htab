@@ -15,12 +15,10 @@ BranchingPrefix, BranchingPrefixes,
 bps_union, bps_unions, bps_insert, bps_member,
 bps_empty, deps_min, bps_show,
 PrFormula(..), AccFormula(..),
-LanguageInfo(..),
-nnf, neg, isTrue, isFalse,
+LanguageInfo(..), nnf, neg,
 box, diamond, at, conj, disj, univMod, existMod,
-dUnivMod, dExistMod,
-taut, dimp, imp,
-prop, nom, formulaLanguageInfo, prefixList ,
+dUnivMod, dExistMod, taut, dimp, imp,
+prop, nom, formulaLanguageInfo, prefixList,
 firstPrefixedFormula,
 parse
 )
@@ -293,31 +291,12 @@ instance Show AccFormula where
 instance ShowLatex AccFormula where
  showLatex (AccFormula bprs r p1 p2) = (showLatex bprs) ++ ":" ++ (show p1)++"\\lozenge_{"++(show r)++"}"++(show p2)
 
-
-{- isTrue: Given
-
-  - a formula f
-
-  returns True iff f is Taut, or is of the form @_n n or @_n Taut
--}
-isTrue :: Formula -> Bool
-isTrue (At n (PosLit (N m))) = (n==m)
-isTrue (At _ (PosLit Taut))  = True
-isTrue (PosLit Taut)         = True
-isTrue  _                    = False
-
-
-{- isFalse: Given
-
-  - a formula f
-
-  returns True iff f is -Taut, or is of the form @_n -n or @_n -Taut
--}
-isFalse :: Formula -> Bool
-isFalse (At n (NegLit (N m))) = (n==m)
-isFalse (At _ (NegLit Taut))  = True
-isFalse (NegLit Taut)         = True
-isFalse  _                    = False
+{- recognize trivial formulas to trim conjunctions and disjunctions -}
+isTrue, isFalse :: Formula -> Bool
+isTrue (PosLit Taut)  = True
+isTrue  _             = False
+isFalse (NegLit Taut) = True
+isFalse  _            = False
 
 
 {-
