@@ -368,46 +368,39 @@ formulaLanguageInfo f
     where noms = Set.toAscList $ extractNominals f
           props = Set.toAscList $ extractProps f
 
+-- composeXX functions follow the idea from
+-- "A pattern for almost compositional functions", Bringert and Ranta.
+composeFold :: b
+            -> (b -> b -> b)
+            -> (Formula -> b)
+            -> (Formula -> b)
+composeFold zero combine g = \e -> case e of
+    Neg f      -> g f
+    Con fs     -> foldr1 combine $ map g fs
+    Dis fs     -> foldr1 combine $ map g fs
+    Dia _ f    -> g f
+    Box _ f    -> g f
+    At  _ f    -> g f
+    A f        -> g f
+    E f        -> g f
+    D f        -> g f
+    B f        -> g f
+    _          -> zero
+
 extractNominals :: Formula -> Set.Set NomSymbol
 extractNominals (PosLit (N n)) = Set.singleton n
 extractNominals (NegLit (N n)) = Set.singleton n
-extractNominals (Con fs) = Set.unions $ map extractNominals fs
-extractNominals (Dis fs) = Set.unions $ map extractNominals fs
-extractNominals (Dia _ f) = extractNominals f
-extractNominals (Box _ f) = extractNominals f
-extractNominals (A f) = extractNominals f
-extractNominals (E f) = extractNominals f
-extractNominals (D f) = extractNominals f
-extractNominals (B f) = extractNominals f
-extractNominals (Neg f) = extractNominals f
-extractNominals (At n f) = Set.insert n $ extractNominals f
-extractNominals _ = Set.empty
+extractNominals (At n f)       = Set.insert n $ extractNominals f
+extractNominals f              = composeFold Set.empty Set.union extractNominals f
 
 extractProps :: Formula -> Set.Set PropSymbol
 extractProps (PosLit (P p)) = Set.singleton p
 extractProps (NegLit (P p)) = Set.singleton p
-extractProps (Con fs) = Set.unions $ map extractProps fs
-extractProps (Dis fs) = Set.unions $ map extractProps fs
-extractProps (Dia _ f) = extractProps f
-extractProps (Box _ f) = extractProps f
-extractProps (A f) = extractProps f
-extractProps (E f) = extractProps f
-extractProps (D f) = extractProps f
-extractProps (B f) = extractProps f
-extractProps (Neg f) = extractProps f
-extractProps (At _ f) = extractProps f
-extractProps _ = Set.empty
+extractProps f              = composeFold Set.empty Set.union extractProps f
 
 hasUnivModality :: Formula -> Bool
-hasUnivModality (Con fs)  = or $ map hasUnivModality fs
-hasUnivModality (Dis fs)  = or $ map hasUnivModality fs
-hasUnivModality (Dia _ f) = hasUnivModality f
-hasUnivModality (Box _ f) = hasUnivModality f
-hasUnivModality (Neg f)   = hasUnivModality f
-hasUnivModality (At _ f)  = hasUnivModality f
 hasUnivModality (A _)     = True
-hasUnivModality (E _)     = True  -- will be ' hasUnivModality f ' when formulas are nnf
-hasUnivModality (D _)     = True  -- |
-hasUnivModality (B _)     = True  -- | TODO: really?
-hasUnivModality _         = False -- PosLit , NegLit
-
+hasUnivModality (B _)     = True
+hasUnivModality (E _)     = True  -- will be false when formulas are nnf
+hasUnivModality (D _)     = True  --
+hasUnivModality f         = composeFold False (||) hasUnivModality f
