@@ -16,7 +16,7 @@ BranchData(..),branch_depth,
 emptyBranch,initialBranchStateFor,getCLParams,
 addZeroInPath,incPathHead,prefixes,
 getUrfather, getUrfatherAndDeps, isUrfather, isInclusionUrfather, isInInclusionUrfatherClass,
-getInclusionUrfather, hasUnivMod, inclusionUrfathers,
+getInclusionUrfather, hasUnivMod, hasDiffMod, inclusionUrfathers,
 calculateStepInfo, BlockingMode(..), diaAlreadyDone, incPropSymbol
 ) where
 
@@ -293,8 +293,8 @@ addFormula clp br f@(PrFormula pr newFormulaBprs f2@(PosLit (N (NomSymbol n)))) 
                      Slot_UpdateSuccess urfatherSlot ->
 {-success-}           let newClashable_info = Map.insert newUrfather urfatherSlot (clashStr br)
 
-                          -- move formulas of the prefix-to-formula map  (to keep consistency for inclusion urfather calculation) -- TODO: if input formula in H(@), disable?
-                          newPrefixToFormulas = if hasUnivMod br
+                          -- move formulas of the prefix-to-formula map  (to keep consistency for inclusion urfather calculation)
+                          newPrefixToFormulas = if requireLocalFormulasTracking br
                                                   then foldr (\exUrfather prefToForms_ -> moveInMap prefToForms_ exUrfather newUrfather Set.union) (prefToForms br) exUrfathers
                                                   else (prefToForms br)
 
@@ -338,7 +338,7 @@ addFormula clp br pf@(PrFormula pr bprs (Box r f)) _
  = addBoxConstraint clp br_ pr r f bprs
    where
      updatedBr_ = addToAugmentedPrefixes pr br
-     br_ = if hasUnivMod br
+     br_ = if requireLocalFormulasTracking br
             then let (BranchOK updatedBr) = addFormula2_withPrefToFormUpdate clp updatedBr_ pf
                  in
                  updatedBr
@@ -353,7 +353,7 @@ addFormula clp br f _
 
 addFormulaBaseCase :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
 addFormulaBaseCase clp br f@(PrFormula pr bprs f2)
- = if hasUnivMod br
+ = if requireLocalFormulasTracking br
     then addFormula2_withPrefToFormUpdate clp newBr fToAdd
     else addFormula2                      clp newBr fToAdd
    where
@@ -463,7 +463,7 @@ addAccFormula _ _ (AccFormula _ (InvRelSymbol _) _ _ ) = error "inverse modality
 
 
 {-
-  universal modality-related machinery
+ functions related to the universal modality and the difference modality
 -}
 
 isInInclusionUrfatherClass :: Branch -> Prefix -> Bool
@@ -477,7 +477,7 @@ isInclusionUrfather br pr
     then (getInclusionUrfather br pr) == pr
     else False
 
-getInclusionUrfather :: Branch -> Prefix -> Prefix
+getInclusionUrfather :: Branch -> Prefix -> Prefix  -- which is also an inclusion representative
 getInclusionUrfather br pr
  = let nomUrfather = getUrfather br (DS.Prefix pr) in
    giu_get_oldest (fromJust $ inclUrMap br) nomUrfather
@@ -857,6 +857,12 @@ addDepsToClashableSlot res_cis bps =
 
 hasUnivMod :: Branch -> Bool
 hasUnivMod br = languageUniv $ inputLanguage br
+
+hasDiffMod :: Branch -> Bool
+hasDiffMod br = languageDiff $ inputLanguage br
+
+requireLocalFormulasTracking :: Branch -> Bool
+requireLocalFormulasTracking br = (hasUnivMod br) || (hasDiffMod br)
 
 prefixes :: Branch -> [Prefix]
 prefixes br = [0..(lastPref br)]

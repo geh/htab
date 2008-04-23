@@ -336,14 +336,16 @@ neg2 (Neg f)      = f                --
 
 data LanguageInfo = LanguageInfo {   languageNoms :: [NomSymbol], -- ascending list
                                     languageProps :: [PropSymbol], -- ascending list 
-                                     languageUniv :: Bool }
+                                     languageUniv :: Bool,
+                                     languageDiff :: Bool }
  deriving (Show)
 
 formulaLanguageInfo :: Formula -> LanguageInfo
 formulaLanguageInfo f
  = LanguageInfo {   languageNoms = noms,
                    languageProps = props,
-                    languageUniv = hasUnivModality f }
+                    languageUniv = hasUnivModality f,
+                    languageDiff = hasDiffModality f }
     where noms = Set.toAscList $ extractNominals f
           props = Set.toAscList $ extractProps f
 
@@ -379,7 +381,11 @@ extractProps f              = composeFold Set.empty Set.union extractProps f
 
 hasUnivModality :: Formula -> Bool
 hasUnivModality (A _)     = True
-hasUnivModality (B _)     = True
-hasUnivModality (E _)     = True  -- will be false when formulas are nnf
-hasUnivModality (D _)     = True  --
+hasUnivModality (E _)     = True  -- remove this line when formulas are NNF
 hasUnivModality f         = composeFold False (||) hasUnivModality f
+
+hasDiffModality :: Formula -> Bool
+hasDiffModality (B _)     = True
+hasDiffModality (D _)     = True  -- remove this line when formulas are NNF
+hasDiffModality f         = composeFold False (||) hasDiffModality f
+

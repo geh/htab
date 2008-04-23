@@ -75,7 +75,7 @@ buildHerbrandModel_univMod branch =
              [NNF.At
                (NomSymbol (pre+bias))
                (NNF.Prop pro) | (pre_,pro) <- prefixAndPropCouples,
-                                let pre = getInclusionUrfather branch pre_]
+                                let pre = getInclusionUrfather branch pre_]  -- todo: directly filter on inclusion urfathers
        rs = Set.fromList $ map accToNNF
               $ concatMap (\((p1,rel),bp_ps) -> map (\(_,p2) -> (p1 + bias, rel, (getInclusionUrfather branch p2) + bias))
                                                     bp_ps)
