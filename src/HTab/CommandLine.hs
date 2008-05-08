@@ -13,7 +13,7 @@ module HTab.CommandLine (
     usage, configureMetrics
 ) where
 
-import Char(isDigit)
+import Data.Char(isDigit)
 import System.FilePath(FilePath)
 import System.Console.GetOpt ( OptDescr(..), ArgDescr(..), ArgOrder(..),
                                getOpt, usageInfo )

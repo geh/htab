@@ -29,7 +29,7 @@ import qualified Data.Set as Set
 
 import qualified HTab.DisjSet as DS
 
-import Maybe(fromJust)
+import Data.Maybe(fromJust)
 
 import HTab.Statistics(Statistics)
 import HTab.CommandLine(CmdLineParams, fullClash)

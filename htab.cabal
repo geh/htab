@@ -6,15 +6,16 @@ License:             GPL
 License-file:        COPYING
 Author:              Guillaume Hoffmann, Carlos Areces, Daniel Gorín, Juan Heguiabehere
 Maintainer:          guillaume.hoffmann@loria.fr
-Build-Depends:       base >= 2, base < 3,
-                     haskell98 >= 1, haskell98 < 2,
+Build-Depends:       base >= 3, base < 4,
                      mtl >= 1, mtl < 2,
+                     containers < 1,
                      filepath > 1, filepath <= 2,
-                     hylolib >= 1.1-devel, hylolib < 1.2
+                     directory > 1, directory <= 2,
+		     hylolib == 1.1-devel-ghc608
+Extra-source-files:  INSTALL man/htab.1
 
 Executable:          htab
 Main-is:             htab.hs
 Hs-Source-Dirs:      src
-Extra-source-files:  INSTALL man/htab.1
 ghc-options:         -O2 -Wall -fglasgow-exts
 ghc-prof-options:    -auto-all
