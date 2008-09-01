@@ -31,16 +31,19 @@ import HTab.Statistics(Metric,closedBranches,StatisticsState,
                        ruleApplicationCount)
 
 data CmdLineParams = CLP {
-           showHelp      :: Bool,
-           filename      :: Maybe FilePath,
-           logState      :: Bool,
-           maxtimeout    :: Integer,
-           statsStr      :: String,
-           semBranch     :: Bool,
-           fullClash     :: Bool,
-           latexOutput   :: Maybe FilePath,
-           genModel      :: Maybe FilePath,
-           quietMode     :: Bool
+           showHelp        :: Bool,
+           filename        :: Maybe FilePath,
+           logState        :: Bool,
+           maxtimeout      :: Integer,
+           statsStr        :: String,
+           semBranch       :: Bool,
+           fullClash       :: Bool,
+           latexOutput     :: Maybe FilePath,
+           genModel        :: Maybe FilePath,
+           quietMode       :: Bool,
+           inclBlockGlobal :: Bool,
+           inclBlockChain  :: Bool,
+           immediateBlock  :: Bool
          } deriving (Show)
 
 type CLPModifier   = CmdLineParams -> Either ParsingErrMsg CmdLineParams
@@ -118,7 +121,22 @@ options =
            "  r = number of rules applied",
            "",
            "The default is `" ++ statsStr defaultParams ++ "'",
-           ""])]
+           ""]),
+  Option []
+         ["inclusion-blocking-global"]
+         (NoArg $ \c -> return c{inclBlockGlobal = True})
+         "enable inclusion blocking among all nodes of the tableau (priority over chain-based)",
+  Option []
+         ["inclusion-blocking-chain"]
+         (NoArg $ \c -> return c{inclBlockChain = True})
+         "enable inclusion blocking among all nodes of a chain",
+  Option []
+         ["immediate-blocking"]
+         (NoArg $ \c -> return c{immediateBlock = True})
+         "enable inclusion blocking immediately (default if formula without universal or difference modalities)"
+  ]
+
+
 
 (?->) :: (String -> Bool) -> (String -> CLPModifier) -> String -> CLPModifier
 p ?-> m = \s -> if (not $ null s) && p s
@@ -147,12 +165,16 @@ defaultParams = CLP {showHelp = False,
                      filename = Nothing,
                      logState = False,
                      latexOutput = Nothing,
-                     maxtimeout = 0,
-                     statsStr = ":0:c",
-                     semBranch = True,
-                     fullClash = False,
-                     genModel = Nothing,
-                     quietMode = False}
+                     maxtimeout  = 0,
+                     statsStr    = ":0:c",
+                     semBranch   = True,
+                     fullClash   = False,
+                     genModel    = Nothing,
+                     quietMode   = False,
+                     inclBlockGlobal = False,
+                     inclBlockChain  = False,
+                     immediateBlock  = False
+}
 
 getCmdLineParams :: IO (Either ParsingErrMsg CmdLineParams)
 getCmdLineParams =

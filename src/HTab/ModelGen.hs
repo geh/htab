@@ -24,8 +24,9 @@ type HerbrandModel = H.HerbrandModel NomSymbol PropSymbol RelSymbol
 buildHerbrandModel :: Branch -> HerbrandModel
 buildHerbrandModel branch =
  case (blockMode branch) of
-  NoBlocking        -> H.herbrand es ps rs
-  InclusionBlocking -> buildHerbrandModel_univMod branch
+  Nothing                      -> H.herbrand es ps rs
+  Just InclusionBlockingGlobal -> buildHerbrandModel_univMod branch
+  Just InclusionBlockingChain  -> buildHerbrandModel_univMod branch
  where
        bias = if null $ languageNoms $ inputLanguage branch
                then 0

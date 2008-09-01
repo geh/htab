@@ -12,9 +12,10 @@ import System.CPUTime( getCPUTime )
 
 
 import HTab.CommandLine( filename, maxtimeout, CmdLineParams, logState, genModel,
-                         configureMetrics,fullClash,quietMode )
+                         configureMetrics,fullClash,quietMode, inclBlockGlobal, inclBlockChain,
+                         immediateBlock )
 import HTab.Branch( Branch, BranchInfo(..),initialBranchStateFor,BranchMonad, BranchData(..),
-                    emptyBranch, lastPref )
+                    emptyBranch, lastPref, BlockingMode(..) )
 import HTab.Timeout( timeout )
 import HTab.Statistics( Statistics, initialStatisticsStateFor, printOutAllMetrics' )
 import HTab.Base( vPutStrLn )
@@ -52,7 +53,10 @@ runWithParams clp =
      --
      f `seq` myPutStrLn ("\nInput:\n{ " ++ (show f2) ++" }\nEnd of input\n\n");
      --
-     let branchInfo = addFirstFormulas clp (emptyBranch fLang) f2 (languageNoms fLang)
+     let branchInfo = addFirstFormulas clp (emptyBranch fLang blockMode (immediateBlock clp)) f2 (languageNoms fLang)
+                        where blockMode = case (inclBlockGlobal clp , inclBlockChain clp) of
+                                             (False, True) -> InclusionBlockingChain -- chain
+                                             ( _  ,   _  ) -> InclusionBlockingGlobal
      --
      result <- if (not ((maxtimeout clp) == 0))
                 then timeout (maxtimeout clp)

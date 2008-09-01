@@ -17,8 +17,8 @@ import HTab.Branch( Branch(..), createNewPref, createNewProp,
                     BranchInfo(..),
                     addFormulas, addAccFormula, remFormula,
                     addDiaRuleCheck, addDiffRuleCheck,
-                    getUrfatherAndDeps,
-                    isInInclusionUrfatherClass, BlockingMode(..),
+                    addParentPrefix,
+                    getUrfatherAndDeps, isNotBlocked, 
                     diaAlreadyDone, incPropSymbol )
 import HTab.CommandLine(CmdLineParams, semBranch, fullClash)
 import HTab.RuleMetadata(RuleId(..))
@@ -35,6 +35,7 @@ data BranchModification =    BM_AddFormulas   [PrFormula]
                            | BM_RemFormula PrFormula
                            | BM_CreateNewPref
                            | BM_CreateNewProp
+                           | BM_AddParentPrefix Prefix Prefix
 
 -- each rule constructor contains exactly the needed data to know the effect of the rule
 data Rule =  ConjRule   PrFormula [PrFormula]
@@ -54,10 +55,11 @@ getMods :: Branch -> Rule -> [[BranchModification]]
 getMods _ (ConjRule todelete toadds) =
  [[BM_RemFormula todelete, BM_AddFormulas toadds]]
 
-getMods _ (DiaRule todelete@(PrFormula pr _ f) acctoadd toadd) =
+getMods _ (DiaRule todelete@(PrFormula pr _ f) acctoadd@(AccFormula _ _ p1 p2) toadd) =
  [[BM_RemFormula todelete, BM_AddAccFormula acctoadd,
    BM_AddFormulas [toadd],
    BM_AddDiaRuleCheck pr f,
+   BM_AddParentPrefix p2 p1,
    BM_CreateNewPref]]
 
 getMods _ (ExistModRule todelete toadd) =
@@ -157,8 +159,6 @@ ruleToId r = case r of
               (DiffRule _ )    -> R_Diff
               (DiscardRule _)  -> R_Discard
 
---
-
 
 -- the rules application strategy is defined here:
 -- the first rule is the one that will be applied at the next tableau step
@@ -178,12 +178,7 @@ applicableConjRules :: Branch -> [Rule]
 applicableConjRules br = [conjRule f br | f <- Set.toAscList $ conjStr br]
 
 applicableDiaRules :: Branch -> [Rule]
-applicableDiaRules br =
- if prefGenBlock
-  then [diaRule f br | f@(PrFormula pr _ _) <- Set.toAscList $ diaStr br,
-                       isInInclusionUrfatherClass br pr]
-  else [diaRule f br | f <- Set.toAscList $ diaStr br]
- where prefGenBlock = (blockMode br) == InclusionBlocking
+applicableDiaRules br = [diaRule f br | f@(PrFormula pr _ _) <- Set.toAscList $ diaStr br, isNotBlocked br pr]
 
 applicableDisjRules :: Branch -> BranchingPrefix -> [Rule]
 applicableDisjRules br d = [disjRule f br d | f <- Set.toAscList $ disjStr br]
@@ -225,6 +220,8 @@ applyMod clp br (BM_CreateNewPref) = createNewPref clp br
 applyMod  _  br (BM_CreateNewProp) = BranchOK $ createNewProp br
 applyMod  _  br (BM_RemFormula f) = BranchOK (remFormula br f)
 applyMod  _  br (BM_AddDiffRuleCheck f prop b) = BranchOK (addDiffRuleCheck br f prop b)
+applyMod  _  br (BM_AddParentPrefix son father) = BranchOK (addParentPrefix br son father)
+
 
 -- the actual rules and their helper functions
 
