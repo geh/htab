@@ -833,6 +833,7 @@ updateClashableInfoSlot :: Clashable_info_slot -> Formula -> Bool -> BranchingPr
 updateClashableInfoSlot cis (PosLit Taut) True   _   = Slot_UpdateSuccess cis
 updateClashableInfoSlot  _  (PosLit Taut) False bprs = Slot_UpdateFailure bprs
 updateClashableInfoSlot cis (NegLit a)    bool  bprs = updateClashableInfoSlot cis (PosLit a) (not bool) bprs
+updateClashableInfoSlot cis (Neg f)       bool  bprs = updateClashableInfoSlot cis f          (not bool) bprs
 updateClashableInfoSlot cis f             bool  bprs
  = case Map.lookup f cis of
     Nothing -> Slot_UpdateSuccess $ Map.insert f (bool,bprs) cis
