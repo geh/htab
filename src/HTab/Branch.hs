@@ -16,9 +16,11 @@ addParentPrefix,
 BranchData(..),branch_depth,
 emptyBranch,initialBranchStateFor,getCLParams,
 addZeroInPath,incPathHead,prefixes,
+reduceDisjunctionAgainstBranch,
 getUrfather, getUrfatherAndDeps, isUrfather, isInclusionUrfather,
 getInclusionUrfather, hasUnivMod, hasDiffMod, inclusionUrfathers, isNotBlocked,
-calculateStepInfo, BlockingMode(..), diaAlreadyDone, incPropSymbol
+calculateStepInfo, BlockingMode(..), diaAlreadyDone, incPropSymbol,
+ReducedDisjunct(..)
 ) where
 
 import Control.Monad.State(StateT, MonadState, get)
@@ -33,7 +35,7 @@ import qualified HTab.DisjSet as DS
 import Data.Maybe(fromJust)
 
 import HTab.Statistics(Statistics)
-import HTab.CommandLine(CmdLineParams, fullClash)
+import HTab.CommandLine(CmdLineParams, fullClash, unitProp)
 
 import HTab.Formula
 import HTab.LatexOutputHelper
@@ -352,6 +354,17 @@ addFormula clp br pf@(PrFormula pr bprs (Box r f)) _
                  updatedBr
             else updatedBr_
 
+-- Case 1,75
+-- disjunction
+addFormula clp br pf@(PrFormula pr bprs disF@(Dis fs)) _    -- /!\ WIP /!\ -- todo, if full clash enabled, test it against all formulas ?
+ = if not $ unitProp clp
+    then addFormulaBaseCase clp br pf
+    else case reduceDisjunctionAgainstBranch clp br pr fs of
+           Triviality                 -> BranchOK br
+           Contradiction brps_clash   -> BranchClash br pr (bps_union bprs brps_clash) disF
+           Reduced new_bprs disjuncts -> addFormulaBaseCase clp br (PrFormula pr (bps_union bprs new_bprs) (Dis disjuncts))
+
+
 -- Case 2
 -- p : phi (not nominal)
 
@@ -370,8 +383,6 @@ addFormulaBaseCase clp br f@(PrFormula pr bprs f2)
       fToAdd = if urfather == pr -- always the case if we are in the modal language
                 then f
                 else (PrFormula urfather (bps_union bprs bprs2) f2)
-
-
 
 nubAndMergeDeps :: [PrFormula] -> [PrFormula]
 -- Rationale : because of the equivalence classes, a same formula can be added to a branch
@@ -635,6 +646,9 @@ addFormula2 clp br pf@(PrFormula pr _ _) =
    addFormula3 clp updatedBr pf
  where updatedBr        = addToAugmentedPrefixes pr br
 
+
+-- now, either add the formula to a queue according to its type
+-- or add it in the atomic formulas (for literals)
 addFormula3 :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
 addFormula3 clp br pf@(PrFormula _ _ (Con _))
            = modBranchCaseFC clp br pf $ \b f -> b{conjStr = Set.insert f (conjStr b)}
@@ -845,10 +859,10 @@ data Slot_UpdateResult =   Slot_UpdateSuccess Clashable_info_slot               
                          | Slot_UpdateFailure BranchingPrefixes                       -- list of sets of branching prefixes
 
 
--- Union an arbitrary number of clashable info slots
+-- Union a list of clashable info slots
 clashableInfoSlotsUnions :: [Clashable_info_slot] -> Slot_UpdateResult
-clashableInfoSlotsUnions [] = Slot_UpdateSuccess (Map.empty::Clashable_info_slot)
-clashableInfoSlotsUnions [cis] = Slot_UpdateSuccess cis
+clashableInfoSlotsUnions []              = Slot_UpdateSuccess (Map.empty::Clashable_info_slot)
+clashableInfoSlotsUnions [cis]           = Slot_UpdateSuccess cis
 clashableInfoSlotsUnions (cis1:cis2:tl)
  = case unionClashableInfoSlots cis1 cis2 of
      failure@(Slot_UpdateFailure _) -> failure
@@ -888,7 +902,7 @@ updateClashableInfoSlot cis (NegLit a)    bool  bprs = updateClashableInfoSlot c
 updateClashableInfoSlot cis (Neg f)       bool  bprs = updateClashableInfoSlot cis f          (not bool) bprs
 updateClashableInfoSlot cis f             bool  bprs
  = case Map.lookup f cis of
-    Nothing -> Slot_UpdateSuccess $ Map.insert f (bool,bprs) cis
+    Nothing            -> Slot_UpdateSuccess $ Map.insert f (bool,bprs) cis
     Just (bool2,bprs2) -> if bool == bool2
                            then Slot_UpdateSuccess $ Map.insert f (bool,bprs_to_keep) cis
                            else Slot_UpdateFailure $ bps_union bprs bprs2
@@ -901,8 +915,56 @@ updateClashableInfoSlot cis f             bool  bprs
 addDepsToClashableSlot :: Slot_UpdateResult -> BranchingPrefixes -> Slot_UpdateResult
 addDepsToClashableSlot res_cis bps =
  case res_cis of
-  Slot_UpdateSuccess cis ->  Slot_UpdateSuccess $ Map.map (\(f,currentBps) -> (f,bps_union currentBps bps)) cis
+  Slot_UpdateSuccess cis         ->  Slot_UpdateSuccess $ Map.map (\(f,currentBps) -> (f,bps_union currentBps bps)) cis
   failure@(Slot_UpdateFailure _) -> failure
+
+
+
+queryClashableSlot :: Branch -> Prefix -> Formula -> Maybe (Bool,BranchingPrefixes)
+-- Output : Nothing = nevermind ; Just True = already there ; Just False = contrary there
+queryClashableSlot _ _ (PosLit Taut) = Just (True,bps_empty)
+queryClashableSlot _ _ (NegLit Taut) = Just (False,bps_empty)
+queryClashableSlot br pr (NegLit a)
+  = do slot <- Map.lookup pr (clashStr br)
+       case Map.lookup (PosLit a) slot of
+         Nothing    -> Nothing
+         Just (bool,bprs)  -> Just (not bool,bprs)
+queryClashableSlot br pr (Neg f)
+  = do slot <- Map.lookup pr (clashStr br)
+       case Map.lookup f slot of
+         Nothing    -> Nothing
+         Just (bool,bprs)  -> Just (not bool,bprs)
+queryClashableSlot br pr f
+  = do slot <- Map.lookup pr (clashStr br)
+       case Map.lookup f slot of
+          Nothing       -> Nothing
+          Just (bool,bprs) -> Just (bool,bprs)
+
+
+
+data ReducedDisjunct = Triviality | Contradiction BranchingPrefixes | Reduced BranchingPrefixes [Formula]
+
+reduceDisjunctionAgainstBranch :: CmdLineParams -> Branch -> Prefix -> [Formula] -> ReducedDisjunct
+reduceDisjunctionAgainstBranch clp br pr fs = 
+         case foldr scanDisjunctAndTest (Just ( [] , bps_empty )) fs of
+          Nothing                        ->  Triviality
+          Just  (  []        , bprs )    ->  Contradiction bprs
+          Just  (  disjuncts , bprs )    ->  Reduced       bprs disjuncts
+
+         where -- for each removed literal of the disjunction, we have to add the dependencies of the literal that got it removed to the re-created formula
+               -- and if the recreated formula is empty, then there is a clash, with all the branching dependencies
+               -- if the formula is "trivial" (= one disjunct is already there) we just remove the formula, i guess...
+           ur = getUrfather br (DS.Prefix pr)
+           scanDisjunctAndTest :: Formula -> Maybe ([Formula],BranchingPrefixes) -> Maybe ([Formula],BranchingPrefixes)
+           scanDisjunctAndTest       _                Nothing               =    Nothing
+           scanDisjunctAndTest     current     (Just (disjuncts,bprs_))     =
+            if (fullClash clp) || (case current of PosLit _ -> True ; NegLit _ -> True ;  _ -> False)
+             then case queryClashableSlot br ur current of
+                     Nothing            -> Just ((current:disjuncts),bprs_)
+                     Just (True,_)      -> Nothing
+                     Just (False,bprs2) -> Just (disjuncts,bps_union bprs_ bprs2)
+             else Just ((current:disjuncts),bprs_)
+
 
 {-
      other functions
@@ -916,6 +978,7 @@ hasDiffMod br = languageDiff $ inputLanguage br
 
 requireLocalFormulasTracking :: Branch -> Bool
 requireLocalFormulasTracking br = (hasUnivMod br) || (hasDiffMod br) || (blockMode br /= Nothing)
+-- TODO directly put a boolean for this in BranchData , and an explicit one
 
 
 prefixes :: Branch -> [Prefix]

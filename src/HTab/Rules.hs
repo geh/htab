@@ -17,10 +17,10 @@ import HTab.Branch( Branch(..), createNewPref, createNewProp,
                     BranchInfo(..),
                     addFormulas, addAccFormula, remFormula,
                     addDiaRuleCheck, addDiffRuleCheck,
-                    addParentPrefix,
+                    addParentPrefix, reduceDisjunctionAgainstBranch,
                     getUrfatherAndDeps, isNotBlocked, 
-                    diaAlreadyDone, incPropSymbol )
-import HTab.CommandLine(CmdLineParams, semBranch, fullClash)
+                    diaAlreadyDone, incPropSymbol, ReducedDisjunct(..) )
+import HTab.CommandLine(CmdLineParams, semBranch, fullClash, unitProp)
 import HTab.RuleMetadata(RuleId(..))
 import qualified HTab.DisjSet as DS
 import HTab.LatexOutput()
@@ -36,6 +36,7 @@ data BranchModification =    BM_AddFormulas   [PrFormula]
                            | BM_CreateNewPref
                            | BM_CreateNewProp
                            | BM_AddParentPrefix Prefix Prefix
+                           | BM_Clash BranchingPrefixes PrFormula
 
 -- each rule constructor contains exactly the needed data to know the effect of the rule
 data Rule =  ConjRule   PrFormula [PrFormula]
@@ -47,11 +48,14 @@ data Rule =  ConjRule   PrFormula [PrFormula]
            | DiffRule   (Prefix, BranchingPrefixes, Formula)
            | ExistModRule PrFormula PrFormula                 -- creates a prefix
            | DiscardRule PrFormula
+           | ClashRule BranchingPrefixes PrFormula
 
 -- from the description of a rule application, creates the list of lists of modifications to the branch
 -- for certain rules, we need to look in the branch to see what modifications we do
 
 getMods :: Branch -> Rule -> [[BranchModification]]
+getMods _ (ClashRule bprs f) = [[BM_Clash bprs f]]
+
 getMods _ (ConjRule todelete toadds) =
  [[BM_RemFormula todelete, BM_AddFormulas toadds]]
 
@@ -134,6 +138,7 @@ instance Show Rule where
    show (ExistModRule todelete _)  = "E: " ++ (show todelete)
    show (DiffRule todelete )       = "D: " ++ (show todelete)
    show (DiscardRule todelete)     = "Discard: " ++ (show todelete)
+   show (ClashRule bprs f)         = "Clash: " ++ (show bprs) ++ " " ++ (show f)
 
 instance ShowLatex Rule where
    showLatex (ConjRule   todelete _ )  = "conjunction: " ++  (math $ showLatex todelete)
@@ -145,34 +150,35 @@ instance ShowLatex Rule where
    showLatex (ExistModRule todelete _) = "E: " ++ (math $ showLatex todelete)
    showLatex (DiffRule todelete )      = "D: " ++ (math $ showLatex todelete)
    showLatex (DiscardRule todelete)    = "Discard: " ++ (math $ showLatex todelete)
+   showLatex (ClashRule bprs f)        = "Clash: " ++ (show bprs) ++ " " ++ (show f)
+
 
 --
 ruleToId :: Rule -> RuleId
 ruleToId r = case r of
-              (ConjRule _ _)   -> R_Conj
-              (DiaRule _ _ _)  -> R_Dia
-              (DisjRule _ _)   -> R_Disj
-              (SemBrRule _ _)  -> R_SemBr
-              (NegRule _ _)    -> R_Neg
-              (AtRule _ _ )    -> R_At
+              (ConjRule _ _)     -> R_Conj
+              (DiaRule _ _ _)    -> R_Dia
+              (DisjRule _ _)     -> R_Disj
+              (SemBrRule _ _)    -> R_SemBr
+              (NegRule _ _)      -> R_Neg
+              (AtRule _ _ )      -> R_At
               (ExistModRule _ _) -> R_Exist
-              (DiffRule _ )    -> R_Diff
-              (DiscardRule _)  -> R_Discard
-
+              (DiffRule _ )      -> R_Diff
+              (DiscardRule _)    -> R_Discard
+              (ClashRule _ _)    -> R_Clash
 
 -- the rules application strategy is defined here:
 -- the first rule is the one that will be applied at the next tableau step
 applicableRules :: Branch -> CmdLineParams -> BranchingPrefix -> [Rule]
-applicableRules br clp d =
-    ( if fullClash clp then (applicableNegRules br)
-                       else [] )
- ++ (applicableConjRules br)
- ++ (applicableAtRules br)
- ++ (applicableDiaRules br)
- ++ (applicableExistRules br)
- ++ (applicableDiffRules br)
- ++ if semBranch clp then (applicableSemBrRules br d)
-                     else (applicableDisjRules br d)
+applicableRules br clp d = -- d = current depth in the tableau (add as dependency for branching rules)
+    (if fullClash clp then (applicableNegRules br)      else [])
+ ++                        (applicableConjRules br)
+ ++                        (applicableAtRules br)
+ ++                        (applicableDiaRules br)
+ ++                        (applicableExistRules br)
+ ++                        (applicableDiffRules br)
+ ++  if semBranch clp then (applicableSemBrRules clp br d)
+                      else (applicableDisjRules clp br d)
 
 applicableConjRules :: Branch -> [Rule]
 applicableConjRules br = [conjRule f br | f <- Set.toAscList $ conjStr br]
@@ -180,11 +186,11 @@ applicableConjRules br = [conjRule f br | f <- Set.toAscList $ conjStr br]
 applicableDiaRules :: Branch -> [Rule]
 applicableDiaRules br = [diaRule f br | f@(PrFormula pr _ _) <- Set.toAscList $ diaStr br, isNotBlocked br pr]
 
-applicableDisjRules :: Branch -> BranchingPrefix -> [Rule]
-applicableDisjRules br d = [disjRule f br d | f <- Set.toAscList $ disjStr br]
+applicableDisjRules :: CmdLineParams -> Branch -> BranchingPrefix -> [Rule]
+applicableDisjRules clp br d = [disjRule clp f br d | f <- Set.toAscList $ disjStr br]
 
-applicableSemBrRules :: Branch -> BranchingPrefix -> [Rule]
-applicableSemBrRules br d = [semBrRule f br d | f <- Set.toAscList $ disjStr br]
+applicableSemBrRules :: CmdLineParams -> Branch -> BranchingPrefix -> [Rule]
+applicableSemBrRules clp br d = [semBrRule clp f br d | f <- Set.toAscList $ disjStr br]
 
 applicableNegRules :: Branch -> [Rule]
 applicableNegRules br = [negRule f br | f <- Set.toAscList $ negStr br]
@@ -221,6 +227,7 @@ applyMod  _  br (BM_CreateNewProp) = BranchOK $ createNewProp br
 applyMod  _  br (BM_RemFormula f) = BranchOK (remFormula br f)
 applyMod  _  br (BM_AddDiffRuleCheck f prop b) = BranchOK (addDiffRuleCheck br f prop b)
 applyMod  _  br (BM_AddParentPrefix son father) = BranchOK (addParentPrefix br son father)
+applyMod  _  br (BM_Clash bprs (PrFormula pr bprs2 f)) = BranchClash br pr (bps_union bprs bprs2) f
 
 
 -- the actual rules and their helper functions
@@ -271,20 +278,40 @@ diffRule (PrFormula pr bprs (D f2)) _
 diffRule _ _ = error $ "diffRule"
 
 -- disjunction
-disjRule :: PrFormula -> Branch -> BranchingPrefix -> Rule
-disjRule df _ d = DisjRule df (breakDisj df d)
+disjRule :: CmdLineParams -> PrFormula -> Branch -> BranchingPrefix -> Rule
+disjRule clp df@(PrFormula pr bprs (Dis fs)) br d
+  = if not $ unitProp clp
+     then DisjRule df (breakDisj df d)
+     else case reduceDisjunctionAgainstBranch clp br pr fs of
+             Triviality                 -> DiscardRule df
+             Contradiction brps_clash   -> ClashRule (bps_union bprs brps_clash) df
+             Reduced new_bprs disjuncts -> DisjRule df (prefixList pr (bps_insert d $ bps_union bprs new_bprs) disjuncts)
+-- todo: if only one conjunct remaining, do not add d , but still create a DisjRule
+disjRule _ _ _ _ = error "disjRule"
 
 -- semantic branching
-semBrRule :: PrFormula -> Branch -> BranchingPrefix -> Rule
-semBrRule df _ d = SemBrRule df (sbModList disjointed [])
-                     where disjointed = breakDisj df d
+semBrRule :: CmdLineParams -> PrFormula -> Branch -> BranchingPrefix -> Rule    -- todo : unit propagation, part 2 (b)
+semBrRule clp df@(PrFormula pr bprs (Dis fs)) br d
+-- = SemBrRule df (sbModList disjointed) where disjointed = breakDisj df d
+ = if not $ unitProp clp
+    then SemBrRule df (sbModList $ breakDisj df d)
+    else case reduceDisjunctionAgainstBranch clp br pr fs of
+            Triviality                 -> DiscardRule df
+            Contradiction brps_clash   -> ClashRule (bps_union bprs brps_clash) df
+            Reduced new_bprs disjuncts -> SemBrRule df (sbModList $ prefixList pr (bps_insert d $ bps_union bprs new_bprs) disjuncts)
+-- todo same remark as above
+semBrRule _ _ _ _ = error "sembrRule"
 
-sbModList ::  [PrFormula] -> [PrFormula] -> [[PrFormula]]
-sbModList (hd:tl) negated =
- (hd:negated)
-  :(sbModList tl ((neg_ hd):negated))
-     where neg_ (PrFormula pr bprs f) = PrFormula pr bprs (neg f)
-sbModList [] _ = []
+
+sbModList ::  [PrFormula] -> [[PrFormula]]
+sbModList fs = go fs []
+ where go :: [PrFormula] -> [PrFormula] -> [[PrFormula]]
+       go (hd:tl) negated = 
+           (hd:negated):(go tl ((neg_ hd):negated))
+           where neg_ (PrFormula pr bprs f) = PrFormula pr bprs (neg f)
+       go [] _ = []
+
+
 
 -- helper function for disjunction and semantic branching
 -- updates the branching pointers of each formula

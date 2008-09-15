@@ -38,6 +38,7 @@ data CmdLineParams = CLP {
            statsStr        :: String,
            semBranch       :: Bool,
            fullClash       :: Bool,
+           unitProp        :: Bool,
            latexOutput     :: Maybe FilePath,
            genModel        :: Maybe FilePath,
            quietMode       :: Bool,
@@ -100,6 +101,10 @@ options =
           ["full-clash"]
           (ReqArg setFullClash "[0|1]")
           "disable/enable full clash optimisation",
+   Option ['u']
+          ["unit-propagation"]
+          (ReqArg setUnitProp "[0|1]")
+          "disable/enable unit propagation optimisation",
    Option ['S']
           ["statistics"]
           (ReqArg setStats "PAT")
@@ -153,6 +158,9 @@ setSemanticBranching = is0or1 ?-> \s c -> return c{semBranch = intToBool $ read 
 setFullClash :: String -> CLPModifier
 setFullClash = is0or1 ?->  \s c -> return c{fullClash = intToBool $ read s}
 
+setUnitProp :: String -> CLPModifier
+setUnitProp = is0or1 ?->  \s c -> return c{unitProp = intToBool $ read s}
+
 is0or1 :: String -> Bool
 is0or1 s = (s == "1") || (s == "0")
 
@@ -169,6 +177,7 @@ defaultParams = CLP {showHelp = False,
                      statsStr    = ":0:c",
                      semBranch   = True,
                      fullClash   = False,
+                     unitProp    = True,
                      genModel    = Nothing,
                      quietMode   = False,
                      inclBlockGlobal = False,

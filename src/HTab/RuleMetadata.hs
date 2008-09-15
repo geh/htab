@@ -45,4 +45,5 @@ data RuleId = R_Conj    -- Conjunction
             | R_Exist   -- Existential modality
             | R_Diff    -- Difference modality
             | R_Discard -- Discarding a formula
+            | R_Clash   -- Branch clash
         deriving(Eq, Ord, Ix, Show)
