@@ -160,14 +160,15 @@ ruleToId r = case r of
 --
 
 
---the order matters, as the first rule is the one that will be applied at the next tableau step
+-- the rules application strategy is defined here:
+-- the first rule is the one that will be applied at the next tableau step
 applicableRules :: Branch -> CmdLineParams -> BranchingPrefix -> [Rule]
 applicableRules br clp d =
     ( if fullClash clp then (applicableNegRules br)
                        else [] )
  ++ (applicableConjRules br)
- ++ (applicableDiaRules br)
  ++ (applicableAtRules br)
+ ++ (applicableDiaRules br)
  ++ (applicableExistRules br)
  ++ (applicableDiffRules br)
  ++ if semBranch clp then (applicableSemBrRules br d)
