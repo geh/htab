@@ -6,16 +6,24 @@ License:             GPL
 License-file:        COPYING
 Author:              Guillaume Hoffmann, Carlos Areces, Daniel Gorín, Juan Heguiabehere
 Maintainer:          guillaume.hoffmann@loria.fr
-Build-Depends:       base >= 3, base < 4,
-                     mtl >= 1, mtl < 2,
-                     containers < 1,
-                     filepath > 1, filepath <= 2,
-                     directory > 1, directory <= 2,
-		     hylolib == 1.1-devel-ghc608
 Extra-source-files:  INSTALL man/htab.1
+Cabal-version:       >= 1.2
 
-Executable:          htab
-Main-is:             htab.hs
-Hs-Source-Dirs:      src
-ghc-options:         -O2 -Wall -fglasgow-exts
-ghc-prof-options:    -auto-all
+Flag static
+  Description: Build a static binary
+  Default:     False
+
+Executable          htab
+  Main-is:             htab.hs
+  Build-Depends:       base >= 3, base < 4,
+                       mtl >= 1, mtl < 2,
+                       containers < 1,
+                       filepath > 1, filepath <= 2,
+                       directory > 1, directory <= 2,
+                       hylolib == 1.1-devel-ghc608
+  Hs-Source-Dirs:      src
+  ghc-options:         -O2 -Wall -fglasgow-exts
+  ghc-prof-options:    -auto-all
+
+  if flag(static)
+    ghc-options: -static -optl-static -optl-pthread
