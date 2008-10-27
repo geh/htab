@@ -38,8 +38,7 @@ tableau =
 
           BranchOK br_ ->
            do debugMsg_BranchOK br_
-              let currentBranchingDepth = (branch_depth bd) + 1 -- `+ 1` because it's only when we know if there is an applicable rule
-                                                                -- that we increase the depth of the branch
+              let currentBranchingDepth = (branch_depth bd) + 1
               let br = calculateStepInfo br_
               case (applicableRules br clp currentBranchingDepth) of
                (rule:_) ->

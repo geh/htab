@@ -185,6 +185,7 @@ applicableConjRules br = [conjRule f br | f <- Set.toAscList $ conjStr br]
 
 applicableDiaRules :: Branch -> [Rule]
 applicableDiaRules br = [diaRule f br | f@(PrFormula pr _ _) <- Set.toAscList $ diaStr br, isNotBlocked br pr]
+                        -- TODO memoization for the isNotBlocked call
 
 applicableDisjRules :: CmdLineParams -> Branch -> BranchingPrefix -> [Rule]
 applicableDisjRules clp br d = [disjRule clp f br d | f <- Set.toAscList $ disjStr br]

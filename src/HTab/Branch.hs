@@ -417,7 +417,6 @@ getUrfather b p = u
                   where (u,_,_) = getUrfatherAndDeps b p
 
 getUrfatherAndDeps :: Branch -> DS.Pointer -> (Prefix,BranchingPrefixes,EquivClasses)
--- check if matrix size not enough for this urfather (eg when the prefix is created from the <> rule) -> return Nothing
 getUrfatherAndDeps br p =
    if DS.isRoot p classes then defaultAnswer
                           else (ur,deps,newClasses)

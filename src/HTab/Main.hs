@@ -55,7 +55,7 @@ runWithParams clp =
      --
      let branchInfo = addFirstFormulas clp (emptyBranch fLang blockMode (immediateBlock clp)) f2 (languageNoms fLang)
                         where blockMode = case (inclBlockGlobal clp , inclBlockChain clp) of
-                                             (False, True) -> InclusionBlockingChain -- chain
+                                             (False, True) -> InclusionBlockingChain
                                              ( _  ,   _  ) -> InclusionBlockingGlobal
      --
      result <- if (not ((maxtimeout clp) == 0))
