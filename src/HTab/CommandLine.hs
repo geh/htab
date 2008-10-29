@@ -181,7 +181,7 @@ defaultParams = CLP {showHelp = False,
                      genModel    = Nothing,
                      quietMode   = False,
                      inclBlockGlobal = False,
-                     inclBlockChain  = False,
+                     inclBlockChain  = True,
                      immediateBlock  = False
 }
 
