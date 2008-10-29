@@ -301,7 +301,8 @@ addFormula clp br f@(PrFormula pr newFormulaBprs f2@(PosLit (N (NomSymbol n)))) 
                      Slot_UpdateFailure clashingDeps ->
 {-clash-}                 BranchClash br pr (bps_union clashingDeps currentDependencies) f2 -- if clash, it's because of: clashable formulas deps, new formula desps, involved classes deps
                      Slot_UpdateSuccess urfatherSlot ->
-{-success-}           let newClashable_info = Map.insert newUrfather urfatherSlot (clashStr br)
+{-success-}           let newClashable_info = let augmented = Map.insert newUrfather urfatherSlot (clashStr br) in
+                                              foldr (\exUr cInfo -> Map.delete exUr cInfo) augmented exUrfathers
 
                           -- move formulas of the prefix-to-formula map  (to keep consistency for inclusion urfather calculation)
                           newPrefixToFormulas = if requireLocalFormulasTracking br
