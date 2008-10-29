@@ -85,7 +85,7 @@ runWithParams clp =
 saveGenModel :: CmdLineParams -> HerbrandModel -> IO ()
 saveGenModel clp m = maybe (return ()) doWrite (genModel clp)
     where doWrite f = do writeFile f (show . inducedModel $ m)
-                         putStrLn $ "Model saved as " ++ f
+                         unless (quietMode clp) $ putStrLn $ "Model saved as " ++ f
 
 tableauInit :: BranchInfo -> CmdLineParams -> IO (SatFlagAndStats)
 tableauInit bi clp =
