@@ -17,8 +17,8 @@ BranchData(..),branch_depth,
 emptyBranch,initialBranchStateFor,getCLParams,
 addZeroInPath,incPathHead,prefixes,
 reduceDisjunctionAgainstBranch,
-getUrfather, getUrfatherAndDeps, isUrfather, isInclusionUrfather,
-getInclusionUrfather, hasUnivMod, hasDiffMod, inclusionUrfathers, isNotBlocked,
+getUrfather, getUrfatherAndDeps, isInTheModel,
+getModelRepresentative, hasUnivMod, hasDiffMod, isNotBlocked,
 calculateStepInfo, BlockingMode(..), diaAlreadyDone, incPropSymbol,
 ReducedDisjunct(..)
 ) where
@@ -409,9 +409,9 @@ addToPrefToForms br (PrFormula pre _ f) =
  where currentPtf = prefToForms br
        newMap = Map.insertWith (Set.union) pre (Set.singleton f) currentPtf
 
-isUrfather :: Branch -> Prefix -> Bool
-isUrfather b p = DS.isRoot (DS.Prefix p) classes
-                  where classes = nomPrefClasses b
+isNominalUrfather :: Branch -> Prefix -> Bool
+isNominalUrfather b p = DS.isRoot (DS.Prefix p) classes
+                         where classes = nomPrefClasses b
 
 getUrfather :: Branch -> DS.Pointer -> Prefix
 getUrfather b p = u
@@ -490,14 +490,15 @@ isNotBlocked :: Branch -> Prefix -> Bool
 isNotBlocked br pr =
  case blockMode br of
    Nothing                      -> True
-   Just InclusionBlockingGlobal -> isInInclusionUrfatherClass br pr
+   Just InclusionBlockingGlobal -> let ur =  getUrfather br (DS.Prefix pr) in
+                                   (getModelRepresentative br ur) == ur  -- i'm not happy to call this model related function
    Just InclusionBlockingChain  -> not $ isChainInclusionBlocked br pr
 
 isChainInclusionBlocked :: Branch -> Prefix -> Bool
 isChainInclusionBlocked  br pr = 
-{- WARNING      naive/inefficient implementation ahead -}
- go br pr pr
- where go :: Branch -> Prefix -> Prefix -> Bool
+  go br ur ur
+ where ur = getUrfather br (DS.Prefix pr)
+       go :: Branch -> Prefix -> Prefix -> Bool
        go br_ pr_ pr2_ = 
           case fatherOf pr2_ of
             Nothing       -> False
@@ -507,21 +508,22 @@ isChainInclusionBlocked  br pr =
        fatherOf pr_ = Map.lookup pr_ parentMap
 
 
-isInInclusionUrfatherClass :: Branch -> Prefix -> Bool
-isInInclusionUrfatherClass br pr
- = let ur =  getUrfather br (DS.Prefix pr) in
-   (getInclusionUrfather br ur) == ur
-
-isInclusionUrfather :: Branch -> Prefix -> Bool
-isInclusionUrfather br pr
- = if isUrfather br pr
-    then (getInclusionUrfather br pr) == pr
-    else False
-
-getInclusionUrfather :: Branch -> Prefix -> Prefix  -- which is also an inclusion representative
-getInclusionUrfather br pr
+isInTheModel :: Branch -> Prefix -> Bool
+isInTheModel br pr
  = case blockMode br of
-    Nothing -> pr -- not sure it's a good idea
+    Nothing                      -> isNominalUrfather br pr -- could be just pr as well, but here we have a smaller model
+    Just InclusionBlockingGlobal -> if isNominalUrfather br pr
+                                       then (getModelRepresentative br pr) == pr
+                                       else False
+    Just InclusionBlockingChain  -> if isNominalUrfather br pr
+                                       then (getModelRepresentative br pr) == pr
+                                       else False
+
+
+getModelRepresentative :: Branch -> Prefix -> Prefix  -- which is also an inclusion representative
+getModelRepresentative br pr
+ = case blockMode br of
+    Nothing                      -> getUrfather br (DS.Prefix pr)
     Just InclusionBlockingGlobal -> giu_get_oldest (fromJust $ inclUrMap br) nomUrfather
                                      where nomUrfather = getUrfather br (DS.Prefix pr)
                                            giu_get_oldest :: InclusionUrfathersMap -> Prefix -> Prefix
@@ -529,19 +531,18 @@ getInclusionUrfather br pr
                                            giu_get_oldest ium pr_
                                             = if parent == pr_ then pr_ else giu_get_oldest ium parent
                                                where parent = ium Map.! pr_
-    Just InclusionBlockingChain  ->  {- WARNING      naive/inefficient implementation ahead -}
-                                      go br pr pr
-                                     where go :: Branch -> Prefix -> Prefix -> Prefix -- returns the inclusion urfather present on the chain
-                                           go br_ pr_ pr2_ = 
+    Just InclusionBlockingChain  -> -- find the *oldest* inclusion urfather on the chain
+                                      go br nomUrfather pr Nothing
+                                     where nomUrfather = getUrfather br (DS.Prefix pr)
+                                           go :: Branch -> Prefix -> Prefix -> Maybe Prefix -> Prefix
+                                           go br_ pr_ pr2_ mBlocker =
                                               case fatherOf pr2_ of
-                                                Nothing       -> pr_
+                                                Nothing       -> maybe pr_ id mBlocker
                                                 Just ancestor -> if formulasIncluded br_ pr_ ancestor
-                                                                  then ancestor else go br_ pr_ ancestor
+                                                                  then go br_ pr_ ancestor (Just ancestor)
+                                                                  else go br_ pr_ ancestor mBlocker
                                            parentMap    = prefParent br
                                            fatherOf pr_ = Map.lookup pr_ parentMap
-
-                                    
-
 
 calculateInclusionUrfathers :: Branch -> Branch
 -- calculates the prefix -> inclusion urfather map incrementally, by
@@ -565,10 +566,10 @@ calculateInclusionUrfathersMap br =
                       else updateInclUrMap previousM  -- works, provided that the augmented prefixes list is correctly filled
    Nothing        -> fromScratchInclUrMap
 
- where updateInclUrMap prevM  = foldr     updateM        prevM           (filter (isUrfather br) [pr..(lastPref br)])
-       fromScratchInclUrMap   = foldr     updateM        emptyM          (filter (isUrfather br) (prefixes br))
+ where updateInclUrMap prevM  = foldr     updateM        prevM           (filter (isNominalUrfather br) [pr..(lastPref br)])
+       fromScratchInclUrMap   = foldr     updateM        emptyM          (filter (isNominalUrfather br) (prefixes br))
 
-       updateM pref currentM_ = condFoldr (oneStep pref) currentM        (filter (isUrfather br) (reverse [0..pref-1]))
+       updateM pref currentM_ = condFoldr (oneStep pref) currentM        (filter (isNominalUrfather br) (reverse [0..pref-1]))
                                  where currentM = Map.insert pref pref currentM_
        oneStep pref pref2 iuMap =
          if formulasIncluded br pref pref2
@@ -753,7 +754,7 @@ addUnivConstraint clp br bps f
                False
    where newBr = br{univCons = (bps,f):(univCons br)}
          prefs = [0..(lastPref br)]
-         urfathers = filter (isUrfather br) prefs
+         urfathers = filter (isNominalUrfather br) prefs
 
 --
 
@@ -766,7 +767,7 @@ addDiffUnivConstraint clp br bprs f pr
                False
    where currentUrfather = getUrfather br (DS.Prefix pr)
          prefs = [0..(lastPref br)]
-         otherUrfathers = delete currentUrfather $ filter (isUrfather br) prefs
+         otherUrfathers = delete currentUrfather $ filter (isNominalUrfather br) prefs
          newNom =  maybe (NomSymbol 0) incNomSymbol (lastNom br)
          newBr = br{dBoxCons = (bprs,f,newNom):(dBoxCons br),
                     lastNom = Just newNom}
@@ -984,8 +985,6 @@ requireLocalFormulasTracking br = (hasUnivMod br) || (hasDiffMod br) || (blockMo
 prefixes :: Branch -> [Prefix]
 prefixes br = [0..(lastPref br)]
 
-inclusionUrfathers :: Branch -> [Prefix]
-inclusionUrfathers br = filter (isInclusionUrfather br) (prefixes br)
 
 {-
     Monad related stuff
