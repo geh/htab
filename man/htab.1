@@ -1,4 +1,4 @@
-.TH HTab 1 "2007-01-08" "HTab 1.3" "USER COMMANDS"
+.TH HTab 1 "2008-01-11" "HTab 1.3" "USER COMMANDS"
 .SH NAME
 HTab \- terminating tableaux system for hybrid logic
 .SH SYNOPSIS
@@ -31,6 +31,18 @@ disable/enable semantic branching (default is enabled)
 .TP
 \-c [0|1], \--full-clash=[0|1]
 disable/enable full clash (default is disabled)
+.TP
+\-u [0|1], \--unit-propagation=[0|1]
+disable/enable unit propagation (default is enabled)
+.TP
+\--inclusion-blocking-chain
+enable chain-based inclusion blocking (default mode)
+.TP
+\--inclusion-blocking-global
+enable global inclusion blocking (has precedence over chain-based blocking)
+.TP
+\--immediate-blocking
+enable blocking from the start (default is disabled)
 .TP
 \-t T, \--timeout=T
 run for at most T seconds. Default is no limit.
@@ -89,7 +101,7 @@ FORMULA :=
 .br
   NEGATION | CONJUNCTION | DISJUNCTION | IMPLICATION | DIMPLICATION | 
 .br
-  BOX | DIAMOND | AT | UBOX | UDIA |
+  BOX | DIAMOND | AT | UBOX | UDIA | UDIFFBOX | UDIFFDIA |
 .br
   '(' FORMULA ')'
 .br
@@ -118,6 +130,11 @@ AT           := NOMINAL ':' FORMULA | '@' NOMINAL FORMULA
 UBOX         := 'A' FORMULA
 .br
 UDIA         := 'E' FORMULA
+.br
+UDIFFBOX     := 'B' FORMULA
+.br
+UDIFFDIA     := 'D' FORMULA
+
 
 See also the example formulas in 
 .I /usr/share/doc/htab/examples
@@ -131,8 +148,5 @@ The .htabrc file must contain arguments as given to the HTab executable.
 Guillaume Hoffmann (guillaume.hoffmann (at) loria.fr)
 .SH AVAILABILITY
 .TP
-Home page
-http://hylo.loria.fr/intohylo/htab.php
-.TP
-Code repository
-http://trac.loria.fr/projects/htab
+Home page and code repository
+http://www.glyc.dc.uba.ar/intohylo/htab.php
