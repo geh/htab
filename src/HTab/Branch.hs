@@ -9,9 +9,9 @@
 
 module HTab.Branch
 (
-Branch(..), BranchMonad, createNewProp, createNewPref, BranchInfo(..),
+Branch(..), BranchMonad, createNewProp, createNewPref, createNewRelevantNom,BranchInfo(..),
 addFormulas, addFormula, addAccFormula, remFormula,
-addDiaRuleCheck, addDiffRuleCheck, addUnivConstraint,
+addDiaRuleCheck, addDownRuleCheck, addDiffRuleCheck, addUnivConstraint,
 addParentPrefix,
 BranchData(..),branch_depth,
 emptyBranch,initialBranchStateFor,getCLParams,
@@ -19,7 +19,7 @@ addZeroInPath,incPathHead,prefixes,
 reduceDisjunctionAgainstBranch,
 getUrfather, getUrfatherAndDeps, isInTheModel,
 getModelRepresentative, hasUnivMod, hasDiffMod, isNotBlocked,
-calculateStepInfo, BlockingMode(..), diaAlreadyDone, incPropSymbol,
+calculateStepInfo, BlockingMode(..), diaAlreadyDone, incPropSymbol, incNomSymbol,
 ReducedDisjunct(..)
 ) where
 
@@ -52,12 +52,14 @@ type Disj_structure   = Set.Set PrFormula
 type Dia_structure    = Set.Set PrFormula
 type Neg_structure    = Set.Set PrFormula
 type At_structure     = Set.Set PrFormula
+type Down_structure   = Set.Set PrFormula
 type Exist_structure  = Set.Set PrFormula
 type Diff_structure   = Set.Set PrFormula
 type Acc_structure    = Map.Map Prefix (Map.Map Rel [(BranchingPrefixes,Prefix )])
 type Box_constraints  = Map.Map Prefix (Map.Map Rel [(BranchingPrefixes,Formula)])
 
 type Dia_rule_chart    = Map.Map Prefix (Set.Set Formula)
+type Down_rule_chart   = Map.Map Prefix (Set.Set Formula)
 type At_rule_chart     = Set.Set Formula
 type Exist_rule_chart  = Set.Set Formula
 type Diff_Dia_rule_chart  = Map.Map Formula (PropSymbol,Bool)
@@ -90,11 +92,13 @@ data Branch = Branch {clashStr :: Clashable_info,
                       existStr :: Exist_structure,
                         negStr :: Neg_structure,
                          atStr :: At_structure,
+                       downStr :: Down_structure,
                        diffStr :: Diff_structure, -- D
                  -- other data
                         accStr :: Acc_structure,
                      boxConstr :: Box_constraints,
                        diaRlCh :: Dia_rule_chart,    -- saturation of the diamond rule
+                      downRlCh :: Down_rule_chart,   -- saturatino of the down-arrow rule
                         atRlCh :: At_rule_chart,     -- saturation of the @ rule
                      existRlCh :: Exist_rule_chart,  -- saturation of the exist rule
                       dDiaRlCh :: Diff_Dia_rule_chart, -- saturation of the diff diamond rule chart (D)
@@ -111,7 +115,8 @@ data Branch = Branch {clashStr :: Clashable_info,
                        incrPrs :: AugmentedPrefixes,
                      blockMode :: Maybe BlockingMode,
               defaultBlockMode :: BlockingMode,
-                    prefParent :: PrefixParent}
+                    prefParent :: PrefixParent,
+             relevantNominals  :: Set.Set NomSymbol}
 
 --
 
@@ -128,11 +133,13 @@ emptyBranch l blockingMode immediate =
                   diaStr = Set.empty::Dia_structure,
                   existStr = Set.empty::Exist_structure,
                   negStr = Set.empty::Neg_structure,
-                  atStr= Set.empty::At_structure,
+                  atStr = Set.empty::At_structure,
+                  downStr = Set.empty::Down_structure,
                   diffStr = Set.empty::Diff_structure,
                   accStr=Map.empty::Acc_structure,
                   boxConstr=Map.empty::Box_constraints,
                   diaRlCh=Map.empty::Dia_rule_chart,
+                  downRlCh=Map.empty::Down_rule_chart,
                   atRlCh=Set.empty::At_rule_chart,
                   existRlCh=Set.empty::Exist_rule_chart,
                   dDiaRlCh = Map.empty::Diff_Dia_rule_chart,
@@ -149,7 +156,8 @@ emptyBranch l blockingMode immediate =
                   incrPrs = [],
                   blockMode = if immediate then Just blockingMode else Nothing,
                   defaultBlockMode = blockingMode,
-                  prefParent = Map.empty::PrefixParent 
+                  prefParent = Map.empty::PrefixParent,
+                  relevantNominals = Set.fromList $ languageNoms l
                 }
 
 instance Show Branch where
@@ -161,10 +169,12 @@ instance Show Branch where
               "\nExists: "         ++ show (Set.toList $ existStr br) ++
               "\nNegations: "      ++ show (Set.toList $ negStr br)   ++
               "\nAts: "            ++ show (Set.toList $ atStr br)    ++
+              "\nDowns: "          ++ show (Set.toList $ downStr br)  ++
               "\nDiff exists: "    ++ show (Set.toList $ diffStr br)  ++
               "\nAccesibility: "    ++ prettyShowMap_ (accStr br) (\v -> "(" ++ prettyShowMap_rel_bps_x v ++ ")") "\n " ++
               "\nBox constraints: " ++ prettyShowMap_ (boxConstr br) (\v -> "(" ++ prettyShowMap_rel_bps_x v ++ ")") "\n " ++
               "\nDia rule chart: "  ++ prettyShowMap_ (diaRlCh br) (show . Set.toList) "\n " ++
+              "\nDown rule chart: " ++ prettyShowMap_ (downRlCh br) (show . Set.toList) "\n " ++
               "\n@ rule chart: "   ++ show (Set.toList $ atRlCh br) ++
               "\nExist rule chart:" ++ show (Set.toList $ existRlCh br) ++
               "\nDiff dia rule chart: "  ++ prettyShowMap_ (dDiaRlCh br) show "\n " ++
@@ -179,7 +189,8 @@ instance Show Branch where
               "\nIncreased prefixes: " ++ show (incrPrs br) ++
               "\nBlocking mode: " ++ show (blockMode br) ++
               "\nDefault Blocking mode: " ++ show (defaultBlockMode br) ++
-              "\nPrefix-Nominal classes : " ++ prettyShowMap (nomPrefClasses br) ", "
+              "\nPrefix-Nominal classes : " ++ prettyShowMap (nomPrefClasses br) ", " ++
+              "\nModel-relevant nominals : " ++ show (relevantNominals br)
 
 instance ShowLatex Branch where
  showLatex br = "Input language: " ++ (putEol $ math $ show $ inputLanguage br)   ++ 
@@ -190,10 +201,12 @@ instance ShowLatex Branch where
               "\nExists: "         ++ (putEol $ math $ show $ existStr br) ++
               "\nNegations: "      ++ (putEol $ math $ show $ negStr br)   ++
               "\nAts: "            ++ (putEol $ math $ show $ atStr br)    ++
+              "\nDowns: "          ++ (putEol $ math $ show $ downStr br)  ++
               "\nDiff exists: "    ++ (putEol $ math $ show $ diffStr br)  ++
               "\nAccesibility: "   ++ (putEol $ math $ show $ Map.toList $ accStr br)   ++
               "\nBox constraints: " ++ (putEol $ math $ show $ Map.toList $ boxConstr br)  ++
               "\nDia rule chart: " ++ (putEol $ math $ show $ Map.toList $ diaRlCh br)  ++
+              "\nDown rule chart: " ++ (putEol $ math $ show $ Map.toList $ downRlCh br)  ++
               "\n@ rule chart: "   ++ (putEol $ math $ show $ Set.toList $ atRlCh br)  ++
               "\nExist rule chart:" ++ (putEol $ math $ show $ Set.toList $ existRlCh br)  ++
               "\nDiff dia rule chart: "  ++ (putEol $ math $ show $ Map.toList $ dDiaRlCh br) ++
@@ -207,7 +220,9 @@ instance ShowLatex Branch where
               "\nPrefix-Nominal classes : " ++ (putEol $ math $ show $ nomPrefClasses br) ++
               "\nInclusion urfather map: "  ++ (putEol $ math $ show $ inclUrMap br) ++
               "\nIncreased prefixes: " ++ (putEol $ show (incrPrs br)) ++
-              "\nBlocking mode: " ++ show (blockMode br)
+              "\nBlocking mode: " ++ show (blockMode br) ++
+              "\nModel-relevant nominals : " ++ show (relevantNominals br)
+
 
 instance ShowLatex PrefToFormulas where
  showLatex ptf =
@@ -628,19 +643,22 @@ forInclusion br (NegLit atom) = forInclAtom br atom
 forInclusion _ (Con _) = False
 forInclusion _ (Dis _) = False
 forInclusion _ (At _ _) = False
+forInclusion _ (Atv _ _) = False
+forInclusion _ (Down _ _) = False
 forInclusion _ (Box _ _) = True
 forInclusion _ (Dia _ _) = True
 forInclusion _ (A _) = False
 forInclusion _ (E _) = False
-forInclusion _ (D _) = False -- TODO
-forInclusion _ (B _) = False --   not sure
+forInclusion _ (D _) = False
+forInclusion _ (B _) = False
 forInclusion _ (Neg _) = False
 
 forInclAtom :: Branch -> Atom -> Bool
-forInclAtom _ Taut = False
-forInclAtom br (N n) = elem n (languageNoms $ inputLanguage br)  -- if added during calculus: False, otherwise true
-forInclAtom _  (P _) = True -- but here we need all the prop. symbols, because the additional prop. symbols are added for
-                            -- prefix inequality
+forInclAtom _  Taut  = False
+forInclAtom br (N n) = Set.member n (relevantNominals br)
+forInclAtom _  (P _) = True
+forInclAtom _  (V _) = error "forInclAtom statevar : should not happen"
+
 
 addFormula2 :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
 addFormula2 clp br pf@(PrFormula pr _ _) =
@@ -688,9 +706,17 @@ addFormula3 clp br pf@(PrFormula _ _ (At _ _))
                                                    else b{atStr = Set.insert f (atStr b),
                                                           atRlCh = Set.insert f2 (atRlCh b)}
 
+addFormula3 _  _  (PrFormula _ _ (Atv _ _)) = error "addFormula Atv : should not happen"
+
+addFormula3 clp br pf@(PrFormula _ _ (Down _ _))
+           = modBranchCaseFC clp br pf $ \b f@(PrFormula pr _ f2)
+                                             -> b{downStr = if downAlreadyDone b pr f2  -- down-arrow rule saturation
+                                                              then downStr b
+                                                              else Set.insert f (downStr b)}
+
+
 addFormula3 clp br pf@(PrFormula _ _ (Neg _))
            = modBranchCaseFC clp br pf $ \b f -> b{negStr  = Set.insert f (negStr b)}
-
 
 addFormula3 _ br f@(PrFormula _ _ (PosLit _))
            = addAndUpdateMap br f
@@ -722,8 +748,6 @@ addDiaRuleCheck br pr f =
   br{diaRlCh=Map.insertWith Set.union ur (Set.singleton f) (diaRlCh br)}
    where ur = getUrfather br (DS.Prefix pr)
 
---
-
 diaAlreadyDone :: Branch -> Prefix -> Formula -> Bool
 diaAlreadyDone b p f@(Dia _ _) =
   case Map.lookup ur (diaRlCh b) of
@@ -732,6 +756,24 @@ diaAlreadyDone b p f@(Dia _ _) =
  where ur = getUrfather b (DS.Prefix p)
 
 diaAlreadyDone _ _ _ = error "dia already done : wrong formula kind"
+
+
+--
+
+addDownRuleCheck :: Branch -> Prefix -> Formula -> Branch
+addDownRuleCheck br pr f =
+  br{downRlCh=Map.insertWith Set.union ur (Set.singleton f) (downRlCh br)}
+   where ur = getUrfather br (DS.Prefix pr)
+
+downAlreadyDone :: Branch -> Prefix -> Formula -> Bool
+downAlreadyDone b p f@(Down _ _) =
+  case Map.lookup ur (downRlCh b) of
+     Nothing  -> False
+     Just fset -> Set.member f fset
+ where ur = getUrfather b (DS.Prefix p)
+
+downAlreadyDone _ _ _ = error "down already done : wrong formula kind"
+
 
 --
 
@@ -768,9 +810,8 @@ addDiffUnivConstraint clp br bprs f pr
    where currentUrfather = getUrfather br (DS.Prefix pr)
          prefs = [0..(lastPref br)]
          otherUrfathers = delete currentUrfather $ filter (isNominalUrfather br) prefs
-         newNom =  maybe (NomSymbol 0) incNomSymbol (lastNom br)
-         newBr = br{dBoxCons = (bprs,f,newNom):(dBoxCons br),
-                    lastNom = Just newNom}
+         (updatedBr, newNom) = createNewNom br
+         newBr = updatedBr{dBoxCons = (bprs,f,newNom):(dBoxCons updatedBr)}
 
 --
 
@@ -779,10 +820,6 @@ addDiffRuleCheck br f propsym b =
   br{dDiaRlCh=Map.insert f (propsym,b) (dDiaRlCh br)}
 
 --
-
-incNomSymbol :: NomSymbol -> NomSymbol
-incNomSymbol (NomSymbol n) = NomSymbol (n+1)
-
 
 createNewPref :: CmdLineParams -> Branch -> BranchInfo
 createNewPref clp br
@@ -808,15 +845,39 @@ createNewProp br
 
 --
 
+incNomSymbol :: NomSymbol -> NomSymbol
+incNomSymbol (NomSymbol n) = NomSymbol (n+1)
+
+createNewNom :: Branch -> (Branch, NomSymbol)
+createNewNom br
+ = (br{lastNom = Just newNom}, newNom)
+    where newNom =  maybe (NomSymbol 0) incNomSymbol (lastNom br)
+
+
+createNewRelevantNom :: Branch -> Branch
+createNewRelevantNom br
+ = br{lastNom = Just newNom ,
+      relevantNominals = Set.insert newNom (relevantNominals br)
+     }
+    where newNom =  maybe (NomSymbol 0) incNomSymbol (lastNom br)
+
+--
+
 remFormula :: Branch  -> PrFormula -> Branch
-remFormula br f@(PrFormula _ _ (Con _))        = br{conjStr=(Set.delete f (conjStr br))}
-remFormula br f@(PrFormula _ _ (Dia _ _))      = br{diaStr=(Set.delete f (diaStr br))}
+remFormula br f@(PrFormula _ _ (Con _))        = br{conjStr =(Set.delete f (conjStr br))}
+remFormula br f@(PrFormula _ _ (Dia _ _))      = br{diaStr  =(Set.delete f (diaStr br))}
 remFormula br f@(PrFormula _ _ (E _))          = br{existStr=(Set.delete f (existStr br))}
-remFormula br f@(PrFormula _ _ (Dis _))        = br{disjStr=(Set.delete f (disjStr br))}
-remFormula br f@(PrFormula _ _ (Neg _))        = br{negStr=(Set.delete f (negStr br))}
-remFormula br f@(PrFormula _ _ (At _ _))       = br{atStr=(Set.delete f (atStr br))}
-remFormula br f@(PrFormula _ _ (D _))          = br{diffStr=(Set.delete f (diffStr br))}
-remFormula _  _                                = error "that formula should never be deleted"
+remFormula br f@(PrFormula _ _ (Dis _))        = br{disjStr =(Set.delete f (disjStr br))}
+remFormula br f@(PrFormula _ _ (Neg _))        = br{negStr  =(Set.delete f (negStr br))}
+remFormula br f@(PrFormula _ _ (At _ _))       = br{atStr   =(Set.delete f (atStr br))}
+remFormula br f@(PrFormula _ _ (D _))          = br{diffStr =(Set.delete f (diffStr br))}
+remFormula br f@(PrFormula _ _ (Down _ _))     = br{downStr =(Set.delete f (downStr br))}
+remFormula _    (PrFormula _ _ (Box _ _))      = error "that formula should never be deleted"
+remFormula _    (PrFormula _ _ (Atv _ _))      = error "that formula should never be deleted"
+remFormula _    (PrFormula _ _ (A _))          = error "that formula should never be deleted"
+remFormula _    (PrFormula _ _ (B _))          = error "that formula should never be deleted"
+remFormula _    (PrFormula _ _ (PosLit _))     = error "that formula should never be deleted"
+remFormula _    (PrFormula _ _ (NegLit _))     = error "that formula should never be deleted"
 
 
 {- chain blocking  -}

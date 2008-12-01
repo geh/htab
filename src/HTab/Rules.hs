@@ -12,14 +12,16 @@ import HTab.Formula( Formula(..), PrFormula(..), neg, Atom(..),
                      BranchingPrefix,
                      bps_insert, prefixList, AccFormula(..),
                      Prefix, NomSymbol(..), PropSymbol(..),
+                     replaceVar,
                      BranchingPrefixes, bps_union )
-import HTab.Branch( Branch(..), createNewPref, createNewProp,
+import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewRelevantNom,
                     BranchInfo(..),
                     addFormulas, addAccFormula, remFormula,
-                    addDiaRuleCheck, addDiffRuleCheck,
+                    addDiaRuleCheck, addDownRuleCheck, addDiffRuleCheck,
                     addParentPrefix, reduceDisjunctionAgainstBranch,
                     getUrfatherAndDeps, isNotBlocked, 
-                    diaAlreadyDone, incPropSymbol, ReducedDisjunct(..) )
+                    diaAlreadyDone, incPropSymbol, incNomSymbol,
+                    ReducedDisjunct(..) )
 import HTab.CommandLine(CmdLineParams, semBranch, fullClash, unitProp)
 import HTab.RuleMetadata(RuleId(..))
 import qualified HTab.DisjSet as DS
@@ -31,10 +33,12 @@ import HTab.LatexOutputHelper
 data BranchModification =    BM_AddFormulas   [PrFormula]
                            | BM_AddAccFormula AccFormula
                            | BM_AddDiaRuleCheck Prefix Formula
+                           | BM_AddDownRuleCheck Prefix Formula
                            | BM_AddDiffRuleCheck Formula PropSymbol Bool
                            | BM_RemFormula PrFormula
                            | BM_CreateNewPref
                            | BM_CreateNewProp
+                           | BM_CreateNewRelevantNom
                            | BM_AddParentPrefix Prefix Prefix
                            | BM_Clash BranchingPrefixes PrFormula
 
@@ -45,6 +49,7 @@ data Rule =  ConjRule   PrFormula [PrFormula]
            | SemBrRule  PrFormula [[PrFormula]]
            | NegRule    PrFormula PrFormula
            | AtRule     PrFormula PrFormula
+           | DownRule   PrFormula PrFormula PrFormula
            | DiffRule   (Prefix, BranchingPrefixes, Formula)
            | ExistModRule PrFormula PrFormula                 -- creates a prefix
            | DiscardRule PrFormula
@@ -81,6 +86,13 @@ getMods _ (NegRule todelete toadd) =
 
 getMods _ (AtRule todelete toadd) =
  [[BM_RemFormula todelete, BM_AddFormulas [toadd]]]
+
+getMods _ (DownRule todelete@(PrFormula pr _ f) toadd1 toadd2) =
+ [[BM_RemFormula todelete,
+   BM_AddFormulas [toadd1, toadd2],
+   BM_CreateNewRelevantNom,
+   BM_AddDownRuleCheck pr f
+ ]]
 
 getMods br (DiffRule (pr, bprs , f2)) =
  case Map.lookup f2 (dDiaRlCh br) of
@@ -135,6 +147,7 @@ instance Show Rule where
    show (SemBrRule todelete _ )    = "semantic branching: " ++ (show todelete)
    show (NegRule   todelete _ )    = "negation: " ++ (show todelete)
    show (AtRule    todelete _ )    = "at: " ++ (show todelete)
+   show (DownRule  todelete _ _ )  = "down: " ++ (show todelete)
    show (ExistModRule todelete _)  = "E: " ++ (show todelete)
    show (DiffRule todelete )       = "D: " ++ (show todelete)
    show (DiscardRule todelete)     = "Discard: " ++ (show todelete)
@@ -147,6 +160,7 @@ instance ShowLatex Rule where
    showLatex (SemBrRule  todelete _ )  = "semantic branching: " ++ (math $ showLatex todelete)
    showLatex (NegRule    todelete _ )  = "negation: " ++ (math $ showLatex todelete)
    showLatex (AtRule     todelete _ )  = "at: " ++ (math $ showLatex todelete)
+   showLatex (DownRule   todelete _ _) = "down: " ++ (math $ showLatex todelete)
    showLatex (ExistModRule todelete _) = "E: " ++ (math $ showLatex todelete)
    showLatex (DiffRule todelete )      = "D: " ++ (math $ showLatex todelete)
    showLatex (DiscardRule todelete)    = "Discard: " ++ (math $ showLatex todelete)
@@ -162,6 +176,7 @@ ruleToId r = case r of
               (SemBrRule _ _)    -> R_SemBr
               (NegRule _ _)      -> R_Neg
               (AtRule _ _ )      -> R_At
+              (DownRule _ _ _)   -> R_Down
               (ExistModRule _ _) -> R_Exist
               (DiffRule _ )      -> R_Diff
               (DiscardRule _)    -> R_Discard
@@ -177,6 +192,7 @@ applicableRules br clp d = -- d = current depth in the tableau (add as dependenc
  ++                        (applicableDiaRules br)
  ++                        (applicableExistRules br)
  ++                        (applicableDiffRules br)
+ ++                        (applicableDownRules br)
  ++  if semBranch clp then (applicableSemBrRules clp br d)
                       else (applicableDisjRules clp br d)
 
@@ -198,6 +214,9 @@ applicableNegRules br = [negRule f br | f <- Set.toAscList $ negStr br]
 
 applicableAtRules :: Branch -> [Rule]
 applicableAtRules br = [atRule f br | f <- Set.toAscList $ atStr br]
+
+applicableDownRules :: Branch -> [Rule]
+applicableDownRules br = [downRule f br | f <- Set.toAscList $ downStr br]
 
 applicableExistRules :: Branch -> [Rule]
 applicableExistRules br = [existRule f br | f <- Set.toAscList $ existStr br]
@@ -223,13 +242,14 @@ applyMod :: CmdLineParams -> Branch -> BranchModification -> BranchInfo
 applyMod clp br (BM_AddFormulas li) = addFormulas clp br li False
 applyMod clp br (BM_AddAccFormula accFor) = addAccFormula clp br accFor
 applyMod  _  br (BM_AddDiaRuleCheck pr f) = BranchOK (addDiaRuleCheck br pr f)
+applyMod  _  br (BM_AddDownRuleCheck pr f) = BranchOK (addDownRuleCheck br pr f)
 applyMod clp br (BM_CreateNewPref) = createNewPref clp br
 applyMod  _  br (BM_CreateNewProp) = BranchOK $ createNewProp br
+applyMod  _  br (BM_CreateNewRelevantNom) = BranchOK $ createNewRelevantNom br
 applyMod  _  br (BM_RemFormula f) = BranchOK (remFormula br f)
 applyMod  _  br (BM_AddDiffRuleCheck f prop b) = BranchOK (addDiffRuleCheck br f prop b)
 applyMod  _  br (BM_AddParentPrefix son father) = BranchOK (addParentPrefix br son father)
 applyMod  _  br (BM_Clash bprs (PrFormula pr bprs2 f)) = BranchClash br pr (bps_union bprs bprs2) f
-
 
 -- the actual rules and their helper functions
 
@@ -263,6 +283,11 @@ getNewPref br = (lastPref br)+1
 
 getNewProp :: Branch -> PropSymbol
 getNewProp br = maybe (PropSymbol 0) incPropSymbol (lastProp br)
+
+--
+
+getNewNom :: Branch -> NomSymbol
+getNewNom br = maybe (NomSymbol 0) incNomSymbol (lastNom br)
 
 -- E
 existRule :: PrFormula -> Branch -> Rule
@@ -328,6 +353,13 @@ atRule af@(PrFormula _ bprs (At (NomSymbol n) f)) br
 
 atRule _ _ = error "atRule error"
 
+-- down
+downRule :: PrFormula -> Branch -> Rule
+downRule df@(PrFormula pr bprs (Down v f)) br
+ = DownRule df (PrFormula pr bprs (replaceVar v newNom f)) (PrFormula pr bprs (PosLit (N newNom)))
+    where newNom = getNewNom br
+downRule _ _ = error "downRule error"
+
 -- negation
 negRule :: PrFormula -> Branch -> Rule
 negRule nf@(PrFormula pr bprs (Neg f)) _ = NegRule nf (PrFormula pr bprs (neg1 f))
@@ -339,6 +371,8 @@ neg1 :: Formula -> Formula
 neg1 (Con l)    = Dis (map neg l)
 neg1 (Dis l)    = Con (map neg l)
 neg1 (At n f)   = At n (neg f)
+neg1 (Atv v f)  = Atv v (neg f)
+neg1 (Down v f) = Down v (neg f)
 neg1 (Box n f)  = Dia n (neg f)
 neg1 (Dia n f)  = Box n (neg f)
 neg1 (A f)      = E (neg f)

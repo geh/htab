@@ -8,7 +8,7 @@
 
 module HTab.Formula
 
-(PropSymbol(..), NomSymbol(..), StateVar,
+(PropSymbol(..), NomSymbol(..), StateVar(..),
 RelSymbol(..), Rel, Prefix,
 Formula(..), Atom(..),
 BranchingPrefix, BranchingPrefixes,
@@ -16,9 +16,10 @@ bps_union, bps_unions, bps_insert, bps_member,
 bps_empty, deps_min, bps_show,
 PrFormula(..), AccFormula(..),
 LanguageInfo(..), nnf, neg,
-box, diamond, at, conj, disj, univMod, existMod,
+box, diamond, at, atv, conj, disj, univMod, existMod,
 dUnivMod, dExistMod, taut, dimp, imp,
 prop, nom, formulaLanguageInfo, prefixList,
+replaceVar,
 firstPrefixedFormula,
 parse
 )
@@ -32,7 +33,7 @@ import qualified Data.IntSet as IntSet
 import HyLo.Signature.Simple( PropSymbol(..),
                               NomSymbol(..),
                               RelSymbol(..),
-                              StateVar)
+                              StateVar(..))
 
 import HTab.LatexOutputHelper
 
@@ -44,17 +45,20 @@ type Rel = Int
 data Atom = Taut
           | N NomSymbol
           | P PropSymbol
+          | V StateVar
   deriving(Eq, Ord)
 
 instance Show Atom where
  show (Taut) = "T"
  show (N n) = show n
  show (P p) = show p
+ show (V v) = show v
 
 instance ShowLatex Atom where
  showLatex (Taut) = "T"
  showLatex (N n) = show n
  showLatex (P p) = show p
+ showLatex (V v) = show v
 
 data Formula
      = PosLit Atom
@@ -62,6 +66,8 @@ data Formula
      | Con   [Formula]
      | Dis   [Formula]
      | At     NomSymbol Formula
+     | Atv    StateVar  Formula
+     | Down   StateVar  Formula
      | Box    RelSymbol     Formula
      | Dia    RelSymbol     Formula
      | A      Formula
@@ -77,6 +83,7 @@ instance Show Formula where
  show (Con fs)   = "^" ++ (show fs)
  show (Dis fs)   = "v" ++ (show fs)
  show (At n f)   = "@" ++ (show n)  ++ (show f)
+ show (Atv v f)  = "@" ++ (show v)  ++ (show f)
  show (Box r f)  = "[" ++ (show r)  ++ "]" ++ (show f)
  show (Dia r f)  = "<" ++ (show r)  ++ ">" ++ (show f)
  show (Neg f)    = "!" ++ show f
@@ -84,6 +91,7 @@ instance Show Formula where
  show (E f)      = "E" ++ show f
  show (D f)      = "D" ++ show f
  show (B f)      = "B" ++ show f
+ show (Down v f) = "down " ++ show v ++ "." ++ show f
 
 instance ShowLatex Formula where
    showLatex (PosLit a) = showLatex a
@@ -91,6 +99,7 @@ instance ShowLatex Formula where
    showLatex (Con fs)   = "(" ++ (lseparate "\\wedge " fs) ++ ")"
    showLatex (Dis fs)   = "(" ++ (lseparate "\\vee " fs) ++ ")"
    showLatex (At n f)   = "@_{" ++ (show n) ++ "}"  ++ (showLatex f)
+   showLatex (Atv v f)  = "@_{" ++ (show v) ++ "}"  ++ (showLatex f)
    showLatex (Box r f)  = "\\square_{" ++ (show r)  ++ "}" ++ (showLatex f)
    showLatex (Dia r f)  = "\\lozenge_{" ++ (show r)  ++ "}" ++ (showLatex f)
    showLatex (Neg f)    = "\\neg" ++ showLatex f
@@ -98,19 +107,20 @@ instance ShowLatex Formula where
    showLatex (E f)      = "E" ++ showLatex f
    showLatex (D f)      = "D" ++ showLatex f
    showLatex (B f)      = "B" ++ showLatex f
+   showLatex (Down v f) = "\\downarrow " ++ show v ++ ".(" ++ show f ++ ")"
 
 parse :: String -> Formula
 parse = convert . InputFile.parse
 
-convert :: [F.Formula NomSymbol PropSymbol RelSymbol v] -> Formula
+convert :: [F.Formula NomSymbol PropSymbol RelSymbol StateVar] -> Formula
 convert fs = conv_ $ foldr (\f1 f2 -> f1 F.:&: f2) F.Top fs
 
-conv_ :: F.Formula NomSymbol PropSymbol RelSymbol v -> Formula
+conv_ :: F.Formula NomSymbol PropSymbol RelSymbol StateVar -> Formula
 conv_ F.Top = taut
 conv_ F.Bot = neg taut
 conv_ (F.Prop p) = prop p
 conv_ (F.Nom n) = nom n
-conv_ (F.SVar _) = error "not implemented"
+conv_ (F.SVar v) = svar v
 conv_ (F.Neg f) = neg $ conv_ f
 conv_ (f1 F.:&: f2) = conj (conv_ f1) (conv_ f2)
 conv_ (f1 F.:|: f2) = disj (conv_ f1) (conv_ f2)
@@ -119,12 +129,12 @@ conv_ (f1 F.:<-->: f2) = dimp (conv_ f1) (conv_ f2)
 conv_ (F.Diam r f) = diamond r (conv_ f)
 conv_ (F.Box r f) = box r (conv_ f)
 conv_ (F.At n f) = at n (conv_ f)
-conv_ (F.Atv _ _) = error "not implemented"
+conv_ (F.Atv v f) = atv v (conv_ f)
+conv_ (F.Down v f) = downArrow v (conv_ f)
 conv_ (F.A f) = univMod (conv_ f)
 conv_ (F.E f) = existMod (conv_ f)
 conv_ (F.D f) = dExistMod (conv_ f)
 conv_ (F.B f) = dUnivMod (conv_ f)
-conv_ (F.Down _ _) = error "not implemented"
 
 --
 -- Required structures to implement backjumping
@@ -185,10 +195,12 @@ firstPrefixedFormula = PrFormula 0 bps_empty
 taut :: Formula
 prop :: PropSymbol -> Formula
 nom  :: NomSymbol -> Formula
+svar :: StateVar -> Formula
 
 taut   = PosLit Taut
 prop p = PosLit (P p)
 nom  n = PosLit (N n)
+svar v = PosLit (V v)
 
 {- Modalities -}
 box, diamond :: RelSymbol -> Formula -> Formula
@@ -200,9 +212,15 @@ existMod   = E
 dUnivMod   = B
 dExistMod  = D
 
+{- binder -}
+downArrow :: StateVar -> Formula -> Formula
+downArrow v f = Down v f
+
 {- Hybrid operators -}
-at             :: NomSymbol -> Formula -> Formula
-at  n  f             = At n f
+at :: NomSymbol -> Formula -> Formula
+at  n  f    = At  n f
+atv :: StateVar -> Formula -> Formula
+atv v  f    = Atv v f
 
 {- Conjunction and disjunction -}
 
@@ -309,6 +327,8 @@ nnf (Neg f) = nnf (neg2 f)
 nnf (Con l) = Con (map nnf l)
 nnf (Dis l) = Dis (map nnf l)
 nnf (At n f) = At n (nnf f)
+nnf (Atv v f) = Atv v (nnf f)
+nnf (Down v f) = Down v (nnf f)
 nnf (Box r f) = Box r (nnf f)
 nnf (Dia r f) = Dia r (nnf f)
 nnf (A f) = A (nnf f)
@@ -324,6 +344,8 @@ neg2 :: Formula -> Formula
 neg2 (Con l)      = Dis (map neg2 l)
 neg2 (Dis l)      = Con (map neg2 l)
 neg2 (At n f)     = At n (neg2 f)
+neg2 (Atv v f)    = Atv v (neg2 f)
+neg2 (Down v f)   = Down v (neg2 f)
 neg2 (Box r f)    = Dia r (neg2 f)
 neg2 (Dia r f)    = Box r (neg2 f)
 neg2 (A f)        = E (neg2 f)
@@ -362,11 +384,31 @@ composeFold zero combine g = \e -> case e of
     Dia _ f    -> g f
     Box _ f    -> g f
     At  _ f    -> g f
+    Atv _ f    -> g f
+    Down _ f   -> g f
     A f        -> g f
     E f        -> g f
     D f        -> g f
     B f        -> g f
     _          -> zero
+
+composeMap :: (Formula -> Formula)
+           -> (Formula -> Formula)
+           -> (Formula -> Formula)
+composeMap baseCase g = \e -> case e of
+    Neg f      -> Neg (g f)
+    Con fs     -> Con $ map g fs
+    Dis fs     -> Dis $ map g fs
+    Dia r f    -> Dia r (g f)
+    Box r f    -> Box r (g f)
+    At   i f   -> At  i (g f)
+    Atv  x f   -> Atv x (g f)
+    A f        -> A (g f)
+    E f        -> E (g f)
+    D f        -> D (g f)
+    B f        -> B (g f)
+    Down x f   -> Down x (g f)
+    f          -> baseCase f
 
 extractNominals :: Formula -> Set.Set NomSymbol
 extractNominals (PosLit (N n)) = Set.singleton n
@@ -388,4 +430,12 @@ hasDiffModality :: Formula -> Bool
 hasDiffModality (B _)     = True
 hasDiffModality (D _)     = True  -- remove this line when formulas are NNF
 hasDiffModality f         = composeFold False (||) hasDiffModality f
+
+replaceVar :: StateVar -> NomSymbol -> Formula -> Formula
+replaceVar v n a@(PosLit (V v2)) = if v == v2 then PosLit (N n) else a
+replaceVar v n a@(NegLit (V v2)) = if v == v2 then NegLit (N n) else a
+replaceVar v n a@(Down v2 f) = if v == v2 then a   -- variable capture
+                                          else Down v2 (replaceVar v n f)
+replaceVar v n (Atv v2 f)   = if v == v2 then At n (replaceVar v n f) else Atv v2 (replaceVar v n f)
+replaceVar v n f = composeMap id (replaceVar v n) f
 
