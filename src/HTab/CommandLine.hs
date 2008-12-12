@@ -201,24 +201,6 @@ getCmdLineParams =
        return $ do clp_1 <- parse_clp_1
                    parseCmds cmdline_args clp_1
 
-{-
-{- getConf: reads file .htabrc for configuration if it exists,
-otherwise it creates the file with default values and warns
-the user -}
-
-getConf :: CmdLineParams -> FilePath -> IO CmdLineParams
-getConf p configDir =
-  catch getConf' (\_ -> createConf)
-      where fullName = configDir ++ </> ++ ".htabrc"
-            getConf' = do fconf <- readFile fullName
-                          putStr $ "Reading parameters from " ++ fullName ++ "\n"
-                          return (defineParams p (cParser (cLexer fconf)))
-            createConf = do writeFile fullName initialParamsStr
-                            putStr $ "File "  ++ fullName ++ " does not exist.\n"
-                            putStr "Writing default configuration file.\n"
-                            return p
-
--}
 
 rcfile :: FilePath
 rcfile = ".htabrc"
