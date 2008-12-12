@@ -35,7 +35,7 @@ import qualified HTab.DisjSet as DS
 import Data.Maybe(fromJust)
 
 import HTab.Statistics(Statistics)
-import HTab.CommandLine(CmdLineParams, fullClash, unitProp)
+import HTab.CommandLine(CmdLineParams, unitProp)
 
 import HTab.Formula
 import HTab.LatexOutputHelper
@@ -46,11 +46,10 @@ import HTab.Base(moveInMap, almostCartesianProduct)
 data BranchInfo = BranchOK Branch |
                   BranchClash Branch Prefix BranchingPrefixes Formula
 
-type Clashable_info   = Map.Map Prefix (Map.Map Formula (Bool,BranchingPrefixes))
+type Clashable_info   = Map.Map Prefix (Map.Map Atom (Bool,BranchingPrefixes))
 type Conj_structure   = Set.Set PrFormula
 type Disj_structure   = Set.Set PrFormula
 type Dia_structure    = Set.Set PrFormula
-type Neg_structure    = Set.Set PrFormula
 type At_structure     = Set.Set PrFormula
 type Down_structure   = Set.Set PrFormula
 type Exist_structure  = Set.Set PrFormula
@@ -90,7 +89,6 @@ data Branch = Branch {clashStr :: Clashable_info,
                        disjStr :: Disj_structure,
                         diaStr :: Dia_structure,
                       existStr :: Exist_structure,
-                        negStr :: Neg_structure,
                          atStr :: At_structure,
                        downStr :: Down_structure,
                        diffStr :: Diff_structure, -- D
@@ -132,7 +130,6 @@ emptyBranch l blockingMode immediate =
                   disjStr= Set.empty::Disj_structure,
                   diaStr = Set.empty::Dia_structure,
                   existStr = Set.empty::Exist_structure,
-                  negStr = Set.empty::Neg_structure,
                   atStr = Set.empty::At_structure,
                   downStr = Set.empty::Down_structure,
                   diffStr = Set.empty::Diff_structure,
@@ -167,7 +164,6 @@ instance Show Branch where
               "\nDisjunctions: "   ++ show (Set.toList $ disjStr br)  ++
               "\nDiamonds: "       ++ show (Set.toList $ diaStr br)   ++
               "\nExists: "         ++ show (Set.toList $ existStr br) ++
-              "\nNegations: "      ++ show (Set.toList $ negStr br)   ++
               "\nAts: "            ++ show (Set.toList $ atStr br)    ++
               "\nDowns: "          ++ show (Set.toList $ downStr br)  ++
               "\nDiff exists: "    ++ show (Set.toList $ diffStr br)  ++
@@ -199,7 +195,6 @@ instance ShowLatex Branch where
               "\nDisjunctions: "   ++ (putEol $ math $ show $ disjStr br)  ++
               "\nDiamonds: "       ++ (putEol $ math $ show $ diaStr br)   ++
               "\nExists: "         ++ (putEol $ math $ show $ existStr br) ++
-              "\nNegations: "      ++ (putEol $ math $ show $ negStr br)   ++
               "\nAts: "            ++ (putEol $ math $ show $ atStr br)    ++
               "\nDowns: "          ++ (putEol $ math $ show $ downStr br)  ++
               "\nDiff exists: "    ++ (putEol $ math $ show $ diffStr br)  ++
@@ -250,9 +245,9 @@ prettyShowMap_ dasMap valueShow separator
           $ Map.toList dasMap
 
 
-prettyShowMap_clashable :: Map.Map Formula (Bool,BranchingPrefixes) -> String
+prettyShowMap_clashable :: Map.Map Atom (Bool,BranchingPrefixes) -> String
 prettyShowMap_clashable dasMap
- = concat $ List.intersperse ", " $ map (\(f,(bo,bp)) -> (if bo then "" else "!") ++ show f ++ " " ++ bps_show bp)
+ = concat $ List.intersperse ", " $ map (\(a,(bo,bp)) -> (if bo then "" else "!") ++ show a ++ " " ++ bps_show bp)
           $ Map.toList dasMap
 
 
@@ -284,8 +279,8 @@ addFormula :: CmdLineParams -> Branch -> PrFormula -> Bool -> BranchInfo
 -- Case 1 :
 -- p : a (a nominal)
 --
-addFormula clp br f@(PrFormula pr newFormulaBprs f2@(PosLit (N (NomSymbol n)))) afterClassMerge
- | afterClassMerge = addFormulaBaseCase clp br f
+addFormula clp br f@(PrFormula pr newFormulaBprs f2@(Lit (PosLit (N (NomSymbol n))))) afterClassMerge
+ | afterClassMerge = addFormulaBaseCase br f
  | not afterClassMerge
    = result
      where classes = nomPrefClasses br
@@ -364,34 +359,34 @@ addFormula clp br pf@(PrFormula pr bprs (Box r f)) _
    where
      updatedBr_ = addToAugmentedPrefixes pr br
      br_ = if requireLocalFormulasTracking br
-            then let (BranchOK updatedBr) = addFormula2_withPrefToFormUpdate clp updatedBr_ pf
+            then let (BranchOK updatedBr) = addFormula2_withPrefToFormUpdate updatedBr_ pf
                  in
                  updatedBr
             else updatedBr_
 
 -- Case 1,75
 -- disjunction
-addFormula clp br pf@(PrFormula pr bprs disF@(Dis fs)) _    -- /!\ WIP /!\ -- todo, if full clash enabled, test it against all formulas ?
+addFormula clp br pf@(PrFormula pr bprs disF@(Dis fs)) _
  = if not $ unitProp clp
-    then addFormulaBaseCase clp br pf
-    else case reduceDisjunctionAgainstBranch clp br pr fs of
+    then addFormulaBaseCase br pf
+    else case reduceDisjunctionAgainstBranch br pr fs of
            Triviality                 -> BranchOK br
            Contradiction brps_clash   -> BranchClash br pr (bps_union bprs brps_clash) disF
-           Reduced new_bprs disjuncts -> addFormulaBaseCase clp br (PrFormula pr (bps_union bprs new_bprs) (Dis disjuncts))
+           Reduced new_bprs disjuncts -> addFormulaBaseCase br (PrFormula pr (bps_union bprs new_bprs) (Dis disjuncts))
 
 
 -- Case 2
 -- p : phi (not nominal)
 
-addFormula clp br f _
- = addFormulaBaseCase clp br f
+addFormula _ br f _
+ = addFormulaBaseCase br f
 
 
-addFormulaBaseCase :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
-addFormulaBaseCase clp br f@(PrFormula pr bprs f2)
+addFormulaBaseCase :: Branch -> PrFormula -> BranchInfo
+addFormulaBaseCase br f@(PrFormula pr bprs f2)
  = if requireLocalFormulasTracking br
-    then addFormula2_withPrefToFormUpdate clp newBr fToAdd
-    else addFormula2                      clp newBr fToAdd
+    then addFormula2_withPrefToFormUpdate newBr fToAdd
+    else addFormula2                      newBr fToAdd
    where
       (urfather,bprs2,newClasses) = getUrfatherAndDeps br (DS.Prefix pr)
       newBr = br{nomPrefClasses = newClasses}
@@ -627,18 +622,15 @@ addToAugmentedPrefixes pr br = br{incrPrs = (pr:incrPrs br)} -- this list never 
    to detect clashes, and store the new formula in the right sub-structure
 -}
 
-addFormula2_withPrefToFormUpdate :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
-addFormula2_withPrefToFormUpdate clp br pf@(PrFormula _ _ f)
- = addFormula2 clp updatedPrefToFormsBr pf -- TODO more readable flow
-    where updatedPrefToFormsBr
-             = if forInclusion br f
-                then addToPrefToForms br pf
-                else br
+addFormula2_withPrefToFormUpdate :: Branch -> PrFormula -> BranchInfo
+addFormula2_withPrefToFormUpdate br pf@(PrFormula _ _ f)
+ = addFormula2 updatedPrefToFormsBr pf
+    where updatedPrefToFormsBr = if forInclusion br f then addToPrefToForms br pf else br
 
 forInclusion :: Branch -> Formula -> Bool
 -- is the formula useful to calculate inclusion urfathers ?
-forInclusion br (PosLit atom) = forInclAtom br atom
-forInclusion br (NegLit atom) = forInclAtom br atom
+forInclusion br (Lit (PosLit atom)) = forInclAtom br atom
+forInclusion br (Lit (NegLit atom)) = forInclAtom br atom
 forInclusion _ (Con _) = False
 forInclusion _ (Dis _) = False
 forInclusion _ (At _ _) = False
@@ -650,7 +642,6 @@ forInclusion _ (A _) = False
 forInclusion _ (E _) = False
 forInclusion _ (D _) = False
 forInclusion _ (B _) = False
-forInclusion _ (Neg _) = False
 
 forInclAtom :: Branch -> Atom -> Bool
 forInclAtom _  Taut  = False
@@ -659,80 +650,58 @@ forInclAtom _  (P _) = True
 forInclAtom _  (V _) = error "forInclAtom statevar : should not happen"
 
 
-addFormula2 :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
-addFormula2 clp br pf@(PrFormula pr _ _) =
-   addFormula3 clp updatedBr pf
+addFormula2 :: Branch -> PrFormula -> BranchInfo
+addFormula2 br pf@(PrFormula pr _ _) =
+   addFormula3 updatedBr pf
  where updatedBr        = addToAugmentedPrefixes pr br
 
 
 -- now, either add the formula to a queue according to its type
 -- or add it in the atomic formulas (for literals)
-addFormula3 :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
-addFormula3 clp br pf@(PrFormula _ _ (Con _))
-           = modBranchCaseFC clp br pf $ \b f -> b{conjStr = Set.insert f (conjStr b)}
+addFormula3 :: Branch -> PrFormula -> BranchInfo
+addFormula3 br pf@(PrFormula _ _ (Con _))
+           = BranchOK $ br{conjStr = Set.insert pf (conjStr br)}
 
-addFormula3 clp br pf@(PrFormula _ _ (Dis _))
-           = modBranchCaseFC clp br pf $ \b f -> b{disjStr = Set.insert f (disjStr b)}
+addFormula3 br pf@(PrFormula _ _ (Dis _))
+           = BranchOK $ br{disjStr = Set.insert pf (disjStr br)}
 
-addFormula3  _  br (PrFormula _ _ (Box _ _))
-           = BranchOK br     -- [] formulas have been treated before
+addFormula3 br (PrFormula _ _ (Box _ _))
+           = BranchOK br -- '[]' formulas can arrive up to here because they have to be added to the inclusion set of prefixes
 
-addFormula3 clp br pf@(PrFormula _ _ (Dia _ _))
-           = modBranchCaseFC clp br pf $ \b f@(PrFormula pr _ f2)
-                                             -> b{diaStr  = if diaAlreadyDone b pr f2            -- diamond rule saturation
-                                                              then diaStr b
-                                                              else Set.insert f (diaStr b)}
-addFormula3 _ _ (PrFormula _ _ (A _))
+addFormula3 br pf@(PrFormula pr _ f2@(Dia _ _))
+           = BranchOK $ if diaAlreadyDone br pr f2
+                          then br                  -- diamond rule saturation
+                          else br{diaStr = Set.insert pf (diaStr br)}
+
+addFormula3 _ (PrFormula _ _ (A _))
            = error " 'A' formulas should have been treated before"
 
-addFormula3 _ _ (PrFormula _ _ (B _))
-           = error " 'B' formulas should have been treated before"   -- TODO elsewhere (addFormula (B f))
+addFormula3 _ (PrFormula _ _ (B _))
+           = error " 'B' formulas should have been treated before"
 
-addFormula3 clp br pf@(PrFormula _ _ (E _))
-           = modBranchCaseFC clp br pf $ \b f@(PrFormula _ _ f2) ->
-                                                  if existAlreadyDone b f2  -- exist rule saturation
-                                                   then b
-                                                   else b{existStr = Set.insert f (existStr b),
-                                                          existRlCh = Set.insert f2 (existRlCh b)}
+addFormula3 br pf@(PrFormula _ _ f2@(E _))
+           = BranchOK $ if existAlreadyDone br f2  -- exist rule saturation
+                         then br
+                         else br{ existStr = Set.insert pf (existStr br),
+                                 existRlCh = Set.insert f2 (existRlCh br)}
 
-addFormula3 clp br pf@(PrFormula _ _ (D _)) -- TODO saturation test ? or is it only useful afterwards? (i bet yes)
-           = modBranchCaseFC clp br pf $ \b f -> b{diffStr = Set.insert f (diffStr b)}
+addFormula3 br pf@(PrFormula _ _ (D _)) -- TODO saturation test ? or is it only useful afterwards? (i bet yes)
+           = BranchOK $ br{diffStr = Set.insert pf (diffStr br)}
 
-addFormula3 clp br pf@(PrFormula _ _ (At _ _))
-           = modBranchCaseFC clp br pf $ \b f@(PrFormula _ _ f2)  ->
-                                                  if atAlreadyDone b f2  -- at rule saturation
-                                                   then b
-                                                   else b{atStr = Set.insert f (atStr b),
-                                                          atRlCh = Set.insert f2 (atRlCh b)}
+addFormula3 br pf@(PrFormula _ _ f2@(At _ _))
+           = BranchOK $ if atAlreadyDone br f2  -- at rule saturation
+                         then br
+                         else br{ atStr = Set.insert pf (atStr br),
+                                 atRlCh = Set.insert f2 (atRlCh br)}
 
-addFormula3 _  _  (PrFormula _ _ (Atv _ _)) = error "addFormula Atv : should not happen"
+addFormula3 _  (PrFormula _ _ (Atv _ _)) = error "addFormula Atv : should not happen"
 
-addFormula3 clp br pf@(PrFormula _ _ (Down _ _))
-           = modBranchCaseFC clp br pf $ \b f@(PrFormula pr _ f2)
-                                             -> b{downStr = if downAlreadyDone b pr f2  -- down-arrow rule saturation
-                                                              then downStr b
-                                                              else Set.insert f (downStr b)}
+addFormula3 br pf@(PrFormula pr _ f2@(Down _ _))
+           = BranchOK $ if downAlreadyDone br pr f2
+                         then br                            -- down-arrow rule saturation
+                         else br{downStr =  Set.insert pf (downStr br)}
 
-
-addFormula3 clp br pf@(PrFormula _ _ (Neg _))
-           = modBranchCaseFC clp br pf $ \b f -> b{negStr  = Set.insert f (negStr b)}
-
-addFormula3 _ br f@(PrFormula _ _ (PosLit _))
-           = addAndUpdateMap br f
-
-addFormula3 _ br f@(PrFormula _ _ (NegLit _))
-           = addAndUpdateMap br f
-
-modBranchCaseFC :: CmdLineParams -> Branch -> PrFormula
-                   -> (Branch -> PrFormula -> Branch)
-                   -> BranchInfo
--- if full clash is enabled, we add all formulas to the clashable formulas
-modBranchCaseFC clp br f branchModifier
- =    -- (**) and when we get rid of full clash, still keep this function to update pref to forms
- if (fullClash clp) then case (addAndUpdateMap br f) of
-                          BranchOK bok             -> BranchOK $ branchModifier bok f
-                          bc@(BranchClash _ _ _ _) -> bc
-                    else  BranchOK $ branchModifier br f
+addFormula3 br (PrFormula pr bprs (Lit l)) = addAndUpdateMap br pr bprs l
 
 
 {-
@@ -867,7 +836,6 @@ remFormula br f@(PrFormula _ _ (Con _))        = br{conjStr =(Set.delete f (conj
 remFormula br f@(PrFormula _ _ (Dia _ _))      = br{diaStr  =(Set.delete f (diaStr br))}
 remFormula br f@(PrFormula _ _ (E _))          = br{existStr=(Set.delete f (existStr br))}
 remFormula br f@(PrFormula _ _ (Dis _))        = br{disjStr =(Set.delete f (disjStr br))}
-remFormula br f@(PrFormula _ _ (Neg _))        = br{negStr  =(Set.delete f (negStr br))}
 remFormula br f@(PrFormula _ _ (At _ _))       = br{atStr   =(Set.delete f (atStr br))}
 remFormula br f@(PrFormula _ _ (D _))          = br{diffStr =(Set.delete f (diffStr br))}
 remFormula br f@(PrFormula _ _ (Down _ _))     = br{downStr =(Set.delete f (downStr br))}
@@ -875,8 +843,8 @@ remFormula _    (PrFormula _ _ (Box _ _))      = error "that formula should neve
 remFormula _    (PrFormula _ _ (Atv _ _))      = error "that formula should never be deleted"
 remFormula _    (PrFormula _ _ (A _))          = error "that formula should never be deleted"
 remFormula _    (PrFormula _ _ (B _))          = error "that formula should never be deleted"
-remFormula _    (PrFormula _ _ (PosLit _))     = error "that formula should never be deleted"
-remFormula _    (PrFormula _ _ (NegLit _))     = error "that formula should never be deleted"
+remFormula _    (PrFormula _ _ (Lit (PosLit _))) = error "that formula should never be deleted"
+remFormula _    (PrFormula _ _ (Lit (NegLit _))) = error "that formula should never be deleted"
 
 
 {- chain blocking  -}
@@ -890,32 +858,28 @@ addParentPrefix br son father =  br{prefParent = Map.insert son father (prefPare
 
 data UpdateResult = UpdateSuccess Clashable_info | UpdateFailure BranchingPrefixes
 
-addAndUpdateMap :: Branch -> PrFormula -> BranchInfo
-addAndUpdateMap br (PrFormula pr bprs formula@(Neg f))
-  = case updateMap (clashStr br) pr f False bprs of
+addAndUpdateMap :: Branch -> Prefix -> BranchingPrefixes -> Literal -> BranchInfo
+addAndUpdateMap br pr bprs l
+  = case ( case l of PosLit a -> updateMap (clashStr br) pr bprs a True
+                     NegLit a -> updateMap (clashStr br) pr bprs a False ) of
      UpdateSuccess cs    -> BranchOK br{clashStr = cs}
-     UpdateFailure bprs2 -> BranchClash br pr bprs2 formula
-
-addAndUpdateMap br (PrFormula pr bprs f)
-  = case updateMap (clashStr br) pr f True bprs of
-     UpdateSuccess cs    -> BranchOK br{clashStr = cs}
-     UpdateFailure bprs2 -> BranchClash br pr bprs2 f
+     UpdateFailure bprs2 -> BranchClash br pr bprs2 (Lit l)
 
 
 -- Insert a piece of clashable information into all the clashable information of a branch
 
-updateMap :: Clashable_info -> Prefix -> Formula -> Bool -> BranchingPrefixes -> UpdateResult
-updateMap cs _   (PosLit Taut) True    _   = UpdateSuccess cs
-updateMap _  _   (PosLit Taut) False  bprs = UpdateFailure bprs
-updateMap cs pre (NegLit a)    bool   bprs = updateMap cs pre (PosLit a) (not bool) bprs
-updateMap cs pre f             bool   bprs
+updateMap :: Clashable_info -> Prefix -> BranchingPrefixes -> Atom -> Bool -> UpdateResult
+updateMap cs  _   _   Taut True  = UpdateSuccess cs
+updateMap _   _  bprs Taut False = UpdateFailure bprs
+updateMap cs pre bprs a bool
   = case Map.lookup pre cs of
-       Nothing            -> UpdateSuccess $ Map.insert pre (Map.singleton f (bool,bprs)) cs
-       Just slot          -> case updateClashableInfoSlot slot f bool bprs of
+       Nothing            -> UpdateSuccess $ Map.insert pre (Map.singleton a (bool,bprs)) cs
+       Just slot          -> case updateClashableInfoSlot slot a bool bprs of
                               Slot_UpdateSuccess updatedSlot -> UpdateSuccess $ Map.insert pre updatedSlot cs
                               Slot_UpdateFailure failureDeps -> UpdateFailure failureDeps
 
-type Clashable_info_slot = Map.Map Formula (Bool,BranchingPrefixes)
+
+type Clashable_info_slot = Map.Map Atom (Bool,BranchingPrefixes)
 data Slot_UpdateResult =   Slot_UpdateSuccess Clashable_info_slot                     -- updated slot
                          | Slot_UpdateFailure BranchingPrefixes                       -- list of sets of branching prefixes
 
@@ -936,19 +900,19 @@ clashableInfoSlotsUnions (cis1:cis2:tl)
 unionClashableInfoSlots :: Clashable_info_slot -> Clashable_info_slot -> Slot_UpdateResult
 unionClashableInfoSlots cis1 cis2
  = ucis_helper cis1 (Map.assocs cis2)
-    where ucis_helper :: Clashable_info_slot -> [(Formula,(Bool,BranchingPrefixes))] -> Slot_UpdateResult
-          ucis_helper cis f_b_bps_s =
+    where ucis_helper :: Clashable_info_slot -> [(Atom,(Bool,BranchingPrefixes))] -> Slot_UpdateResult
+          ucis_helper cis a_b_bps_s =
              let (updateStatus,clashing_bps_s)
-                                 = foldr (\(f,(bool,bps)) (upResult,clashingBps_s)
+                                 = foldr (\(a,(bool,bps)) (upResult,clashingBps_s)
                                               -> case upResult of
-                                                    Slot_UpdateSuccess cis_  ->  (updateClashableInfoSlot cis_ f bool bps, clashingBps_s      )
-                                                    Slot_UpdateFailure bps_s ->  (updateClashableInfoSlot cis f bool bps, bps_s:clashingBps_s)  -- we reuse the input Clashabe Info Slot
+                                                    Slot_UpdateSuccess cis_  ->  (updateClashableInfoSlot cis_ a bool bps, clashingBps_s      )
+                                                    Slot_UpdateFailure bps_s ->  (updateClashableInfoSlot cis a bool bps, bps_s:clashingBps_s)  -- we reuse the input Clashabe Info Slot
                                          )
-                                         (Slot_UpdateSuccess cis,[])   f_b_bps_s
+                                         (Slot_UpdateSuccess cis,[])   a_b_bps_s
                  result = case clashing_bps_s of
                               []    -> updateStatus                                    -- is 'success'
                               bps_s -> Slot_UpdateFailure $ findEarliestSet bps_s
-                                         where findEarliestSet bprs_s = minimumBy compareBPSets bprs_s
+                                         where findEarliestSet  bprs_s = minimumBy compareBPSets bprs_s
                                                compareBPSets bps1 bps2 = compare  (deps_min bps1) (deps_min bps2)
              in
                 result
@@ -956,16 +920,14 @@ unionClashableInfoSlots cis1 cis2
 
 -- Insert a piece of information in a clashable info slot
 
-updateClashableInfoSlot :: Clashable_info_slot -> Formula -> Bool -> BranchingPrefixes -> Slot_UpdateResult
-updateClashableInfoSlot cis (PosLit Taut) True   _   = Slot_UpdateSuccess cis
-updateClashableInfoSlot  _  (PosLit Taut) False bprs = Slot_UpdateFailure bprs
-updateClashableInfoSlot cis (NegLit a)    bool  bprs = updateClashableInfoSlot cis (PosLit a) (not bool) bprs
-updateClashableInfoSlot cis (Neg f)       bool  bprs = updateClashableInfoSlot cis f          (not bool) bprs
-updateClashableInfoSlot cis f             bool  bprs
- = case Map.lookup f cis of
-    Nothing            -> Slot_UpdateSuccess $ Map.insert f (bool,bprs) cis
+updateClashableInfoSlot :: Clashable_info_slot -> Atom -> Bool -> BranchingPrefixes -> Slot_UpdateResult
+updateClashableInfoSlot cis Taut True   _   = Slot_UpdateSuccess cis
+updateClashableInfoSlot  _  Taut False bprs = Slot_UpdateFailure bprs
+updateClashableInfoSlot cis a             bool  bprs  -- nominals, propositional symbols
+ = case Map.lookup a cis of
+    Nothing            -> Slot_UpdateSuccess $ Map.insert a (bool,bprs) cis
     Just (bool2,bprs2) -> if bool == bool2
-                           then Slot_UpdateSuccess $ Map.insert f (bool,bprs_to_keep) cis
+                           then Slot_UpdateSuccess $ Map.insert a (bool,bprs_to_keep) cis
                            else Slot_UpdateFailure $ bps_union bprs bprs2
                              where bprs_to_keep = if (deps_min bprs2) <  (deps_min bprs) then bprs2 else bprs
                                   -- if the same information is caused by an earlier
@@ -976,37 +938,32 @@ updateClashableInfoSlot cis f             bool  bprs
 addDepsToClashableSlot :: Slot_UpdateResult -> BranchingPrefixes -> Slot_UpdateResult
 addDepsToClashableSlot res_cis bps =
  case res_cis of
-  Slot_UpdateSuccess cis         ->  Slot_UpdateSuccess $ Map.map (\(f,currentBps) -> (f,bps_union currentBps bps)) cis
+  Slot_UpdateSuccess cis         ->  Slot_UpdateSuccess $ Map.map (\(a,currentBps) -> (a,bps_union currentBps bps)) cis
   failure@(Slot_UpdateFailure _) -> failure
 
 
 
-queryClashableSlot :: Branch -> Prefix -> Formula -> Maybe (Bool,BranchingPrefixes)
+queryClashableSlot :: Branch -> Prefix -> Literal -> Maybe (Bool,BranchingPrefixes)
 -- Output : Nothing = nevermind ; Just True = already there ; Just False = contrary there
 queryClashableSlot _ _ (PosLit Taut) = Just (True,bps_empty)
 queryClashableSlot _ _ (NegLit Taut) = Just (False,bps_empty)
 queryClashableSlot br pr (NegLit a)
   = do slot <- Map.lookup pr (clashStr br)
-       case Map.lookup (PosLit a) slot of
-         Nothing    -> Nothing
+       case Map.lookup a slot of
+         Nothing           -> Nothing
          Just (bool,bprs)  -> Just (not bool,bprs)
-queryClashableSlot br pr (Neg f)
+queryClashableSlot br pr (PosLit a)
   = do slot <- Map.lookup pr (clashStr br)
-       case Map.lookup f slot of
-         Nothing    -> Nothing
-         Just (bool,bprs)  -> Just (not bool,bprs)
-queryClashableSlot br pr f
-  = do slot <- Map.lookup pr (clashStr br)
-       case Map.lookup f slot of
-          Nothing       -> Nothing
-          Just (bool,bprs) -> Just (bool,bprs)
+       case Map.lookup a slot of
+         Nothing           -> Nothing
+         Just (bool,bprs)  -> Just (bool,bprs)
 
 
 
 data ReducedDisjunct = Triviality | Contradiction BranchingPrefixes | Reduced BranchingPrefixes [Formula]
 
-reduceDisjunctionAgainstBranch :: CmdLineParams -> Branch -> Prefix -> [Formula] -> ReducedDisjunct
-reduceDisjunctionAgainstBranch clp br pr fs = 
+reduceDisjunctionAgainstBranch :: Branch -> Prefix -> [Formula] -> ReducedDisjunct
+reduceDisjunctionAgainstBranch br pr fs =
          case foldr scanDisjunctAndTest (Just ( [] , bps_empty )) fs of
           Nothing                        ->  Triviality
           Just  (  []        , bprs )    ->  Contradiction bprs
@@ -1018,13 +975,12 @@ reduceDisjunctionAgainstBranch clp br pr fs =
            ur = getUrfather br (DS.Prefix pr)
            scanDisjunctAndTest :: Formula -> Maybe ([Formula],BranchingPrefixes) -> Maybe ([Formula],BranchingPrefixes)
            scanDisjunctAndTest       _                Nothing               =    Nothing
-           scanDisjunctAndTest     current     (Just (disjuncts,bprs_))     =
-            if (fullClash clp) || (case current of PosLit _ -> True ; NegLit _ -> True ;  _ -> False)
-             then case queryClashableSlot br ur current of
-                     Nothing            -> Just ((current:disjuncts),bprs_)
-                     Just (True,_)      -> Nothing
-                     Just (False,bprs2) -> Just (disjuncts,bps_union bprs_ bprs2)
-             else Just ((current:disjuncts),bprs_)
+           scanDisjunctAndTest    l@(Lit current) (Just (disjuncts,bprs_))    =
+             case queryClashableSlot br ur current of
+                Nothing            -> Just ((l:disjuncts),bprs_)
+                Just (True,_)      -> Nothing
+                Just (False,bprs2) -> Just (disjuncts,bps_union bprs_ bprs2)
+           scanDisjunctAndTest       f          (Just (disjuncts,bprs_))    =    Just ((f:disjuncts),bprs_)
 
 
 {-

@@ -9,7 +9,7 @@ import qualified HyLo.Model.Herbrand as H
 
 import qualified HyLo.Formula.NNF as NNF
 
-import HTab.Formula( Prefix, Formula (..), Atom (..), Rel,
+import HTab.Formula( Prefix, Atom (..), Rel,
                      NomSymbol(..), RelSymbol(..), PropSymbol(..), StateVar,
                      LanguageInfo(..) )
 import HTab.Branch( Branch(..), prefixes,
@@ -62,15 +62,12 @@ urfatherOrPrefixZero br (NomSymbol n) =
 
 prefixAndProps :: Branch -> [(Prefix,PropSymbol)]
 prefixAndProps br =
-  [(pr,p_) | (pr , PosLit (P p_)) <- prPosLitProp]
- where clashable = clashStr br
-       clashableRelevant = Map.filterWithKey (\k _ -> isInTheModel br k) clashable
-       prPosLitProp = filter isPosLitProp $ map fst $ filter (fst . snd) $ flattenDMap clashableRelevant
-
-isPosLitProp :: (Prefix,Formula) -> Bool
-isPosLitProp (_, PosLit (P _)) = True
-isPosLitProp _ = False
-
+  [(pr, p_) | (pr , P p_) <- prPosLitProp]
+ where clashable             = clashStr br
+       clashableRelevant     = Map.filterWithKey (\k _ -> isInTheModel br k) clashable
+       prPosLitProp          = filter (isPosLitProp . snd) $ map fst $ filter (fst . snd) $ flattenDMap clashableRelevant
+       isPosLitProp   (P _)  = True
+       isPosLitProp     _    = False
 
 unpackNomSymbol :: NomSymbol -> Int
 unpackNomSymbol (NomSymbol n) = n

@@ -12,7 +12,7 @@ import System.CPUTime( getCPUTime )
 
 
 import HTab.CommandLine( filename, maxtimeout, CmdLineParams, logState, genModel,
-                         configureMetrics,fullClash,quietMode, inclBlockGlobal, inclBlockChain,
+                         configureMetrics, quietMode, inclBlockGlobal, inclBlockChain,
                          immediateBlock )
 import HTab.Branch( Branch, BranchInfo(..),initialBranchStateFor,BranchMonad, BranchData(..),
                     emptyBranch, lastPref, BlockingMode(..) )
@@ -20,8 +20,8 @@ import HTab.Timeout( timeout )
 import HTab.Statistics( Statistics, initialStatisticsStateFor, printOutAllMetrics' )
 import HTab.Base( vPutStrLn )
 import HTab.Tableau( liftStats, tableau, OpenFlag(..) )
-import HTab.Formula( firstPrefixedFormula,nnf,formulaLanguageInfo, bps_empty,
-                     PrFormula(..), LanguageInfo(..), NomSymbol, Formula(..), Atom(..),
+import HTab.Formula( firstPrefixedFormula, formulaLanguageInfo, bps_empty,
+                     PrFormula(..), LanguageInfo(..), NomSymbol, Formula(..), Literal(..), Atom(..),
                      parse )
 import HTab.LatexOutput
 import HTab.ModelGen ( HerbrandModel, inducedModel )
@@ -49,11 +49,9 @@ runWithParams clp =
      let fLang = formulaLanguageInfo f
      latexInit clp
      --
-     let f2 = if (fullClash clp) then f else nnf f
+     f `seq` myPutStrLn ("\nInput:\n{ " ++ (show f) ++" }\nEnd of input\n\n");
      --
-     f `seq` myPutStrLn ("\nInput:\n{ " ++ (show f2) ++" }\nEnd of input\n\n");
-     --
-     let branchInfo = addFirstFormulas clp (emptyBranch fLang blockMode (immediateBlock clp)) f2 (languageNoms fLang)
+     let branchInfo = addFirstFormulas clp (emptyBranch fLang blockMode (immediateBlock clp)) f (languageNoms fLang)
                         where blockMode = case (inclBlockGlobal clp , inclBlockChain clp) of
                                              (False, True) -> InclusionBlockingChain
                                              ( _  ,   _  ) -> InclusionBlockingGlobal
@@ -113,8 +111,9 @@ tableauStart clp =
 addFirstFormulas :: CmdLineParams -> Branch -> Formula -> [NomSymbol] -> BranchInfo
 addFirstFormulas clp br_ f ns
  = applyMod clp br
-     ( BM_AddFormulas ( pf : ( map (\(p,n) ->  PrFormula p bps_empty (PosLit (N n))) $ zip [1..] ns))
+     ( BM_AddFormulas ( pf : ( map (\(p,n) ->  PrFormula p bps_empty (Lit $ PosLit $ N n)) $ zip [1..] ns))
      )
     where nbNs = length ns
           br = br_{lastPref = (lastPref br_) + nbNs}
           pf = firstPrefixedFormula f
+

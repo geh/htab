@@ -37,7 +37,6 @@ data CmdLineParams = CLP {
            maxtimeout      :: Integer,
            statsStr        :: String,
            semBranch       :: Bool,
-           fullClash       :: Bool,
            unitProp        :: Bool,
            latexOutput     :: Maybe FilePath,
            genModel        :: Maybe FilePath,
@@ -97,10 +96,6 @@ options =
           ["semantic-branching"]
           (ReqArg setSemanticBranching "[0|1]")
           "disable/enable semantic branching optimisation",
-   Option ['c']
-          ["full-clash"]
-          (ReqArg setFullClash "[0|1]")
-          "disable/enable full clash optimisation",
    Option ['u']
           ["unit-propagation"]
           (ReqArg setUnitProp "[0|1]")
@@ -155,9 +150,6 @@ setTimeout = (all isDigit) ?-> \s c -> return c{maxtimeout = read s}
 setSemanticBranching :: String -> CLPModifier
 setSemanticBranching = is0or1 ?-> \s c -> return c{semBranch = intToBool $ read s}
 
-setFullClash :: String -> CLPModifier
-setFullClash = is0or1 ?->  \s c -> return c{fullClash = intToBool $ read s}
-
 setUnitProp :: String -> CLPModifier
 setUnitProp = is0or1 ?->  \s c -> return c{unitProp = intToBool $ read s}
 
@@ -176,7 +168,6 @@ defaultParams = CLP {showHelp = False,
                      maxtimeout  = 0,
                      statsStr    = ":0:c",
                      semBranch   = True,
-                     fullClash   = False,
                      unitProp    = True,
                      genModel    = Nothing,
                      quietMode   = False,

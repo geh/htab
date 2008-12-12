@@ -8,7 +8,7 @@ applyMod
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 
-import HTab.Formula( Formula(..), PrFormula(..), neg, Atom(..),
+import HTab.Formula( Formula(..), PrFormula(..), neg, Atom(..), Literal(..),
                      BranchingPrefix,
                      bps_insert, prefixList, AccFormula(..),
                      Prefix, NomSymbol(..), PropSymbol(..),
@@ -22,7 +22,7 @@ import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewRelevantN
                     getUrfatherAndDeps, isNotBlocked, 
                     diaAlreadyDone, incPropSymbol, incNomSymbol,
                     ReducedDisjunct(..) )
-import HTab.CommandLine(CmdLineParams, semBranch, fullClash, unitProp)
+import HTab.CommandLine(CmdLineParams, semBranch, unitProp)
 import HTab.RuleMetadata(RuleId(..))
 import qualified HTab.DisjSet as DS
 import HTab.LatexOutput()
@@ -47,7 +47,6 @@ data Rule =  ConjRule   PrFormula [PrFormula]
            | DiaRule    PrFormula AccFormula PrFormula        -- creates a prefix
            | DisjRule   PrFormula [PrFormula]
            | SemBrRule  PrFormula [[PrFormula]]
-           | NegRule    PrFormula PrFormula
            | AtRule     PrFormula PrFormula
            | DownRule   PrFormula PrFormula PrFormula
            | DiffRule   (Prefix, BranchingPrefixes, Formula)
@@ -81,9 +80,6 @@ getMods _ (DisjRule todelete toadds) =
 getMods _ (SemBrRule todelete toaddss) =
  [[BM_RemFormula todelete, BM_AddFormulas toadds] | toadds <- toaddss]
 
-getMods _ (NegRule todelete toadd) =
- [[BM_RemFormula todelete, BM_AddFormulas [toadd]]]
-
 getMods _ (AtRule todelete toadd) =
  [[BM_RemFormula todelete, BM_AddFormulas [toadd]]]
 
@@ -99,8 +95,8 @@ getMods br (DiffRule (pr, bprs , f2)) =
   Nothing -> [[BM_RemFormula todelete,
                BM_CreateNewPref, BM_CreateNewProp,
                BM_AddFormulas [PrFormula newPref bprs f2,
-                               PrFormula newPref bprs (PosLit $ P newProp),
-                               PrFormula pr      bprs (NegLit $ P newProp)],
+                               PrFormula newPref bprs (Lit $ PosLit $ P newProp),
+                               PrFormula pr      bprs (Lit $ NegLit $ P newProp)],
                BM_AddDiffRuleCheck f2 newProp False
              ]]
               where newPref = getNewPref br
@@ -109,9 +105,9 @@ getMods br (DiffRule (pr, bprs , f2)) =
   Just (diffProp,doneTwiceBool)
           -> -- the "different place" for this D-formula has already been created
                    case (do clashSlot <- Map.lookup pr (clashStr br)
-                            Map.lookup (PosLit $ P diffProp) clashSlot ) of -- are we already at the "different place" ?
+                            Map.lookup (P diffProp) clashSlot ) of -- are we already at the "different place" ?
                     Nothing -> [[BM_RemFormula (PrFormula pr bprs (D f2)),
-                                 BM_AddFormulas [PrFormula pr bprs (Dis [(NegLit $ P diffProp), D f2])]
+                                 BM_AddFormulas [PrFormula pr bprs (Dis [Lit $ NegLit $ P diffProp, D f2])]
                                  -- no, so mark oneself as different from the "different place"; and when it is no longer true,
                                  -- we will generate another different world
                                ]]
@@ -128,8 +124,8 @@ getMods br (DiffRule (pr, bprs , f2)) =
                            [[BM_RemFormula todelete,
                              BM_CreateNewPref, BM_CreateNewProp,
                              BM_AddFormulas [PrFormula newPref (bps_union bprs bprs_) f2,
-                                             PrFormula newPref (bps_union bprs bprs_) (PosLit $ P newProp),
-                                             PrFormula pr      (bps_union bprs bprs_) (NegLit $ P newProp)],
+                                             PrFormula newPref (bps_union bprs bprs_) (Lit $ PosLit $ P newProp),
+                                             PrFormula pr      (bps_union bprs bprs_) (Lit $ NegLit $ P newProp)],
                              BM_AddDiffRuleCheck f2 newProp True
                            ]]
                       else [[BM_RemFormula todelete]] -- we are already marked as different from the "different place"
@@ -145,7 +141,6 @@ instance Show Rule where
    show (DiaRule   todelete _ _ )  = "diamond: " ++ (show todelete)
    show (DisjRule  todelete _ )    = "disjunction: " ++ (show todelete)
    show (SemBrRule todelete _ )    = "semantic branching: " ++ (show todelete)
-   show (NegRule   todelete _ )    = "negation: " ++ (show todelete)
    show (AtRule    todelete _ )    = "at: " ++ (show todelete)
    show (DownRule  todelete _ _ )  = "down: " ++ (show todelete)
    show (ExistModRule todelete _)  = "E: " ++ (show todelete)
@@ -158,7 +153,6 @@ instance ShowLatex Rule where
    showLatex (DiaRule    todelete _ _) = "diamond: " ++  (math $ showLatex todelete)
    showLatex (DisjRule   todelete _ )  = "disjunction: " ++ (math $ showLatex todelete)
    showLatex (SemBrRule  todelete _ )  = "semantic branching: " ++ (math $ showLatex todelete)
-   showLatex (NegRule    todelete _ )  = "negation: " ++ (math $ showLatex todelete)
    showLatex (AtRule     todelete _ )  = "at: " ++ (math $ showLatex todelete)
    showLatex (DownRule   todelete _ _) = "down: " ++ (math $ showLatex todelete)
    showLatex (ExistModRule todelete _) = "E: " ++ (math $ showLatex todelete)
@@ -174,7 +168,6 @@ ruleToId r = case r of
               (DiaRule _ _ _)    -> R_Dia
               (DisjRule _ _)     -> R_Disj
               (SemBrRule _ _)    -> R_SemBr
-              (NegRule _ _)      -> R_Neg
               (AtRule _ _ )      -> R_At
               (DownRule _ _ _)   -> R_Down
               (ExistModRule _ _) -> R_Exist
@@ -186,8 +179,7 @@ ruleToId r = case r of
 -- the first rule is the one that will be applied at the next tableau step
 applicableRules :: Branch -> CmdLineParams -> BranchingPrefix -> [Rule]
 applicableRules br clp d = -- d = current depth in the tableau (add as dependency for branching rules)
-    (if fullClash clp then (applicableNegRules br)      else [])
- ++                        (applicableConjRules br)
+                           (applicableConjRules br)
  ++                        (applicableAtRules br)
  ++                        (applicableDiaRules br)
  ++                        (applicableExistRules br)
@@ -208,9 +200,6 @@ applicableDisjRules clp br d = [disjRule clp f br d | f <- Set.toAscList $ disjS
 
 applicableSemBrRules :: CmdLineParams -> Branch -> BranchingPrefix -> [Rule]
 applicableSemBrRules clp br d = [semBrRule clp f br d | f <- Set.toAscList $ disjStr br]
-
-applicableNegRules :: Branch -> [Rule]
-applicableNegRules br = [negRule f br | f <- Set.toAscList $ negStr br]
 
 applicableAtRules :: Branch -> [Rule]
 applicableAtRules br = [atRule f br | f <- Set.toAscList $ atStr br]
@@ -308,7 +297,7 @@ disjRule :: CmdLineParams -> PrFormula -> Branch -> BranchingPrefix -> Rule
 disjRule clp df@(PrFormula pr bprs (Dis fs)) br d
   = if not $ unitProp clp
      then DisjRule df (breakDisj df d)
-     else case reduceDisjunctionAgainstBranch clp br pr fs of
+     else case reduceDisjunctionAgainstBranch br pr fs of
              Triviality                 -> DiscardRule df
              Contradiction brps_clash   -> ClashRule (bps_union bprs brps_clash) df
              Reduced new_bprs disjuncts -> DisjRule df (prefixList pr (bps_insert d $ bps_union bprs new_bprs) disjuncts)
@@ -321,7 +310,7 @@ semBrRule clp df@(PrFormula pr bprs (Dis fs)) br d
 -- = SemBrRule df (sbModList disjointed) where disjointed = breakDisj df d
  = if not $ unitProp clp
     then SemBrRule df (sbModList $ breakDisj df d)
-    else case reduceDisjunctionAgainstBranch clp br pr fs of
+    else case reduceDisjunctionAgainstBranch br pr fs of
             Triviality                 -> DiscardRule df
             Contradiction brps_clash   -> ClashRule (bps_union bprs brps_clash) df
             Reduced new_bprs disjuncts -> SemBrRule df (sbModList $ prefixList pr (bps_insert d $ bps_union bprs new_bprs) disjuncts)
@@ -356,30 +345,7 @@ atRule _ _ = error "atRule error"
 -- down
 downRule :: PrFormula -> Branch -> Rule
 downRule df@(PrFormula pr bprs (Down v f)) br
- = DownRule df (PrFormula pr bprs (replaceVar v newNom f)) (PrFormula pr bprs (PosLit (N newNom)))
+ = DownRule df (PrFormula pr bprs (replaceVar v newNom f)) (PrFormula pr bprs $ Lit $ PosLit $ N newNom)
     where newNom = getNewNom br
 downRule _ _ = error "downRule error"
-
--- negation
-negRule :: PrFormula -> Branch -> Rule
-negRule nf@(PrFormula pr bprs (Neg f)) _ = NegRule nf (PrFormula pr bprs (neg1 f))
-
-negRule _ _ = error $ "negRule error"
-
--- one-step negation
-neg1 :: Formula -> Formula
-neg1 (Con l)    = Dis (map neg l)
-neg1 (Dis l)    = Con (map neg l)
-neg1 (At n f)   = At n (neg f)
-neg1 (Atv v f)  = Atv v (neg f)
-neg1 (Down v f) = Down v (neg f)
-neg1 (Box n f)  = Dia n (neg f)
-neg1 (Dia n f)  = Box n (neg f)
-neg1 (A f)      = E (neg f)
-neg1 (E f)      = A (neg f)
-neg1 (D f)      = B (neg f)
-neg1 (B f)      = D (neg f)
-neg1 (Neg f)    = f
-neg1 (PosLit a) = NegLit a
-neg1 (NegLit a) = PosLit a
 

@@ -39,7 +39,6 @@ data RuleId = R_Conj    -- Conjunction
             | R_Dia     -- Diamond <r>
             | R_Disj    -- Disjunction
             | R_SemBr   -- Semantic Branching
-            | R_Neg     -- Negation rule
             | R_At      -- Satisfaction operator (@) rule
             | R_Down    -- Down-arrow rule
             | R_NegNom  -- Negation before nominal rule

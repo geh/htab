@@ -10,12 +10,12 @@ module HTab.Formula
 
 (PropSymbol(..), NomSymbol(..), StateVar(..),
 RelSymbol(..), Rel, Prefix,
-Formula(..), Atom(..),
+Formula(..), Literal(..), Atom(..),
 BranchingPrefix, BranchingPrefixes,
 bps_union, bps_unions, bps_insert, bps_member,
 bps_empty, deps_min, bps_show,
 PrFormula(..), AccFormula(..),
-LanguageInfo(..), nnf, neg,
+LanguageInfo(..), neg,
 box, diamond, at, atv, conj, disj, univMod, existMod,
 dUnivMod, dExistMod, taut, dimp, imp,
 prop, nom, formulaLanguageInfo, prefixList,
@@ -48,6 +48,9 @@ data Atom = Taut
           | V StateVar
   deriving(Eq, Ord)
 
+data Literal = PosLit Atom | NegLit Atom
+  deriving(Eq, Ord)
+
 instance Show Atom where
  show (Taut) = "T"
  show (N n) = show n
@@ -60,9 +63,16 @@ instance ShowLatex Atom where
  showLatex (P p) = show p
  showLatex (V v) = show v
 
+instance Show Literal where
+ show (PosLit a) = show a
+ show (NegLit a) =  "!(" ++ show a ++ ")"
+
+instance ShowLatex Literal where
+ showLatex (PosLit a) = show a
+ showLatex (NegLit a) = "\\neg(" ++ showLatex a ++ ")"
+
 data Formula
-     = PosLit Atom
-     | NegLit Atom
+     = Lit Literal
      | Con   [Formula]
      | Dis   [Formula]
      | At     NomSymbol Formula
@@ -74,19 +84,16 @@ data Formula
      | E      Formula
      | D      Formula
      | B      Formula
-     | Neg Formula
   deriving (Eq, Ord)
 
 instance Show Formula where
- show (PosLit a) = show a
- show (NegLit a) = "!(" ++ show a ++ ")"
+ show (Lit a)    = show a
  show (Con fs)   = "^" ++ (show fs)
  show (Dis fs)   = "v" ++ (show fs)
  show (At n f)   = "@" ++ (show n)  ++ (show f)
  show (Atv v f)  = "@" ++ (show v)  ++ (show f)
  show (Box r f)  = "[" ++ (show r)  ++ "]" ++ (show f)
  show (Dia r f)  = "<" ++ (show r)  ++ ">" ++ (show f)
- show (Neg f)    = "!" ++ show f
  show (A f)      = "A" ++ show f
  show (E f)      = "E" ++ show f
  show (D f)      = "D" ++ show f
@@ -94,15 +101,13 @@ instance Show Formula where
  show (Down v f) = "down " ++ show v ++ "." ++ show f
 
 instance ShowLatex Formula where
-   showLatex (PosLit a) = showLatex a
-   showLatex (NegLit a) = "\\neg(" ++ showLatex a ++ ")"
+   showLatex (Lit a)    = showLatex a
    showLatex (Con fs)   = "(" ++ (lseparate "\\wedge " fs) ++ ")"
    showLatex (Dis fs)   = "(" ++ (lseparate "\\vee " fs) ++ ")"
    showLatex (At n f)   = "@_{" ++ (show n) ++ "}"  ++ (showLatex f)
    showLatex (Atv v f)  = "@_{" ++ (show v) ++ "}"  ++ (showLatex f)
    showLatex (Box r f)  = "\\square_{" ++ (show r)  ++ "}" ++ (showLatex f)
    showLatex (Dia r f)  = "\\lozenge_{" ++ (show r)  ++ "}" ++ (showLatex f)
-   showLatex (Neg f)    = "\\neg" ++ showLatex f
    showLatex (A f)      = "A" ++ showLatex f
    showLatex (E f)      = "E" ++ showLatex f
    showLatex (D f)      = "D" ++ showLatex f
@@ -197,10 +202,10 @@ prop :: PropSymbol -> Formula
 nom  :: NomSymbol -> Formula
 svar :: StateVar -> Formula
 
-taut   = PosLit Taut
-prop p = PosLit (P p)
-nom  n = PosLit (N n)
-svar v = PosLit (V v)
+taut   = Lit $ PosLit Taut
+prop p = Lit $ PosLit $ P p
+nom  n = Lit $ PosLit $ N n
+svar v = Lit $ PosLit $ V v
 
 {- Modalities -}
 box, diamond :: RelSymbol -> Formula -> Formula
@@ -285,18 +290,6 @@ sortAndNub2 x y = case compare x y of
                     GT -> [y,x]
 
 
-{- Negation -}
-
-neg :: Formula -> Formula
--- zero-step negation
-
-neg (PosLit a)   = (NegLit a)
-neg (NegLit a)   = (PosLit a)
-neg (Neg f)      = f             -- avoids Neg Neg f
-neg f            = Neg f
-
---
-
 {- Accessibility Formulas -}
 -- of the kind i<>j with i and j prefixes
 data AccFormula = AccFormula BranchingPrefixes RelSymbol Prefix Prefix
@@ -311,50 +304,28 @@ instance ShowLatex AccFormula where
 
 {- recognize trivial formulas to trim conjunctions and disjunctions -}
 isTrue, isFalse :: Formula -> Bool
-isTrue (PosLit Taut)  = True
-isTrue  _             = False
-isFalse (NegLit Taut) = True
-isFalse  _            = False
+isTrue (Lit (PosLit Taut))  = True
+isTrue  _                   = False
+isFalse (Lit (NegLit Taut)) = True
+isFalse  _                  = False
 
-
-{-
- Put a formula into negative normal form
--}
--- negative normal form negation
-
-nnf :: Formula -> Formula
-nnf (Neg f) = nnf (neg2 f)
-nnf (Con l) = Con (map nnf l)
-nnf (Dis l) = Dis (map nnf l)
-nnf (At n f) = At n (nnf f)
-nnf (Atv v f) = Atv v (nnf f)
-nnf (Down v f) = Down v (nnf f)
-nnf (Box r f) = Box r (nnf f)
-nnf (Dia r f) = Dia r (nnf f)
-nnf (A f) = A (nnf f)
-nnf (E f) = E (nnf f)
-nnf (D f) = D (nnf f)
-nnf (B f) = B (nnf f)
-nnf (PosLit a) = PosLit a
-nnf (NegLit a) = NegLit a
 
 -- deep negation
 -- digs until it finds another negation, or an atom
-neg2 :: Formula -> Formula
-neg2 (Con l)      = Dis (map neg2 l)
-neg2 (Dis l)      = Con (map neg2 l)
-neg2 (At n f)     = At n (neg2 f)
-neg2 (Atv v f)    = Atv v (neg2 f)
-neg2 (Down v f)   = Down v (neg2 f)
-neg2 (Box r f)    = Dia r (neg2 f)
-neg2 (Dia r f)    = Box r (neg2 f)
-neg2 (A f)        = E (neg2 f)
-neg2 (E f)        = A (neg2 f)
-neg2 (D f)        = B (neg2 f)
-neg2 (B f)        = D (neg2 f)
-neg2 (PosLit a)   = (NegLit a)       --
-neg2 (NegLit a)   = (PosLit a)       -- cases where it doesn't go deeper
-neg2 (Neg f)      = f                --
+neg :: Formula -> Formula
+neg (Con l)      = Dis (map neg l)
+neg (Dis l)      = Con (map neg l)
+neg (At n f)     = At   n (neg f)
+neg (Atv v f)    = Atv  v (neg f)
+neg (Down v f)   = Down v (neg f)
+neg (Box r f)    = Dia  r (neg f)
+neg (Dia r f)    = Box  r (neg f)
+neg (A f)        = E (neg f)
+neg (E f)        = A (neg f)
+neg (D f)        = B (neg f)
+neg (B f)        = D (neg f)
+neg (Lit (PosLit a)) = Lit $ NegLit a --
+neg (Lit (NegLit a)) = Lit $ PosLit a -- cases where it doesn't go deeper
 
 data LanguageInfo = LanguageInfo {   languageNoms :: [NomSymbol], -- ascending list
                                     languageProps :: [PropSymbol], -- ascending list 
@@ -378,7 +349,6 @@ composeFold :: b
             -> (Formula -> b)
             -> (Formula -> b)
 composeFold zero combine g = \e -> case e of
-    Neg f      -> g f
     Con fs     -> foldr1 combine $ map g fs
     Dis fs     -> foldr1 combine $ map g fs
     Dia _ f    -> g f
@@ -396,7 +366,6 @@ composeMap :: (Formula -> Formula)
            -> (Formula -> Formula)
            -> (Formula -> Formula)
 composeMap baseCase g = \e -> case e of
-    Neg f      -> Neg (g f)
     Con fs     -> Con $ map g fs
     Dis fs     -> Dis $ map g fs
     Dia r f    -> Dia r (g f)
@@ -411,14 +380,14 @@ composeMap baseCase g = \e -> case e of
     f          -> baseCase f
 
 extractNominals :: Formula -> Set.Set NomSymbol
-extractNominals (PosLit (N n)) = Set.singleton n
-extractNominals (NegLit (N n)) = Set.singleton n
+extractNominals (Lit (PosLit (N n))) = Set.singleton n
+extractNominals (Lit (NegLit (N n))) = Set.singleton n
 extractNominals (At n f)       = Set.insert n $ extractNominals f
 extractNominals f              = composeFold Set.empty Set.union extractNominals f
 
 extractProps :: Formula -> Set.Set PropSymbol
-extractProps (PosLit (P p)) = Set.singleton p
-extractProps (NegLit (P p)) = Set.singleton p
+extractProps (Lit (PosLit (P p))) = Set.singleton p
+extractProps (Lit (NegLit (P p))) = Set.singleton p
 extractProps f              = composeFold Set.empty Set.union extractProps f
 
 hasUnivModality :: Formula -> Bool
@@ -432,8 +401,8 @@ hasDiffModality (D _)     = True  -- remove this line when formulas are NNF
 hasDiffModality f         = composeFold False (||) hasDiffModality f
 
 replaceVar :: StateVar -> NomSymbol -> Formula -> Formula
-replaceVar v n a@(PosLit (V v2)) = if v == v2 then PosLit (N n) else a
-replaceVar v n a@(NegLit (V v2)) = if v == v2 then NegLit (N n) else a
+replaceVar v n a@(Lit (PosLit (V v2))) = if v == v2 then Lit (PosLit (N n)) else a
+replaceVar v n a@(Lit (NegLit (V v2))) = if v == v2 then Lit (NegLit (N n)) else a
 replaceVar v n a@(Down v2 f) = if v == v2 then a   -- variable capture
                                           else Down v2 (replaceVar v n f)
 replaceVar v n (Atv v2 f)   = if v == v2 then At n (replaceVar v n f) else Atv v2 (replaceVar v n f)
