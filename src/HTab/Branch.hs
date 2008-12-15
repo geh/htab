@@ -309,8 +309,7 @@ addFormula clp br f@(PrFormula pr newFormulaBprs f2@(PosLit (N (NomSymbol n)))) 
            mClashableInfoSlots = map        (\exUrfather -> Map.lookup exUrfather (clashStr br))  involvedUrfathers
            clashableInfoSlots  = concatMap  (\(mSlot) -> maybe [] (\slot -> [slot]) mSlot )       mClashableInfoSlots
 
-           successOrFailure_newClashableSlotUrfather = addDepsToClashableSlot (clashableInfoSlotsUnions clashableInfoSlots) newFormulaBprs
-                           -- all of this is caused by the input formula of the function: add its dependencies
+           successOrFailure_newClashableSlotUrfather = addDepsToClashableSlot (clashableInfoSlotsUnions clashableInfoSlots) currentDependencies
 
            result = case successOrFailure_newClashableSlotUrfather of
                      Slot_UpdateFailure clashingDeps ->
