@@ -21,8 +21,8 @@ import HTab.Statistics( Statistics, initialStatisticsStateFor, printOutAllMetric
 import HTab.Base( vPutStrLn )
 import HTab.Tableau( liftStats, tableau, OpenFlag(..) )
 import HTab.Formula( firstPrefixedFormula, formulaLanguageInfo, bps_empty,
-                     PrFormula(..), LanguageInfo(..), NomSymbol, Formula(..), Literal(..), Atom(..),
-                     parse )
+                     PrFormula(..), LanguageInfo(..), NomSymbol, Formula(..),
+                     nom, parse )
 import HTab.LatexOutput
 import HTab.ModelGen ( HerbrandModel, inducedModel )
 
@@ -111,7 +111,7 @@ tableauStart clp =
 addFirstFormulas :: CmdLineParams -> Branch -> Formula -> [NomSymbol] -> BranchInfo
 addFirstFormulas clp br_ f ns
  = applyMod clp br
-     ( BM_AddFormulas ( pf : ( map (\(p,n) ->  PrFormula p bps_empty (Lit $ PosLit $ N n)) $ zip [1..] ns))
+     ( BM_AddFormulas ( pf : ( map (\(p,n) ->  PrFormula p bps_empty (nom n)) $ zip [1..] ns))
      )
     where nbNs = length ns
           br = br_{lastPref = (lastPref br_) + nbNs}

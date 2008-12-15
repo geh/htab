@@ -9,7 +9,7 @@
 
 module HTab.Branch
 (
-Branch(..), BranchMonad, createNewProp, createNewPref, createNewRelevantNom,BranchInfo(..),
+Branch(..), BranchMonad, createNewProp, createNewPref, createNewNomTestRelevance, BranchInfo(..),
 addFormulas, addFormula, addAccFormula, remFormula,
 addDiaRuleCheck, addDownRuleCheck, addDiffRuleCheck, addUnivConstraint,
 addParentPrefix,
@@ -41,7 +41,7 @@ import HTab.Formula
 import HTab.LatexOutputHelper
 
 import HTab.DMap
-import HTab.Base(moveInMap, almostCartesianProduct)
+import HTab.Base(moveInMap, almostCartesianProduct, doMemoize)
 
 data BranchInfo = BranchOK Branch |
                   BranchClash Branch Prefix BranchingPrefixes Formula
@@ -65,6 +65,7 @@ type Diff_Dia_rule_chart  = Map.Map Formula (PropSymbol,Bool)
        -- maps D(phi) formulas to the prop symbol used to differentiate
        -- the current prefix from the one used to contain (phi) , and to a boolean indicating if a second
        -- different world has already been created
+type DownVarRelevant_chart = Map.Map Formula Bool
 
 type Diff_Box_constraints = [(BranchingPrefixes,Formula,NomSymbol)]
 
@@ -100,6 +101,7 @@ data Branch = Branch {clashStr :: Clashable_info,
                         atRlCh :: At_rule_chart,     -- saturation of the @ rule
                      existRlCh :: Exist_rule_chart,  -- saturation of the exist rule
                       dDiaRlCh :: Diff_Dia_rule_chart, -- saturation of the diff diamond rule chart (D)
+             downVarRelevantCh :: DownVarRelevant_chart,
                       univCons :: Univ_constraints,
                       dBoxCons :: Diff_Box_constraints, -- constraints of the (B) modality
                       lastPref :: Prefix,
@@ -114,7 +116,7 @@ data Branch = Branch {clashStr :: Clashable_info,
                      blockMode :: Maybe BlockingMode,
               defaultBlockMode :: BlockingMode,
                     prefParent :: PrefixParent,
-             relevantNominals  :: Set.Set NomSymbol}
+              relevantNominals :: Set.Set NomSymbol}
 
 --
 
@@ -140,6 +142,7 @@ emptyBranch l blockingMode immediate =
                   atRlCh=Set.empty::At_rule_chart,
                   existRlCh=Set.empty::Exist_rule_chart,
                   dDiaRlCh = Map.empty::Diff_Dia_rule_chart,
+                  downVarRelevantCh = Map.empty::DownVarRelevant_chart,
                   dBoxCons = [],
                   univCons=[],
                   lastPref = 0,
@@ -174,6 +177,7 @@ instance Show Branch where
               "\n@ rule chart: "   ++ show (Set.toList $ atRlCh br) ++
               "\nExist rule chart:" ++ show (Set.toList $ existRlCh br) ++
               "\nDiff dia rule chart: "  ++ prettyShowMap_ (dDiaRlCh br) show "\n " ++
+              "\nDown var relevant chart: " ++ prettyShowMap_ (downVarRelevantCh br) show ", " ++
               "\nUniv constraints: "++ show (univCons br) ++
               "\nDiff box constraints: "++ show (dBoxCons br) ++
               "\nBiggest prefix: " ++ show (lastPref br) ++
@@ -205,6 +209,7 @@ instance ShowLatex Branch where
               "\n@ rule chart: "   ++ (putEol $ math $ show $ Set.toList $ atRlCh br)  ++
               "\nExist rule chart:" ++ (putEol $ math $ show $ Set.toList $ existRlCh br)  ++
               "\nDiff dia rule chart: "  ++ (putEol $ math $ show $ Map.toList $ dDiaRlCh br) ++
+              "\nDown var relevant chart: " ++ (putEol $ math $ show $ Map.toList $ downVarRelevantCh br) ++
               "\nUniv constraints: "++ (putEol $ math $ show $ univCons br) ++
               "\nDiff box constraints: "++ (putEol $ math $ show $ dBoxCons br) ++
               "\nBiggest prefix: " ++ (putEol $ show $ lastPref br) ++
@@ -217,7 +222,6 @@ instance ShowLatex Branch where
               "\nIncreased prefixes: " ++ (putEol $ show (incrPrs br)) ++
               "\nBlocking mode: " ++ show (blockMode br) ++
               "\nModel-relevant nominals : " ++ show (relevantNominals br)
-
 
 instance ShowLatex PrefToFormulas where
  showLatex ptf =
@@ -233,8 +237,6 @@ instance ShowLatex Clashable_info where
 genericSeparate :: (a -> String) ->  String -> [a] -> String
 genericSeparate _ _ [] = ""
 genericSeparate f s os = foldl1 (\a1 a2 -> (a1 ++ s ++ a2)) $ map f os
-
-
 
 prettyShowMap :: (Show x, Show y) => Map.Map x y -> String -> String
 prettyShowMap dasMap separator = prettyShowMap_ dasMap show separator
@@ -375,6 +377,11 @@ addFormula clp br pf@(PrFormula pr bprs disF@(Dis fs)) _
            Reduced new_bprs disjuncts -> addFormulaBaseCase br (PrFormula pr (bps_union bprs new_bprs) (Dis disjuncts))
 
 
+-- down-arrow
+addFormula _ br pf@(PrFormula _ _ (Down _ _)) _
+ = addFormulaBaseCase blockedBr pf
+    where blockedBr = br{blockMode = Just $ defaultBlockMode br}
+
 -- Case 2
 -- p : phi (not nominal)
 
@@ -508,11 +515,11 @@ isChainInclusionBlocked  br pr =
   go br ur ur
  where ur = getUrfather br (DS.Prefix pr)
        go :: Branch -> Prefix -> Prefix -> Bool
-       go br_ pr_ pr2_ = 
-          case fatherOf pr2_ of
+       go br_ initial current =
+          case fatherOf current of
             Nothing       -> False
-            Just ancestor -> if formulasIncluded br_ pr_ ancestor
-                              then True else go br_ pr_ ancestor
+            Just ancestor -> if formulasIncluded br_ initial ancestor
+                              then True else go br_ initial ancestor
        parentMap    = prefParent br
        fatherOf pr_ = Map.lookup pr_ parentMap
 
@@ -541,15 +548,15 @@ getModelRepresentative br pr
                                             = if parent == pr_ then pr_ else giu_get_oldest ium parent
                                                where parent = ium Map.! pr_
     Just InclusionBlockingChain  -> -- find the *oldest* inclusion urfather on the chain
-                                      go br nomUrfather pr Nothing
+                                      go br nomUrfather nomUrfather Nothing
                                      where nomUrfather = getUrfather br (DS.Prefix pr)
                                            go :: Branch -> Prefix -> Prefix -> Maybe Prefix -> Prefix
-                                           go br_ pr_ pr2_ mBlocker =
-                                              case fatherOf pr2_ of
-                                                Nothing       -> maybe pr_ id mBlocker
-                                                Just ancestor -> if formulasIncluded br_ pr_ ancestor
-                                                                  then go br_ pr_ ancestor (Just ancestor)
-                                                                  else go br_ pr_ ancestor mBlocker
+                                           go br_ initial current mBlocker =
+                                              case fatherOf current of
+                                                Nothing       -> maybe initial id mBlocker
+                                                Just ancestor -> if formulasIncluded br_ initial ancestor
+                                                                  then go br_ initial ancestor (Just ancestor)
+                                                                  else go br_ initial ancestor mBlocker
                                            parentMap    = prefParent br
                                            fatherOf pr_ = Map.lookup pr_ parentMap
 
@@ -701,6 +708,7 @@ addFormula3 br pf@(PrFormula pr _ f2@(Down _ _))
                          then br                            -- down-arrow rule saturation
                          else br{downStr =  Set.insert pf (downStr br)}
 
+
 addFormula3 br (PrFormula pr bprs (Lit l)) = addAndUpdateMap br pr bprs l
 
 
@@ -822,12 +830,14 @@ createNewNom br
     where newNom =  maybe (NomSymbol 0) incNomSymbol (lastNom br)
 
 
-createNewRelevantNom :: Branch -> Branch
-createNewRelevantNom br
+createNewNomTestRelevance :: Branch -> Formula -> Branch
+createNewNomTestRelevance br f
  = br{lastNom = Just newNom ,
-      relevantNominals = Set.insert newNom (relevantNominals br)
+      relevantNominals = if relevant then Set.insert newNom (relevantNominals br) else (relevantNominals br),
+      downVarRelevantCh = newDVRC
      }
-    where newNom =  maybe (NomSymbol 0) incNomSymbol (lastNom br)
+   where (relevant, newDVRC) = doMemoize checkIfVariableNegatedOnce f (downVarRelevantCh br)
+         newNom = maybe (NomSymbol 0) incNomSymbol (lastNom br)
 
 --
 
@@ -993,8 +1003,11 @@ hasUnivMod br = languageUniv $ inputLanguage br
 hasDiffMod :: Branch -> Bool
 hasDiffMod br = languageDiff $ inputLanguage br
 
+hasDownArrow :: Branch -> Bool
+hasDownArrow br = languageDown $ inputLanguage br
+
 requireLocalFormulasTracking :: Branch -> Bool
-requireLocalFormulasTracking br = (hasUnivMod br) || (hasDiffMod br) || (blockMode br /= Nothing)
+requireLocalFormulasTracking br = (hasUnivMod br) || (hasDiffMod br) || (hasDownArrow br) || (blockMode br /= Nothing)
 -- TODO directly put a boolean for this in BranchData , and an explicit one
 
 

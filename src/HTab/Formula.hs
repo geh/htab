@@ -19,7 +19,7 @@ LanguageInfo(..), neg,
 box, diamond, at, atv, conj, disj, univMod, existMod,
 dUnivMod, dExistMod, taut, dimp, imp,
 prop, nom, formulaLanguageInfo, prefixList,
-replaceVar,
+checkIfVariableNegatedOnce, replaceVar,
 firstPrefixedFormula,
 parse
 )
@@ -328,18 +328,25 @@ neg (Lit (PosLit a)) = Lit $ NegLit a --
 neg (Lit (NegLit a)) = Lit $ PosLit a -- cases where it doesn't go deeper
 
 data LanguageInfo = LanguageInfo {   languageNoms :: [NomSymbol], -- ascending list
-                                    languageProps :: [PropSymbol], -- ascending list 
+                                     relevantNoms :: [NomSymbol],
+                                    languageProps :: [PropSymbol], -- ascending list
                                      languageUniv :: Bool,
-                                     languageDiff :: Bool }
+                                     languageDiff :: Bool,
+                                     languageDown :: Bool }
  deriving (Show)
 
 formulaLanguageInfo :: Formula -> LanguageInfo
 formulaLanguageInfo f
  = LanguageInfo {   languageNoms = noms,
+                    relevantNoms = relNoms,
                    languageProps = props,
                     languageUniv = hasUnivModality f,
-                    languageDiff = hasDiffModality f }
-    where noms = Set.toAscList $ extractNominals f
+                    languageDiff = hasDiffModality f,
+                    languageDown = hasDownArrow f }
+
+    where (allNoms_,relNoms_) = extractNominals f
+          noms = Set.toAscList $ allNoms_
+          relNoms = Set.toAscList relNoms_
           props = Set.toAscList $ extractProps f
 
 -- composeXX functions follow the idea from
@@ -379,11 +386,16 @@ composeMap baseCase g = \e -> case e of
     Down x f   -> Down x (g f)
     f          -> baseCase f
 
-extractNominals :: Formula -> Set.Set NomSymbol
-extractNominals (Lit (PosLit (N n))) = Set.singleton n
-extractNominals (Lit (NegLit (N n))) = Set.singleton n
-extractNominals (At n f)       = Set.insert n $ extractNominals f
-extractNominals f              = composeFold Set.empty Set.union extractNominals f
+type AllNominals     = Set.Set NomSymbol
+type NegatedNominals = Set.Set NomSymbol
+
+extractNominals :: Formula -> (AllNominals, NegatedNominals)
+extractNominals (Lit (PosLit (N n))) = (Set.singleton n, Set.empty)
+extractNominals (Lit (NegLit (N n))) = (Set.singleton n, Set.singleton n)
+extractNominals (At n f)             = (Set.insert n noms, negNoms)
+                                        where (noms, negNoms) = extractNominals f
+extractNominals f                    = composeFold (Set.empty,Set.empty) unionTwoSets extractNominals f
+                                        where unionTwoSets (s1,s2) (s3,s4) = (Set.union s1 s3, Set.union s2 s4)
 
 extractProps :: Formula -> Set.Set PropSymbol
 extractProps (Lit (PosLit (P p))) = Set.singleton p
@@ -400,6 +412,10 @@ hasDiffModality (B _)     = True
 hasDiffModality (D _)     = True  -- remove this line when formulas are NNF
 hasDiffModality f         = composeFold False (||) hasDiffModality f
 
+hasDownArrow :: Formula -> Bool
+hasDownArrow (Down _ _ ) = True
+hasDownArrow f           = composeFold False (||) hasDownArrow f
+
 replaceVar :: StateVar -> NomSymbol -> Formula -> Formula
 replaceVar v n a@(Lit (PosLit (V v2))) = if v == v2 then Lit (PosLit (N n)) else a
 replaceVar v n a@(Lit (NegLit (V v2))) = if v == v2 then Lit (NegLit (N n)) else a
@@ -407,4 +423,14 @@ replaceVar v n a@(Down v2 f) = if v == v2 then a   -- variable capture
                                           else Down v2 (replaceVar v n f)
 replaceVar v n (Atv v2 f)   = if v == v2 then At n (replaceVar v n f) else Atv v2 (replaceVar v n f)
 replaceVar v n f = composeMap id (replaceVar v n) f
+
+checkIfVariableNegatedOnce :: Formula -> Bool
+checkIfVariableNegatedOnce (Down v_ f_)
+ = go v_ f_
+   where go :: StateVar -> Formula -> Bool
+         go v (Down v2 f)           = if v == v2 then False else go v f -- variable capture
+         go v (Lit (NegLit (V v2))) = v == v2
+         go v f                     = composeFold False (||) (go v) f
+
+checkIfVariableNegatedOnce _ = error "checkIfVariableNegatedOnce : only down-arrow formulas"
 

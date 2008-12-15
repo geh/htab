@@ -178,4 +178,8 @@ moveInMap m origKey destKey mergeF
                    Nothing -> m
                    Just origValue -> Map.insertWith mergeF destKey origValue prunedM
 
+doMemoize :: Ord a => (a -> b) -> a -> Map.Map a b -> (b, Map.Map a b)
+doMemoize f e m = case Map.lookup e m of
+                   Nothing     -> let result = f e in (result, Map.insert e result m)
+                   Just result -> (result, m)
 

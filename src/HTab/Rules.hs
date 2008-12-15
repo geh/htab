@@ -14,7 +14,7 @@ import HTab.Formula( Formula(..), PrFormula(..), neg, Atom(..), Literal(..),
                      Prefix, NomSymbol(..), PropSymbol(..),
                      replaceVar,
                      BranchingPrefixes, bps_union )
-import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewRelevantNom,
+import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewNomTestRelevance,
                     BranchInfo(..),
                     addFormulas, addAccFormula, remFormula,
                     addDiaRuleCheck, addDownRuleCheck, addDiffRuleCheck,
@@ -38,7 +38,7 @@ data BranchModification =    BM_AddFormulas   [PrFormula]
                            | BM_RemFormula PrFormula
                            | BM_CreateNewPref
                            | BM_CreateNewProp
-                           | BM_CreateNewRelevantNom
+                           | BM_CreateNewNomTestRelevance Formula
                            | BM_AddParentPrefix Prefix Prefix
                            | BM_Clash BranchingPrefixes PrFormula
 
@@ -86,7 +86,7 @@ getMods _ (AtRule todelete toadd) =
 getMods _ (DownRule todelete@(PrFormula pr _ f) toadd1 toadd2) =
  [[BM_RemFormula todelete,
    BM_AddFormulas [toadd1, toadd2],
-   BM_CreateNewRelevantNom,
+   BM_CreateNewNomTestRelevance f,
    BM_AddDownRuleCheck pr f
  ]]
 
@@ -228,16 +228,16 @@ applyMods _ br [] = BranchOK br
 
 
 applyMod :: CmdLineParams -> Branch -> BranchModification -> BranchInfo
-applyMod clp br (BM_AddFormulas li) = addFormulas clp br li False
-applyMod clp br (BM_AddAccFormula accFor) = addAccFormula clp br accFor
-applyMod  _  br (BM_AddDiaRuleCheck pr f) = BranchOK (addDiaRuleCheck br pr f)
-applyMod  _  br (BM_AddDownRuleCheck pr f) = BranchOK (addDownRuleCheck br pr f)
-applyMod clp br (BM_CreateNewPref) = createNewPref clp br
-applyMod  _  br (BM_CreateNewProp) = BranchOK $ createNewProp br
-applyMod  _  br (BM_CreateNewRelevantNom) = BranchOK $ createNewRelevantNom br
-applyMod  _  br (BM_RemFormula f) = BranchOK (remFormula br f)
-applyMod  _  br (BM_AddDiffRuleCheck f prop b) = BranchOK (addDiffRuleCheck br f prop b)
-applyMod  _  br (BM_AddParentPrefix son father) = BranchOK (addParentPrefix br son father)
+applyMod clp br (BM_AddFormulas li)              = addFormulas clp br li False
+applyMod clp br (BM_AddAccFormula accFor)        = addAccFormula clp br accFor
+applyMod  _  br (BM_AddDiaRuleCheck pr f)        = BranchOK (addDiaRuleCheck br pr f)
+applyMod  _  br (BM_AddDownRuleCheck pr f)       = BranchOK (addDownRuleCheck br pr f)
+applyMod clp br (BM_CreateNewPref)               = createNewPref clp br
+applyMod  _  br (BM_CreateNewProp)               = BranchOK $ createNewProp br
+applyMod  _  br (BM_CreateNewNomTestRelevance f) = BranchOK $ createNewNomTestRelevance br f
+applyMod  _  br (BM_RemFormula f)                = BranchOK (remFormula br f)
+applyMod  _  br (BM_AddDiffRuleCheck f prop b)   = BranchOK (addDiffRuleCheck br f prop b)
+applyMod  _  br (BM_AddParentPrefix son father)  = BranchOK (addParentPrefix br son father)
 applyMod  _  br (BM_Clash bprs (PrFormula pr bprs2 f)) = BranchClash br pr (bps_union bprs bprs2) f
 
 -- the actual rules and their helper functions
