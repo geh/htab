@@ -1,4 +1,4 @@
-.TH HTab 1 "2008-01-11" "HTab 1.3" "USER COMMANDS"
+.TH HTab 1 "2008-01-12" "HTab 1.4" "USER COMMANDS"
 .SH NAME
 HTab \- terminating tableaux system for hybrid logic
 .SH SYNOPSIS
@@ -6,9 +6,10 @@ HTab \- terminating tableaux system for hybrid logic
 [OPTIONS]
 .SH DESCRIPTION
 HTab is a theorem prover and model builder for
-the hybrid logic equipped with the universal
-modality, guaranteeing termination for all
-formulas of this language.
+the hybrid logic equipped with the down-arrow binder,
+and the universal and difference modalities. HTab is
+guaranteed to terminate for all formulas of the
+language without down-arrow binder.
 .SH OPTIONS
 .TP
 \-h, \-?, \--help
@@ -28,9 +29,6 @@ create a LaTeX file of the internals of the tableaux and the rules used during t
 .TP
 \-b [0|1], \--semantic-branching=[0|1]
 disable/enable semantic branching (default is enabled)
-.TP
-\-c [0|1], \--full-clash=[0|1]
-disable/enable full clash (default is disabled)
 .TP
 \-u [0|1], \--unit-propagation=[0|1]
 disable/enable unit propagation (default is enabled)
@@ -76,9 +74,9 @@ The default is ':0:c'
 configuration file
 .SH EXAMPLES
 .TP
-Run HTab without semantic branching nor full clash, and write the tableaux states into out.tex:
+Run HTab without semantic branching nor unit propagation, and write the tableaux states into out.tex:
 .B htab
-\-b 0 \-c 0 \-l out.tex \-f formula.frm
+\-b 0 \-u 0 \-l out.tex \-f formula.frm
 .PP
 .TP
 Run HTab in quiet mode:
@@ -93,39 +91,47 @@ FILE := 'begin' FORMULAS 'end'
 .br
 FORMULAS := FORMULA | FORMULA ';' FORMULAS
 .br
-FORMULA := 
+FORMULA :=
 .br
-  'true' | 'false' | 
+  'true' | 'false' |
 .br
-  PROPOSITION | NOMINAL |
+  PROPOSITION | NOMINAL | VARIABLE |
 .br
-  NEGATION | CONJUNCTION | DISJUNCTION | IMPLICATION | DIMPLICATION | 
+  NEGATION | CONJUNCTION | DISJUNCTION | IMPLICATION | DIMPLICATION |
 .br
   BOX | DIAMOND | AT | UBOX | UDIA | UDIFFBOX | UDIFFDIA |
 .br
   '(' FORMULA ')'
 .br
-PROPOSITION  := 'P' NUMBER | 'p' NUMBER 
+PROPOSITION  := 'P' NUMBER | 'p' NUMBER
 .br
-NOMINAL      := 'N' NUMBER | 'n' NUMBER 
+NOMINAL      := 'N' NUMBER | 'n' NUMBER
 .br
-RELATION     := 'R' NUMBER | 'r' NUMBER 
+VARIABLE     := 'X' NUMBER | 'x' NUMBER
 .br
-NEGATION     := '!' FORMULA | '-' FORMULA | '~' FORMULA 
+RELATION     := 'R' NUMBER | 'r' NUMBER
 .br
-CONJUNCTION  := FORMULA '&' FORMULA | FORMULA '^' FORMULA 
+NEGATION     := '!' FORMULA | '-' FORMULA | '~' FORMULA
 .br
-DISJUNCTION  := FORMULA '|' FORMULA | FORMULA 'v' FORMULA 
+CONJUNCTION  := FORMULA '&' FORMULA | FORMULA '^' FORMULA
 .br
-IMPLICATION  := FORMULA '->' FORMULA 
+DISJUNCTION  := FORMULA '|' FORMULA | FORMULA 'v' FORMULA
+.br
+IMPLICATION  := FORMULA '->' FORMULA
 .br 
-DIMPLICATION := FORMULA '<->' FORMULA 
+DIMPLICATION := FORMULA '<->' FORMULA
 .br
-BOX          := '[]' FORMULA | 'box' FORMULA | '[' RELATION ']' FORMULA 
+BOX          := '[]' FORMULA | 'box' FORMULA | '[' RELATION ']' FORMULA
 .br
-DIAMOND      := '<>' FORMULA | 'dia' FORMULA | '<' RELATION '>' FORMULA 
+DIAMOND      := '<>' FORMULA | 'dia' FORMULA | '<' RELATION '>' FORMULA
 .br
-AT           := NOMINAL ':' FORMULA | '@' NOMINAL FORMULA 
+AT :=
+.br
+ NOMINAL ':' FORMULA | '@' NOMINAL FORMULA  |
+.br
+ VARIABLE ':' FORMULA | '@' VARIABLE FORMULA
+.br
+DOWN         := 'down' VARIABLE '.' FORMULA | down '(' VARIABLE FORMULA ')'
 .br
 UBOX         := 'A' FORMULA
 .br
