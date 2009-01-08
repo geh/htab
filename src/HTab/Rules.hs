@@ -85,8 +85,8 @@ getMods _ (AtRule todelete toadd) =
 
 getMods _ (DownRule todelete@(PrFormula pr _ f) toadd1 toadd2) =
  [[BM_RemFormula todelete,
-   BM_AddFormulas [toadd1, toadd2],
-   BM_CreateNewNomTestRelevance f,
+   BM_CreateNewNomTestRelevance f,  --  order
+   BM_AddFormulas [toadd1, toadd2], -- matters
    BM_AddDownRuleCheck pr f
  ]]
 
