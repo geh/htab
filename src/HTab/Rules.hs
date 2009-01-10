@@ -8,7 +8,7 @@ applyMod
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 
-import HTab.Formula( Formula(..), PrFormula(..), neg, Atom(..), Literal(..),
+import HTab.Formula( Formula(..), PrFormula(..), showLess, neg, Atom(..), Literal(..),
                      BranchingPrefix,
                      bps_insert, prefixList, AccFormula(..),
                      Prefix, NomSymbol(..), PropSymbol(..),
@@ -137,16 +137,16 @@ getMods _ (DiscardRule todelete) =
 
 
 instance Show Rule where
-   show (ConjRule  todelete _ )    = "conjunction: " ++ (show todelete)
-   show (DiaRule   todelete _ _ )  = "diamond: " ++ (show todelete)
-   show (DisjRule  todelete _ )    = "disjunction: " ++ (show todelete)
-   show (SemBrRule todelete _ )    = "semantic branching: " ++ (show todelete)
-   show (AtRule    todelete _ )    = "at: " ++ (show todelete)
-   show (DownRule  todelete _ _ )  = "down: " ++ (show todelete)
-   show (ExistModRule todelete _)  = "E: " ++ (show todelete)
-   show (DiffRule todelete )       = "D: " ++ (show todelete)
-   show (DiscardRule todelete)     = "Discard: " ++ (show todelete)
-   show (ClashRule bprs f)         = "Clash: " ++ (show bprs) ++ " " ++ (show f)
+   show (ConjRule  todelete _ )    = "conjunction:        " ++ showLess todelete
+   show (DiaRule   todelete _ _ )  = "diamond:            " ++ showLess todelete
+   show (DisjRule  todelete _ )    = "disjunction:        " ++ showLess todelete
+   show (SemBrRule todelete _ )    = "semantic branching: " ++ showLess todelete
+   show (AtRule    todelete _ )    = "at:                 " ++ showLess todelete
+   show (DownRule  todelete _ _ )  = "down:               " ++ showLess todelete
+   show (ExistModRule todelete _)  = "E:                  " ++ showLess todelete
+   show (DiffRule (pr,_,f) )       = "D:                  " ++ show pr ++ ":" ++ show f
+   show (DiscardRule todelete)     = "Discard:            " ++ showLess todelete
+   show (ClashRule bprs f)         = "Clash:              " ++ show bprs ++ " " ++ show f
 
 instance ShowLatex Rule where
    showLatex (ConjRule   todelete _ )  = "conjunction: " ++  (math $ showLatex todelete)

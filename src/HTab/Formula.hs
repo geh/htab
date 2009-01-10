@@ -14,7 +14,7 @@ Formula(..), Literal(..), Atom(..),
 BranchingPrefix, BranchingPrefixes,
 bps_union, bps_unions, bps_insert, bps_member,
 bps_empty, deps_min, bps_show,
-PrFormula(..), AccFormula(..),
+PrFormula(..),showLess, AccFormula(..),
 LanguageInfo(..), neg,
 box, diamond, at, atv, conj, disj, univMod, existMod,
 dUnivMod, dExistMod, taut, dimp, imp,
@@ -65,7 +65,7 @@ instance ShowLatex Atom where
 
 instance Show Literal where
  show (PosLit a) = show a
- show (NegLit a) =  "!(" ++ show a ++ ")"
+ show (NegLit a) =  "!" ++ show a
 
 instance ShowLatex Literal where
  showLatex (PosLit a) = show a
@@ -184,6 +184,9 @@ instance Ord PrFormula where
 
 instance Show PrFormula where
  show (PrFormula pr bprs f) = (show pr)++":"++(show $ IntSet.toList bprs)++":"++(show f)
+
+showLess :: PrFormula -> String
+showLess (PrFormula pr _ f) = (show pr)++":"++(show f)
 
 instance ShowLatex PrFormula where
  showLatex (PrFormula pr bprs f) = (show pr)++"{:}"++(show $ IntSet.toList bprs)++"{:}"++(showLatex f)

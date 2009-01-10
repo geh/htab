@@ -180,15 +180,12 @@ instance Show Branch where
               "\nDown var relevant chart: " ++ prettyShowMap_ (downVarRelevantCh br) show ", " ++
               "\nUniv constraints: "++ show (univCons br) ++
               "\nDiff box constraints: "++ show (dBoxCons br) ++
-              "\nBiggest prefix: " ++ show (lastPref br) ++
-              "\nBiggest nominal: " ++ show (lastNom br) ++
-              "\nBiggest prop: " ++ show (lastProp br) ++
               "\nPrefix to branching prefixes: " ++ prettyShowMap_ (prToBrPrefs br) bps_show "\n " ++
               "\nPrefix to formulas: " ++ prettyShowMap_ (prefToForms br) (show . Set.toList) "\n " ++
+              "\nParent: " ++ prettyShowMap (prefParent br) ", " ++
               "\nInclusion urfather map: "  ++ show (inclUrMap br) ++
               "\nIncreased prefixes: " ++ show (incrPrs br) ++
               "\nBlocking mode: " ++ show (blockMode br) ++
-              "\nDefault Blocking mode: " ++ show (defaultBlockMode br) ++
               "\nPrefix-Nominal classes : " ++ prettyShowMap (nomPrefClasses br) ", " ++
               "\nModel-relevant nominals : " ++ show (relevantNominals br)
 
