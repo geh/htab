@@ -55,8 +55,8 @@ type At_structure     = Set.Set PrFormula
 type Down_structure   = Set.Set PrFormula
 type Exist_structure  = Set.Set PrFormula
 type Diff_structure   = Set.Set PrFormula
-type Acc_structure    = Map.Map Prefix (Map.Map Rel [(BranchingPrefixes,Prefix )])
-type Box_constraints  = Map.Map Prefix (Map.Map Rel [(BranchingPrefixes,Formula)])
+type Acc_structure    = DMap Prefix Rel [(BranchingPrefixes,Prefix )]
+type Box_constraints  = DMap Prefix Rel [(BranchingPrefixes,Formula)]
 
 type Dia_rule_chart    = Map.Map Prefix (Set.Set Formula)
 type Down_rule_chart   = Map.Map Prefix (Set.Set Formula)
