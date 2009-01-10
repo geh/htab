@@ -12,7 +12,7 @@ import HTab.Formula( Formula(..), PrFormula(..), showLess, neg, Atom(..), Litera
                      BranchingPrefix,
                      bps_insert, prefixList, AccFormula(..),
                      Prefix, NomSymbol(..), PropSymbol(..),
-                     replaceVar,
+                     nom, replaceVar,
                      BranchingPrefixes, bps_union )
 import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewNomTestRelevance,
                     BranchInfo(..),
@@ -20,7 +20,7 @@ import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewNomTestRe
                     addDiaRuleCheck, addDownRuleCheck, addDiffRuleCheck,
                     addParentPrefix, reduceDisjunctionAgainstBranch,
                     getUrfatherAndDeps, isNotBlocked, 
-                    diaAlreadyDone, incPropSymbol, incNomSymbol,
+                    diaAlreadyDone, downAlreadyDone, incPropSymbol, incNomSymbol,
                     ReducedDisjunct(..) )
 import HTab.CommandLine(CmdLineParams, semBranch, unitProp)
 import HTab.RuleMetadata(RuleId(..))
@@ -344,8 +344,10 @@ atRule _ _ = error "atRule error"
 
 -- down
 downRule :: PrFormula -> Branch -> Rule
-downRule df@(PrFormula pr bprs (Down v f)) br
- = DownRule df (PrFormula pr bprs (replaceVar v newNom f)) (PrFormula pr bprs $ Lit $ PosLit $ N newNom)
+downRule df@(PrFormula pr bprs f1@(Down v f)) br
+ = if (downAlreadyDone br pr f1)
+    then DiscardRule df
+    else DownRule df (PrFormula pr bprs (replaceVar v newNom f)) (PrFormula pr bprs $ nom newNom)
     where newNom = getNewNom br
 downRule _ _ = error "downRule error"
 

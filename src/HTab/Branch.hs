@@ -19,7 +19,8 @@ addZeroInPath,incPathHead,prefixes,
 reduceDisjunctionAgainstBranch,
 getUrfather, getUrfatherAndDeps, isInTheModel,
 getModelRepresentative, hasUnivMod, hasDiffMod, isNotBlocked,
-calculateStepInfo, BlockingMode(..), diaAlreadyDone, incPropSymbol, incNomSymbol,
+calculateStepInfo, BlockingMode(..), diaAlreadyDone,
+downAlreadyDone, incPropSymbol, incNomSymbol,
 ReducedDisjunct(..)
 ) where
 
