@@ -11,10 +11,10 @@ module HTab.Branch
 (
 Branch(..), BranchMonad, createNewProp, createNewPref, createNewNomTestRelevance, BranchInfo(..),
 addFormulas, addFormula, addAccFormula, remFormula,
-addDiaRuleCheck, addDownRuleCheck, addDiffRuleCheck, addUnivConstraint,
+addDiaRuleCheck, addDownRuleCheck, addDiffRuleCheck,
 addParentPrefix,
 BranchData(..),branch_depth,
-emptyBranch,initialBranchStateFor,getCLParams,
+emptyBranch,initialBranchStateFor,
 addZeroInPath,incPathHead,prefixes,
 reduceDisjunctionAgainstBranch,
 getUrfather, getUrfatherAndDeps, isInTheModel,
@@ -275,10 +275,8 @@ addFormulas clp br (hd:tl) afterClassMerge
 addFormulas _ br [] _ = BranchOK br
 
 
+-- 3 main cases : adding a positive nominal, adding a disjunction, and otherwise.
 addFormula :: CmdLineParams -> Branch -> PrFormula -> Bool -> BranchInfo
--- Case 1 :
--- p : a (a nominal)
---
 addFormula clp br f@(PrFormula pr newFormulaBprs f2@(Lit (PosLit (N (NomSymbol n))))) afterClassMerge
  | afterClassMerge = addFormulaBaseCase clp br f
  | not afterClassMerge
@@ -342,7 +340,6 @@ addFormula clp br f@(PrFormula pr newFormulaBprs f2@(Lit (PosLit (N (NomSymbol n
                          in
                              addFormulas clp brUpdated nubbedNewFormulas True
 
--- Case 1,5
 -- if Unit Propagation enabled : try to reduce disjunction
 addFormula clp br pf@(PrFormula pr bprs disF@(Dis fs)) _
  = if not $ unitProp clp
@@ -352,12 +349,8 @@ addFormula clp br pf@(PrFormula pr bprs disF@(Dis fs)) _
            Contradiction brps_clash   -> BranchClash br pr (bps_union bprs brps_clash) disF
            Reduced new_bprs disjuncts -> addFormulaBaseCase clp br (PrFormula pr (bps_union bprs new_bprs) (Dis disjuncts))
 
--- Case 2
--- p : phi (not nominal)
-
 addFormula clp br f _
  = addFormulaBaseCase clp br f
-
 
 addFormulaBaseCase :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
 addFormulaBaseCase clp br f@(PrFormula pr bprs f2)
@@ -368,6 +361,63 @@ addFormulaBaseCase clp br f@(PrFormula pr bprs f2)
       fToAdd = if urfather == pr -- always the case if we are in the modal language
                 then f
                 else (PrFormula urfather (bps_union bprs bprs2) f2)
+
+addFormula2 :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
+addFormula2 clp br pf@(PrFormula pr _ f) =
+   addFormula3 clp updatedBr pf
+ where
+     br' = if requireLocalFormulasTracking br && forInclusion br f
+             then addToPrefToForms br pf
+             else br
+     updatedBr  = addToAugmentedPrefixes pr br'
+
+addFormula3 :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
+addFormula3 _ br pf@(PrFormula _ _ (Con _))
+           = BranchOK $ br{conjStr = Set.insert pf (conjStr br)}
+
+addFormula3 _ br pf@(PrFormula _ _ (Dis _))
+           = BranchOK $ br{disjStr = Set.insert pf (disjStr br)}
+
+addFormula3 clp br (PrFormula pr bprs (Box r f))
+           = addBoxConstraint clp br pr r f bprs
+
+addFormula3 _ br pf@(PrFormula pr _ f2@(Dia _ _))
+           = BranchOK $ if diaAlreadyDone br pr f2
+                          then br                  -- diamond rule saturation
+                          else br{diaStr = Set.insert pf (diaStr br)}
+
+addFormula3 clp br (PrFormula _ bprs (A f))
+           = addUnivConstraint clp (block br) bprs f
+
+addFormula3 clp br (PrFormula pr bprs (B f))
+           = addDiffUnivConstraint clp (block br) bprs f pr
+
+addFormula3 _ br pf@(PrFormula _ _ f2@(E _))
+           = BranchOK $ if existAlreadyDone br f2  -- exist rule saturation
+                         then br
+                         else br{ existStr = Set.insert pf (existStr br),
+                                 existRlCh = Set.insert f2 (existRlCh br)}
+
+addFormula3 _ br pf@(PrFormula _ _ (D _))
+           = BranchOK $ br{diffStr = Set.insert pf (diffStr br)}
+
+addFormula3 _ br pf@(PrFormula _ _ f2@(At _ _))
+           = BranchOK $ if atAlreadyDone br f2  -- at rule saturation
+                         then br
+                         else br{ atStr = Set.insert pf (atStr br),
+                                 atRlCh = Set.insert f2 (atRlCh br)}
+
+addFormula3 _ _ (PrFormula _ _ (Atv _ _)) = error "addFormula Atv : should not happen"
+
+addFormula3 _ br pf@(PrFormula pr _ f2@(Down _ _))
+           = BranchOK $ block $ if downAlreadyDone br pr f2
+                                 then br                            -- down-arrow rule saturation
+                                 else br{downStr =  Set.insert pf (downStr br)}
+
+addFormula3 _ br (PrFormula pr bprs (Lit l)) = addAndUpdateMap br pr bprs l
+
+
+{-    helper functions for equivalence class merge     -}
 
 nubAndMergeDeps :: [PrFormula] -> [PrFormula]
 -- Rationale : because of the equivalence classes, a same formula can be added to a branch
@@ -415,9 +465,7 @@ getUrfatherAndDeps br p =
 findDeps :: Branch -> Prefix -> BranchingPrefixes
 findDeps br pr = Map.findWithDefault bps_empty pr (prToBrPrefs br)
 
-{-
-   box-related constraints
--}
+{-     box-related constraints     -}
 
 newFormulasToSend :: BranchingPrefixes -> Map.Map Rel [(BranchingPrefixes,Formula)] -> Map.Map Rel [(BranchingPrefixes,Prefix)] -> [PrFormula]
 newFormulasToSend deps mapBox mapAcc
@@ -464,11 +512,7 @@ addAccFormula clp br (AccFormula bprs (RelSymbol r) nonRepresentativeP1 p2)
 
 addAccFormula _ _ (AccFormula _ (InvRelSymbol _) _ _ ) = error "inverse modality not handled"
 
-
-{-
- functions related to the universal modality and the difference modality
--}
-
+{-  functions related to blocking conditions and model building -}
 
 isNotBlocked :: Branch -> Prefix -> Bool
 isNotBlocked br pr =
@@ -578,38 +622,8 @@ formulasIncluded :: Branch -> Prefix -> Prefix-> Bool
 formulasIncluded br p1 p2 = Set.isSubsetOf (formulasOf p1) (formulasOf p2)
  where formulasOf p = Map.findWithDefault Set.empty p (prefToForms br)
 
-
-{-
-  Function that does everything needed to be done before each step of the tableaux calculus
-  (essentially urfather calculation)
--}
-
-calculateStepInfo :: Branch -> Branch
-calculateStepInfo = wipeAugmentedPrefixes . calculateInclusionUrfathers
-
-wipeAugmentedPrefixes :: Branch -> Branch
-wipeAugmentedPrefixes br = br{incrPrs=[]}
-
-addToAugmentedPrefixes :: Prefix -> Branch -> Branch
-addToAugmentedPrefixes pr br = br{incrPrs = (pr:incrPrs br)} -- this list never gets too big, no need to nub it
-
-
-{-
-   "add formula(s)" functions, that update the "clashable formulas"
-   to detect clashes, and store the new formula in the right sub-structure
--}
-
-addFormula2 :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
-addFormula2 clp br pf@(PrFormula pr _ f) =
-   addFormula3 clp updatedBr pf
- where
-     br' = if requireLocalFormulasTracking br && forInclusion br f
-             then addToPrefToForms br pf
-             else br
-     updatedBr  = addToAugmentedPrefixes pr br'
-
-forInclusion :: Branch -> Formula -> Bool
 -- is the formula useful to calculate inclusion urfathers ?
+forInclusion :: Branch -> Formula -> Bool
 forInclusion br (Lit (PosLit atom)) = forInclAtom br atom
 forInclusion br (Lit (NegLit atom)) = forInclAtom br atom
 forInclusion _ (Con _) = False
@@ -630,61 +644,22 @@ forInclAtom br (N n) = Set.member n (relevantNominals br)
 forInclAtom _  (P _) = True
 forInclAtom _  (V _) = error "forInclAtom statevar : should not happen"
 
-
--- now, either add the formula to a queue according to its type
--- or add it in the atomic formulas (for literals)
-addFormula3 :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
-addFormula3 _ br pf@(PrFormula _ _ (Con _))
-           = BranchOK $ br{conjStr = Set.insert pf (conjStr br)}
-
-addFormula3 _ br pf@(PrFormula _ _ (Dis _))
-           = BranchOK $ br{disjStr = Set.insert pf (disjStr br)}
-
-addFormula3 clp br (PrFormula pr bprs (Box r f))
-           = addBoxConstraint clp br pr r f bprs
-
-addFormula3 _ br pf@(PrFormula pr _ f2@(Dia _ _))
-           = BranchOK $ if diaAlreadyDone br pr f2
-                          then br                  -- diamond rule saturation
-                          else br{diaStr = Set.insert pf (diaStr br)}
-
-addFormula3 clp br (PrFormula _ bprs (A f))
-           = addUnivConstraint clp (block br) bprs f
-
-addFormula3 clp br (PrFormula pr bprs (B f))
-           = addDiffUnivConstraint clp (block br) bprs f pr
-
-addFormula3 _ br pf@(PrFormula _ _ f2@(E _))
-           = BranchOK $ if existAlreadyDone br f2  -- exist rule saturation
-                         then br
-                         else br{ existStr = Set.insert pf (existStr br),
-                                 existRlCh = Set.insert f2 (existRlCh br)}
-
-addFormula3 _ br pf@(PrFormula _ _ (D _))
-           = BranchOK $ br{diffStr = Set.insert pf (diffStr br)}
-
-addFormula3 _ br pf@(PrFormula _ _ f2@(At _ _))
-           = BranchOK $ if atAlreadyDone br f2  -- at rule saturation
-                         then br
-                         else br{ atStr = Set.insert pf (atStr br),
-                                 atRlCh = Set.insert f2 (atRlCh br)}
-
-addFormula3 _ _ (PrFormula _ _ (Atv _ _)) = error "addFormula Atv : should not happen"
-
-addFormula3 _ br pf@(PrFormula pr _ f2@(Down _ _))
-           = BranchOK $ block $ if downAlreadyDone br pr f2
-                                 then br                            -- down-arrow rule saturation
-                                 else br{downStr =  Set.insert pf (downStr br)}
-
-addFormula3 _ br (PrFormula pr bprs (Lit l)) = addAndUpdateMap br pr bprs l
+addParentPrefix :: Branch -> Prefix -> Prefix -> Branch
+addParentPrefix br son father =  br{prefParent = Map.insert son father (prefParent br)}
 
 
-{-
-   other modifications that can be done by a rule application
--}
+{-     book-keeping that needs to be done before each step of the tableaux calculus     -}
 
+calculateStepInfo :: Branch -> Branch
+calculateStepInfo = wipeAugmentedPrefixes . calculateInclusionUrfathers
 
---
+wipeAugmentedPrefixes :: Branch -> Branch
+wipeAugmentedPrefixes br = br{incrPrs=[]}
+
+addToAugmentedPrefixes :: Prefix -> Branch -> Branch
+addToAugmentedPrefixes pr br = br{incrPrs = (pr:incrPrs br)}
+
+{-     modifications done by rule application     -}
 
 addDiaRuleCheck :: Branch -> Prefix -> Formula -> Branch
 addDiaRuleCheck br pr f =
@@ -699,7 +674,6 @@ diaAlreadyDone b p f@(Dia _ _) =
  where ur = getUrfather b (DS.Prefix p)
 
 diaAlreadyDone _ _ _ = error "dia already done : wrong formula kind"
-
 
 --
 
@@ -716,7 +690,6 @@ downAlreadyDone b p f@(Down _ _) =
  where ur = getUrfather b (DS.Prefix p)
 
 downAlreadyDone _ _ _ = error "down already done : wrong formula kind"
-
 
 --
 
@@ -824,14 +797,7 @@ remFormula _    (PrFormula _ _ (Lit (PosLit _))) = error "that formula should ne
 remFormula _    (PrFormula _ _ (Lit (NegLit _))) = error "that formula should never be deleted"
 
 
-{- chain blocking  -}
-
-addParentPrefix :: Branch -> Prefix -> Prefix -> Branch
-addParentPrefix br son father =  br{prefParent = Map.insert son father (prefParent br)}
-
-{-
-  Functions to update the "clashable information" map
--}
+{-     functions to handle the "clashable information", ie literals associated to prefixes     -}
 
 data UpdateResult = UpdateSuccess Clashable_info | UpdateFailure BranchingPrefixes
 
@@ -936,6 +902,7 @@ queryClashableSlot br pr (PosLit a)
          Just (bool,bprs)  -> Just (bool,bprs)
 
 
+{-     function used for unit propagation     -}
 
 data ReducedDisjunct = Triviality | Contradiction BranchingPrefixes | Reduced BranchingPrefixes [Formula]
 
@@ -960,9 +927,7 @@ reduceDisjunctionAgainstBranch br pr fs =
            scanDisjunctAndTest       f          (Just (disjuncts,bprs_))    =    Just ((f:disjuncts),bprs_)
 
 
-{-
-     other functions
--}
+{-     other functions     -}
 block :: Branch -> Branch
 block br = br{blockMode = Just $ defaultBlockMode br }
 
@@ -984,9 +949,7 @@ prefixes :: Branch -> [Prefix]
 prefixes br = [0..(lastPref br)]
 
 
-{-
-    Monad related stuff
--}
+{-      Monad related stuff      -}
 
 data BranchData = BranchData { branch_info :: BranchInfo,
                                branch_clp :: CmdLineParams,
@@ -994,21 +957,8 @@ data BranchData = BranchData { branch_info :: BranchInfo,
 
 type BranchMonad a = StateT BranchData (StateT Statistics IO) a
 
-
---
-
 initialBranchStateFor :: (MonadState BranchData m) =>  (m a -> BranchData -> b) -> BranchData -> m a -> b
 initialBranchStateFor f bd = flip f bd
-
---
-
-getCLParams :: BranchMonad CmdLineParams
-getCLParams = do bd <- get
-                 return (branch_clp bd)
-
-
--- functions to be used with " modify "
-
 
 addZeroInPath :: BranchData -> BranchData
 addZeroInPath bd = bd{branch_path=(0:(branch_path bd))}
