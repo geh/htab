@@ -516,7 +516,8 @@ isChainInclusionBlocked  br pr =
        go br_ initial current =
           case fatherOf current of
             Nothing       -> False
-            Just ancestor -> if formulasIncluded br_ initial ancestor
+            Just ancestor -> let urAncestor = getUrfather br (DS.Prefix ancestor) in
+                             if formulasIncluded br_ initial urAncestor
                               then True else go br_ initial ancestor
        parentMap    = prefParent br
        fatherOf pr_ = Map.lookup pr_ parentMap
@@ -552,8 +553,9 @@ getModelRepresentative br pr
                                            go br_ initial current mBlocker =
                                               case fatherOf current of
                                                 Nothing       -> maybe initial id mBlocker
-                                                Just ancestor -> if formulasIncluded br_ initial ancestor
-                                                                  then go br_ initial ancestor (Just ancestor)
+                                                Just ancestor -> let urAncestor = getUrfather br (DS.Prefix ancestor) in
+                                                                 if formulasIncluded br_ initial urAncestor
+                                                                  then go br_ initial ancestor (Just urAncestor)
                                                                   else go br_ initial ancestor mBlocker
                                            parentMap    = prefParent br
                                            fatherOf pr_ = Map.lookup pr_ parentMap
