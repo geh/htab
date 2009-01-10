@@ -280,7 +280,7 @@ addFormula :: CmdLineParams -> Branch -> PrFormula -> Bool -> BranchInfo
 -- p : a (a nominal)
 --
 addFormula clp br f@(PrFormula pr newFormulaBprs f2@(Lit (PosLit (N (NomSymbol n))))) afterClassMerge
- | afterClassMerge = addFormulaBaseCase br f
+ | afterClassMerge = addFormulaBaseCase clp br f
  | not afterClassMerge
    = result
      where classes = nomPrefClasses br
@@ -343,56 +343,26 @@ addFormula clp br f@(PrFormula pr newFormulaBprs f2@(Lit (PosLit (N (NomSymbol n
                              addFormulas clp brUpdated nubbedNewFormulas True
 
 -- Case 1,5
--- universal constraint
-addFormula clp br (PrFormula _ bprs (A f)) _
- = addUnivConstraint clp blockedBr bprs f
-    where blockedBr = br{blockMode = Just $ defaultBlockMode br }
-
--- diff universal constraint
-addFormula clp br (PrFormula pr bprs (B f)) _
- = addDiffUnivConstraint clp blockedBr bprs f pr
-    where blockedBr = br{blockMode = Just $ defaultBlockMode br }
-
--- box constraint
-addFormula clp br pf@(PrFormula pr bprs (Box r f)) _
- = addBoxConstraint clp br_ pr r f bprs
-   where
-     updatedBr_ = addToAugmentedPrefixes pr br
-     br_ = if requireLocalFormulasTracking br
-            then let (BranchOK updatedBr) = addFormula2_withPrefToFormUpdate updatedBr_ pf
-                 in
-                 updatedBr
-            else updatedBr_
-
--- Case 1,75
--- disjunction
+-- if Unit Propagation enabled : try to reduce disjunction
 addFormula clp br pf@(PrFormula pr bprs disF@(Dis fs)) _
  = if not $ unitProp clp
-    then addFormulaBaseCase br pf
+    then addFormulaBaseCase clp br pf
     else case reduceDisjunctionAgainstBranch br pr fs of
            Triviality                 -> BranchOK br
            Contradiction brps_clash   -> BranchClash br pr (bps_union bprs brps_clash) disF
-           Reduced new_bprs disjuncts -> addFormulaBaseCase br (PrFormula pr (bps_union bprs new_bprs) (Dis disjuncts))
-
-
--- down-arrow
-addFormula _ br pf@(PrFormula _ _ (Down _ _)) _
- = addFormulaBaseCase blockedBr pf
-    where blockedBr = br{blockMode = Just $ defaultBlockMode br}
+           Reduced new_bprs disjuncts -> addFormulaBaseCase clp br (PrFormula pr (bps_union bprs new_bprs) (Dis disjuncts))
 
 -- Case 2
 -- p : phi (not nominal)
 
-addFormula _ br f _
- = addFormulaBaseCase br f
+addFormula clp br f _
+ = addFormulaBaseCase clp br f
 
 
-addFormulaBaseCase :: Branch -> PrFormula -> BranchInfo
-addFormulaBaseCase br f@(PrFormula pr bprs f2)
- = if requireLocalFormulasTracking br
-    then addFormula2_withPrefToFormUpdate newBr fToAdd
-    else addFormula2                      newBr fToAdd
-   where
+addFormulaBaseCase :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
+addFormulaBaseCase clp br f@(PrFormula pr bprs f2)
+ = addFormula2 clp newBr fToAdd
+    where
       (urfather,bprs2,newClasses) = getUrfatherAndDeps br (DS.Prefix pr)
       newBr = br{nomPrefClasses = newClasses}
       fToAdd = if urfather == pr -- always the case if we are in the modal language
@@ -629,10 +599,14 @@ addToAugmentedPrefixes pr br = br{incrPrs = (pr:incrPrs br)} -- this list never 
    to detect clashes, and store the new formula in the right sub-structure
 -}
 
-addFormula2_withPrefToFormUpdate :: Branch -> PrFormula -> BranchInfo
-addFormula2_withPrefToFormUpdate br pf@(PrFormula _ _ f)
- = addFormula2 updatedPrefToFormsBr pf
-    where updatedPrefToFormsBr = if forInclusion br f then addToPrefToForms br pf else br
+addFormula2 :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
+addFormula2 clp br pf@(PrFormula pr _ f) =
+   addFormula3 clp updatedBr pf
+ where
+     br' = if requireLocalFormulasTracking br && forInclusion br f
+             then addToPrefToForms br pf
+             else br
+     updatedBr  = addToAugmentedPrefixes pr br'
 
 forInclusion :: Branch -> Formula -> Bool
 -- is the formula useful to calculate inclusion urfathers ?
@@ -657,59 +631,52 @@ forInclAtom _  (P _) = True
 forInclAtom _  (V _) = error "forInclAtom statevar : should not happen"
 
 
-addFormula2 :: Branch -> PrFormula -> BranchInfo
-addFormula2 br pf@(PrFormula pr _ _) =
-   addFormula3 updatedBr pf
- where updatedBr        = addToAugmentedPrefixes pr br
-
-
 -- now, either add the formula to a queue according to its type
 -- or add it in the atomic formulas (for literals)
-addFormula3 :: Branch -> PrFormula -> BranchInfo
-addFormula3 br pf@(PrFormula _ _ (Con _))
+addFormula3 :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
+addFormula3 _ br pf@(PrFormula _ _ (Con _))
            = BranchOK $ br{conjStr = Set.insert pf (conjStr br)}
 
-addFormula3 br pf@(PrFormula _ _ (Dis _))
+addFormula3 _ br pf@(PrFormula _ _ (Dis _))
            = BranchOK $ br{disjStr = Set.insert pf (disjStr br)}
 
-addFormula3 br (PrFormula _ _ (Box _ _))
-           = BranchOK br -- '[]' formulas can arrive up to here because they have to be added to the inclusion set of prefixes
+addFormula3 clp br (PrFormula pr bprs (Box r f))
+           = addBoxConstraint clp br pr r f bprs
 
-addFormula3 br pf@(PrFormula pr _ f2@(Dia _ _))
+addFormula3 _ br pf@(PrFormula pr _ f2@(Dia _ _))
            = BranchOK $ if diaAlreadyDone br pr f2
                           then br                  -- diamond rule saturation
                           else br{diaStr = Set.insert pf (diaStr br)}
 
-addFormula3 _ (PrFormula _ _ (A _))
-           = error " 'A' formulas should have been treated before"
+addFormula3 clp br (PrFormula _ bprs (A f))
+           = addUnivConstraint clp (block br) bprs f
 
-addFormula3 _ (PrFormula _ _ (B _))
-           = error " 'B' formulas should have been treated before"
+addFormula3 clp br (PrFormula pr bprs (B f))
+           = addDiffUnivConstraint clp (block br) bprs f pr
 
-addFormula3 br pf@(PrFormula _ _ f2@(E _))
+addFormula3 _ br pf@(PrFormula _ _ f2@(E _))
            = BranchOK $ if existAlreadyDone br f2  -- exist rule saturation
                          then br
                          else br{ existStr = Set.insert pf (existStr br),
                                  existRlCh = Set.insert f2 (existRlCh br)}
 
-addFormula3 br pf@(PrFormula _ _ (D _)) -- TODO saturation test ? or is it only useful afterwards? (i bet yes)
+addFormula3 _ br pf@(PrFormula _ _ (D _))
            = BranchOK $ br{diffStr = Set.insert pf (diffStr br)}
 
-addFormula3 br pf@(PrFormula _ _ f2@(At _ _))
+addFormula3 _ br pf@(PrFormula _ _ f2@(At _ _))
            = BranchOK $ if atAlreadyDone br f2  -- at rule saturation
                          then br
                          else br{ atStr = Set.insert pf (atStr br),
                                  atRlCh = Set.insert f2 (atRlCh br)}
 
-addFormula3 _  (PrFormula _ _ (Atv _ _)) = error "addFormula Atv : should not happen"
+addFormula3 _ _ (PrFormula _ _ (Atv _ _)) = error "addFormula Atv : should not happen"
 
-addFormula3 br pf@(PrFormula pr _ f2@(Down _ _))
-           = BranchOK $ if downAlreadyDone br pr f2
-                         then br                            -- down-arrow rule saturation
-                         else br{downStr =  Set.insert pf (downStr br)}
+addFormula3 _ br pf@(PrFormula pr _ f2@(Down _ _))
+           = BranchOK $ block $ if downAlreadyDone br pr f2
+                                 then br                            -- down-arrow rule saturation
+                                 else br{downStr =  Set.insert pf (downStr br)}
 
-
-addFormula3 br (PrFormula pr bprs (Lit l)) = addAndUpdateMap br pr bprs l
+addFormula3 _ br (PrFormula pr bprs (Lit l)) = addAndUpdateMap br pr bprs l
 
 
 {-
@@ -996,6 +963,8 @@ reduceDisjunctionAgainstBranch br pr fs =
 {-
      other functions
 -}
+block :: Branch -> Branch
+block br = br{blockMode = Just $ defaultBlockMode br }
 
 hasUnivMod :: Branch -> Bool
 hasUnivMod br = languageUniv $ inputLanguage br
