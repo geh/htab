@@ -38,7 +38,6 @@ data CmdLineParams = CLP {
            statsStr        :: String,
            semBranch       :: Bool,
            unitProp        :: Bool,
-           latexOutput     :: Maybe FilePath,
            genModel        :: Maybe FilePath,
            quietMode       :: Bool,
            inclBlockGlobal :: Bool,
@@ -87,11 +86,7 @@ options =
    Option ['s']
           ["log-state"]
           (NoArg $ \c -> return c{logState = True})
-          "log the internal state (clauses, inUse and new)",
-   Option ['l']
-          ["latex-output"]
-          (ReqArg ((not .null) ?-> \s c -> return c{latexOutput = Just s}) "FILE")
-          "log rule applications",
+          "log the internal state",
    Option ['b']
           ["semantic-branching"]
           (ReqArg setSemanticBranching "[0|1]")
@@ -164,7 +159,6 @@ defaultParams :: CmdLineParams
 defaultParams = CLP {showHelp = False,
                      filename = Nothing,
                      logState = False,
-                     latexOutput = Nothing,
                      maxtimeout  = 0,
                      statsStr    = ":0:c",
                      semBranch   = True,

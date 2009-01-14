@@ -39,7 +39,6 @@ import HTab.Statistics(Statistics)
 import HTab.CommandLine(CmdLineParams, unitProp)
 
 import HTab.Formula
-import HTab.LatexOutputHelper
 
 import HTab.DMap
 import HTab.Base(moveInMap, almostCartesianProduct, doMemoize)
@@ -190,51 +189,6 @@ instance Show Branch where
               "\nPrefix-Nominal classes : " ++ prettyShowMap (nomPrefClasses br) ", " ++
               "\nModel-relevant nominals : " ++ show (relevantNominals br)
 
-instance ShowLatex Branch where
- showLatex br = "Input language: " ++ (putEol $ math $ show $ inputLanguage br)   ++ 
-              "\nClashable formulas: "  ++ (putEol $ math $ showLatex $ clashStr br)   ++
-              "\nConjunctions: "   ++ (putEol $ math $ show $ conjStr br)  ++
-              "\nDisjunctions: "   ++ (putEol $ math $ show $ disjStr br)  ++
-              "\nDiamonds: "       ++ (putEol $ math $ show $ diaStr br)   ++
-              "\nExists: "         ++ (putEol $ math $ show $ existStr br) ++
-              "\nAts: "            ++ (putEol $ math $ show $ atStr br)    ++
-              "\nDowns: "          ++ (putEol $ math $ show $ downStr br)  ++
-              "\nDiff exists: "    ++ (putEol $ math $ show $ diffStr br)  ++
-              "\nAccesibility: "   ++ (putEol $ math $ show $ Map.toList $ accStr br)   ++
-              "\nBox constraints: " ++ (putEol $ math $ show $ Map.toList $ boxConstr br)  ++
-              "\nDia rule chart: " ++ (putEol $ math $ show $ Map.toList $ diaRlCh br)  ++
-              "\nDown rule chart: " ++ (putEol $ math $ show $ Map.toList $ downRlCh br)  ++
-              "\n@ rule chart: "   ++ (putEol $ math $ show $ Set.toList $ atRlCh br)  ++
-              "\nExist rule chart:" ++ (putEol $ math $ show $ Set.toList $ existRlCh br)  ++
-              "\nDiff dia rule chart: "  ++ (putEol $ math $ show $ Map.toList $ dDiaRlCh br) ++
-              "\nDown var relevant chart: " ++ (putEol $ math $ show $ Map.toList $ downVarRelevantCh br) ++
-              "\nUniv constraints: "++ (putEol $ math $ show $ univCons br) ++
-              "\nDiff box constraints: "++ (putEol $ math $ show $ dBoxCons br) ++
-              "\nBiggest prefix: " ++ (putEol $ show $ lastPref br) ++
-              "\nBiggest nom: " ++ (putEol $ show $ lastNom br) ++
-              "\nBiggest prop: " ++ (putEol $ show $ lastProp br) ++
-              "\nPrefix to branching prefixes: " ++ (putEol $ math $ show $ Map.toList $ prToBrPrefs br) ++
-              "\nPrefix to formulas: \\\\"      ++ (putEol $ math $ showLatex $ prefToForms br) ++
-              "\nPrefix-Nominal classes : " ++ (putEol $ math $ show $ nomPrefClasses br) ++
-              "\nInclusion urfather map: "  ++ (putEol $ math $ show $ inclUrMap br) ++
-              "\nIncreased prefixes: " ++ (putEol $ show (incrPrs br)) ++
-              "\nBlocking mode: " ++ show (blockMode br) ++
-              "\nModel-relevant nominals : " ++ show (relevantNominals br)
-
-instance ShowLatex PrefToFormulas where
- showLatex ptf =
-   (genericSeparate showLat) "\\\\" $ Map.toList ptf
-    where showLat (p,set_fs)  = (bold $ show p) ++ ":" ++ ("[" ++ (lseparate ", " $ Set.toList set_fs) ++ "]")
-
-instance ShowLatex Clashable_info where
- showLatex cs  = 
-   "[" ++ ((genericSeparate showLat) ", " $ flattenDMap cs) ++ "]"
-    where showLat (pf,(b,bpfs)) = if b then "" ++ "(" ++ (showLatex pf) ++ ")(" ++ showLatex bpfs ++ ")"
-                                       else "\\neg" ++ "(" ++ (showLatex pf) ++ ")(" ++ showLatex bpfs ++ ")"
-
-genericSeparate :: (a -> String) ->  String -> [a] -> String
-genericSeparate _ _ [] = ""
-genericSeparate f s os = foldl1 (\a1 a2 -> (a1 ++ s ++ a2)) $ map f os
 
 prettyShowMap :: (Show x, Show y) => Map.Map x y -> String -> String
 prettyShowMap dasMap separator = prettyShowMap_ dasMap show separator

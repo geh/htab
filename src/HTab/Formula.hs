@@ -35,8 +35,6 @@ import HyLo.Signature.Simple( PropSymbol(..),
                               RelSymbol(..),
                               StateVar(..))
 
-import HTab.LatexOutputHelper
-
 import qualified HyLo.InputFile as InputFile
 import qualified HyLo.Formula as F
 
@@ -57,19 +55,9 @@ instance Show Atom where
  show (P p) = show p
  show (V v) = show v
 
-instance ShowLatex Atom where
- showLatex (Taut) = "T"
- showLatex (N n) = show n
- showLatex (P p) = show p
- showLatex (V v) = show v
-
 instance Show Literal where
  show (PosLit a) = show a
  show (NegLit a) =  "!" ++ show a
-
-instance ShowLatex Literal where
- showLatex (PosLit a) = show a
- showLatex (NegLit a) = "\\neg(" ++ showLatex a ++ ")"
 
 data Formula
      = Lit Literal
@@ -99,20 +87,6 @@ instance Show Formula where
  show (D f)      = "D" ++ show f
  show (B f)      = "B" ++ show f
  show (Down v f) = "down " ++ show v ++ "." ++ show f
-
-instance ShowLatex Formula where
-   showLatex (Lit a)    = showLatex a
-   showLatex (Con fs)   = "(" ++ (lseparate "\\wedge " fs) ++ ")"
-   showLatex (Dis fs)   = "(" ++ (lseparate "\\vee " fs) ++ ")"
-   showLatex (At n f)   = "@_{" ++ (show n) ++ "}"  ++ (showLatex f)
-   showLatex (Atv v f)  = "@_{" ++ (show v) ++ "}"  ++ (showLatex f)
-   showLatex (Box r f)  = "\\square_{" ++ (show r)  ++ "}" ++ (showLatex f)
-   showLatex (Dia r f)  = "\\lozenge_{" ++ (show r)  ++ "}" ++ (showLatex f)
-   showLatex (A f)      = "A" ++ showLatex f
-   showLatex (E f)      = "E" ++ showLatex f
-   showLatex (D f)      = "D" ++ showLatex f
-   showLatex (B f)      = "B" ++ showLatex f
-   showLatex (Down v f) = "\\downarrow " ++ show v ++ ".(" ++ show f ++ ")"
 
 parse :: String -> Formula
 parse = convert . InputFile.parse
@@ -187,9 +161,6 @@ instance Show PrFormula where
 
 showLess :: PrFormula -> String
 showLess (PrFormula pr _ f) = (show pr)++":"++(show f)
-
-instance ShowLatex PrFormula where
- showLatex (PrFormula pr bprs f) = (show pr)++"{:}"++(show $ IntSet.toList bprs)++"{:}"++(showLatex f)
 
 prefixList :: Prefix -> BranchingPrefixes -> [Formula] -> [PrFormula]
 prefixList p bps fl = [(PrFormula p bps formula)|formula <-fl]
@@ -299,11 +270,7 @@ data AccFormula = AccFormula BranchingPrefixes RelSymbol Prefix Prefix
      deriving (Eq, Ord)
 
 instance Show AccFormula where
- show (AccFormula bprs r p1 p2) = (showLatex bprs) ++ ":" ++ (show p1)++"<"++(show r)++">"++(show p2)
-
-
-instance ShowLatex AccFormula where
- showLatex (AccFormula bprs r p1 p2) = (showLatex bprs) ++ ":" ++ (show p1)++"\\lozenge_{"++(show r)++"}"++(show p2)
+ show (AccFormula bprs r p1 p2) = (show bprs) ++ ":" ++ (show p1)++"<"++(show r)++">"++(show p2)
 
 {- recognize trivial formulas to trim conjunctions and disjunctions -}
 isTrue, isFalse :: Formula -> Bool

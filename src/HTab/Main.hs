@@ -23,7 +23,6 @@ import HTab.Tableau( liftStats, tableau, OpenFlag(..) )
 import HTab.Formula( firstPrefixedFormula, formulaLanguageInfo, bps_empty,
                      PrFormula(..), LanguageInfo(..), NomSymbol, Formula(..),
                      nom, parse )
-import HTab.LatexOutput
 import HTab.ModelGen ( HerbrandModel, inducedModel )
 
 
@@ -47,7 +46,6 @@ runWithParams clp =
      f <- parse <$> maybe fromStdIn readFile (filename clp)
      --
      let fLang = formulaLanguageInfo f
-     latexInit clp
      --
      f `seq` myPutStrLn ("\nInput:\n{ " ++ (show f) ++" }\nEnd of input\n\n");
      --
@@ -75,8 +73,6 @@ runWithParams clp =
      end <- getCPUTime
      let elapsedTime = fromInteger (end - start) / 1000000000000.0
      myPutStrLn $ "Elapsed time: " ++ show (elapsedTime :: Double)
-     --
-     latexEnd clp
      --
      return result
 

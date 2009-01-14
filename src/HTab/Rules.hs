@@ -25,8 +25,6 @@ import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewNomTestRe
 import HTab.CommandLine(CmdLineParams, semBranch, unitProp)
 import HTab.RuleMetadata(RuleId(..))
 import qualified HTab.DisjSet as DS
-import HTab.LatexOutput()
-import HTab.LatexOutputHelper
 
 -- a "rule" is basically a list of modifications of the structures
 
@@ -147,19 +145,6 @@ instance Show Rule where
    show (DiffRule (pr,_,f) )       = "D:                  " ++ show pr ++ ":" ++ show f
    show (DiscardRule todelete)     = "Discard:            " ++ showLess todelete
    show (ClashRule bprs f)         = "Clash:              " ++ show bprs ++ " " ++ show f
-
-instance ShowLatex Rule where
-   showLatex (ConjRule   todelete _ )  = "conjunction: " ++  (math $ showLatex todelete)
-   showLatex (DiaRule    todelete _ _) = "diamond: " ++  (math $ showLatex todelete)
-   showLatex (DisjRule   todelete _ )  = "disjunction: " ++ (math $ showLatex todelete)
-   showLatex (SemBrRule  todelete _ )  = "semantic branching: " ++ (math $ showLatex todelete)
-   showLatex (AtRule     todelete _ )  = "at: " ++ (math $ showLatex todelete)
-   showLatex (DownRule   todelete _ _) = "down: " ++ (math $ showLatex todelete)
-   showLatex (ExistModRule todelete _) = "E: " ++ (math $ showLatex todelete)
-   showLatex (DiffRule todelete )      = "D: " ++ (math $ showLatex todelete)
-   showLatex (DiscardRule todelete)    = "Discard: " ++ (math $ showLatex todelete)
-   showLatex (ClashRule bprs f)        = "Clash: " ++ (show bprs) ++ " " ++ (show f)
-
 
 --
 ruleToId :: Rule -> RuleId
