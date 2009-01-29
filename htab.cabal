@@ -8,6 +8,7 @@ Author:              Guillaume Hoffmann, Carlos Areces, Daniel Gorín, Juan Hegu
 Maintainer:          guillaume.hoffmann@loria.fr
 Extra-source-files:  INSTALL man/htab.1
 Cabal-version:       >= 1.2
+Build-type:          Simple
 
 Flag static
   Description: Build a static binary
