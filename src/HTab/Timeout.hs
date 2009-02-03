@@ -1,50 +1,37 @@
-module HTab.Timeout where
+module HTab.Timeout    ( withNoTimeout, notifyOnTimeout,
+                              TimeoutSignal,
+                              isTimeout, isNotTimeout ) where
 
-import Control.Exception
-import Control.Concurrent
-import Data.Dynamic(Typeable, typeOf, TyCon, mkTyCon, mkTyConApp, toDyn)
-import Data.Unique
-{- Timeout code -}
-
-data TimeOut = TimeOut Unique
-
-timeOutTc :: TyCon
-timeOutTc = mkTyCon "TimeOut"
-
-instance Typeable TimeOut where
-    typeOf _ = mkTyConApp timeOutTc []
+import Control.Monad           ( liftM )
+import Control.Monad.Trans     ( MonadIO, liftIO )
+import Control.Concurrent      ( forkIO, threadDelay )
+import Control.Concurrent.MVar ( MVar, newEmptyMVar, putMVar, isEmptyMVar )
 
 
-timeout :: Integer -> IO a -> IO a -> IO a
-timeout secs action on_timeout =
-    let {
-     timeout_thread seconds parent i =
-     do {
-         threadDelay ((fromInteger seconds) * 1000000);
-         throwTo parent (DynException (toDyn (TimeOut i)))
-        }
-    } in
-   do {
-       parent  <- myThreadId;
-       i       <- newUnique;
-       block (do
-          timeoutThreadId <- forkIO (timeout_thread secs parent i);
-          Control.Exception.catchDyn
-            ( unblock (
-                do {
-                   result <- action;
-                   killThread timeoutThreadId;
-                   return result;
-                   }
-              )
-            )
-            ( \exception ->
-                case exception of
-                    TimeOut u | u == i -> unblock on_timeout
-                    _ -> do {
-                                killThread timeoutThreadId;
-                                throwDyn exception
-                                }
-            )
-         )
-       }
+newtype TimeoutSignal = TS {unTS :: MVar ()}
+
+
+newTimeoutSignal :: IO TimeoutSignal
+newTimeoutSignal = TS `liftM` newEmptyMVar
+
+isTimeout :: MonadIO m => TimeoutSignal -> m Bool
+isTimeout = liftM not . isNotTimeout
+
+isNotTimeout :: MonadIO m => TimeoutSignal -> m Bool
+isNotTimeout = liftIO . isEmptyMVar . unTS
+
+signalTimeout :: TimeoutSignal -> IO ()
+signalTimeout = flip putMVar () . unTS
+
+
+notifyOnTimeout :: Int -> (TimeoutSignal -> IO a) -> IO a
+notifyOnTimeout secs action = do timeout_signal <- newTimeoutSignal
+                                 forkIO $ watchdog_thread timeout_signal
+                                 action timeout_signal
+    --
+    where watchdog_thread ts = do threadDelay (secs * 1000000)
+                                  signalTimeout ts
+
+withNoTimeout :: (TimeoutSignal -> IO a) -> IO a
+withNoTimeout = (newTimeoutSignal >>=)
+

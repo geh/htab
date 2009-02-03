@@ -64,7 +64,7 @@ runExpecting exp_result file =
                                   else do putStrLn "MODELCHECK FAILED"
                                           return False
          (SAT _ _, Unsat) -> putStrLn "FAILED! (sat)" >> return False
-         (TIMEOUT, _)     -> putStrLn "FAILED! (timeout)" >> return False
+         (TIMEOUT _, _)     -> putStrLn "FAILED! (timeout)" >> return False
     --
 
     where isASatisfyingModel m =

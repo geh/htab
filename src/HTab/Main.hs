@@ -16,7 +16,6 @@ import HTab.CommandLine( filename, maxtimeout, CmdLineParams, logState, genModel
                          immediateBlock )
 import HTab.Branch( Branch, BranchInfo(..),initialBranchStateFor,BranchMonad, BranchData(..),
                     emptyBranch, lastPref, BlockingMode(..) )
-import HTab.Timeout( timeout )
 import HTab.Statistics( Statistics, initialStatisticsStateFor, printOutAllMetrics' )
 import HTab.Base( vPutStrLn )
 import HTab.Tableau( liftStats, tableau, OpenFlag(..) )
@@ -26,10 +25,11 @@ import HTab.Formula( firstPrefixedFormula, formulaLanguageInfo, bps_empty,
 import HTab.ModelGen ( HerbrandModel, inducedModel )
 
 
+import HTab.Timeout ( withNoTimeout, notifyOnTimeout, TimeoutSignal )
 
 import HTab.Rules(BranchModification(..), applyMod)
 
-data SatFlagAndStats = SAT HerbrandModel Statistics | UNSAT Statistics | TIMEOUT
+data SatFlagAndStats = SAT HerbrandModel Statistics | UNSAT Statistics | TIMEOUT Statistics
 
 
 runWithParams :: CmdLineParams -> IO (SatFlagAndStats)
@@ -54,21 +54,24 @@ runWithParams clp =
                                              (False, True) -> InclusionBlockingChain
                                              ( _  ,   _  ) -> InclusionBlockingGlobal
      --
-     result <- if (not ((maxtimeout clp) == 0))
-                then timeout (maxtimeout clp)
-                             (tableauInit branchInfo clp)
-                             (return TIMEOUT)
-                else (tableauInit branchInfo clp)
+     let handleTimeout
+          | (maxtimeout clp) > 0 = notifyOnTimeout (maxtimeout clp)
+          | otherwise            = withNoTimeout
+     --
+     result <- handleTimeout (tableauInit branchInfo clp)
      --
      case result of
-        SAT m stats -> do myPutStrLn "The formula is satisfiable."
-                          saveGenModel clp m
-                          unless (quietMode clp) $
-                              printOutAllMetrics' stats
-        UNSAT stats -> do myPutStrLn "The formula is unsatisfiable."
-                          unless (quietMode clp) $
-                              printOutAllMetrics' stats
-        TIMEOUT     ->    myPutStrLn "TIMEOUT"
+        SAT m stats   -> do myPutStrLn "The formula is satisfiable."
+                            saveGenModel clp m
+                            unless (quietMode clp) $
+                                printOutAllMetrics' stats
+        UNSAT stats   -> do myPutStrLn "The formula is unsatisfiable."
+                            unless (quietMode clp) $
+                                printOutAllMetrics' stats
+        TIMEOUT stats -> do myPutStrLn "TIMEOUT"
+                            unless (quietMode clp) $
+                                printOutAllMetrics' stats
+
      --
      end <- getCPUTime
      let elapsedTime = fromInteger (end - start) / 1000000000000.0
@@ -81,19 +84,21 @@ saveGenModel clp m = maybe (return ()) doWrite (genModel clp)
     where doWrite f = do writeFile f (show . inducedModel $ m)
                          unless (quietMode clp) $ putStrLn $ "Model saved as " ++ f
 
-tableauInit :: BranchInfo -> CmdLineParams -> IO (SatFlagAndStats)
-tableauInit bi clp =
+tableauInit :: BranchInfo -> CmdLineParams -> TimeoutSignal -> IO (SatFlagAndStats)
+tableauInit bi clp ts =
         do vPutStrLn ">> Starting rules application" (logState clp)
            res <- initStatsState $ initBranchState bd $ tableauStart clp
            case res of
             ((OPEN m,_),stats)   -> return $ SAT m stats
             ((CLOSED _,_),stats) -> return $ UNSAT stats
+            ((TIMEOUT_,_),stats) -> return $ TIMEOUT stats
  where initStatsState  = initialStatisticsStateFor runStateT
        initBranchState = initialBranchStateFor runStateT
        bd              = BranchData
                           { branch_info = bi,
                             branch_clp  = clp,
-                            branch_path = [0]}
+                            branch_path = [0],
+                            timeout_signal = ts}
 
 tableauStart :: CmdLineParams -> BranchMonad OpenFlag
 tableauStart clp =

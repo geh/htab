@@ -12,12 +12,13 @@ import HTab.Rules(Rule,applyRule,
 import HTab.Statistics(Statistics)
 import HTab.Formula(Prefix,BranchingPrefixes,Formula,bps_empty,bps_member,bps_union)
 import HTab.ModelGen ( HerbrandModel, buildHerbrandModel )
+import HTab.Timeout( isTimeout )
 
 --
 
 type DependencySet = BranchingPrefixes -- to handle backjumping
 
-data OpenFlag = OPEN HerbrandModel | CLOSED DependencySet
+data OpenFlag = OPEN HerbrandModel | CLOSED DependencySet | TIMEOUT_
 
 --
 
@@ -26,29 +27,31 @@ tableau =
       do logMe
          bd <- get
          let clp = branch_clp bd
-         debugMsg_NewSection
 
-         case (branch_info bd) of
-          BranchClash br pr bprs f ->
-           do debugMsg_BranchClash br pr bprs f
-              liftStats $ recordClosedBranch
-              return (CLOSED bprs)
-
-          BranchOK br_ ->
-           do debugMsg_BranchOK br_
-              let currentBranchingDepth = (branch_depth bd) + 1
-              let br = calculateStepInfo br_
-              case (applicableRules br clp currentBranchingDepth) of
-               (rule:_) ->
-                do debugMsg_BranchOK_applicableRule rule
-                   liftStats $ recordFiredRule $ ruleToId rule
-                   let possibleBranches = applyRule clp rule br
-                   modify addZeroInPath
-                   chooseBranch possibleBranches
-               []   ->
-                do debugMsg_BranchOK_saturated
-                   return $ OPEN (buildHerbrandModel br)
-
+         let signal = timeout_signal bd
+         timeout <- isTimeout signal
+         if timeout
+          then return TIMEOUT_
+          else do debugMsg_NewSection
+                  case (branch_info bd) of
+                     BranchClash br pr bprs f ->
+                      do debugMsg_BranchClash br pr bprs f
+                         liftStats $ recordClosedBranch
+                         return (CLOSED bprs)
+                     BranchOK br_ ->
+                      do debugMsg_BranchOK br_
+                         let currentBranchingDepth = (branch_depth bd) + 1
+                         let br = calculateStepInfo br_
+                         case (applicableRules br clp currentBranchingDepth) of
+                          (rule:_) ->
+                           do debugMsg_BranchOK_applicableRule rule
+                              liftStats $ recordFiredRule $ ruleToId rule
+                              let possibleBranches = applyRule clp rule br
+                              modify addZeroInPath
+                              chooseBranch possibleBranches
+                          []   ->
+                           do debugMsg_BranchOK_saturated
+                              return $ OPEN (buildHerbrandModel br)
 
 -- depth-first branch-choosing strategy
 chooseBranch :: [BranchInfo] ->  BranchMonad OpenFlag
@@ -60,7 +63,8 @@ chooseBranch_ currentDepSet (hd:tl) =
     put bd{branch_info=hd}
     res <- tableau
     let currentBranchingDepth = branch_depth bd
-    case (res) of
+    case res of
+     TIMEOUT_      -> return TIMEOUT_
      o@(OPEN _)    -> return o
      CLOSED depSet -> if bps_member currentBranchingDepth depSet  -- was the clash because of this branching ?
                          then do put $ incPathHead bd

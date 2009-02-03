@@ -25,10 +25,10 @@ main = do r <- runCmdLineVersion
                     exit r_RUNTIME_ERROR
           --
           case r of
-            Nothing        -> exit r_DID_NOT_RUN
-            Just (SAT _ _) -> exit r_SAT
-            Just (UNSAT _) -> exit r_UNSAT
-            Just TIMEOUT   -> exit r_TIMEOUT
+            Nothing          -> exit r_DID_NOT_RUN
+            Just (SAT _ _)   -> exit r_SAT
+            Just (UNSAT _)   -> exit r_UNSAT
+            Just (TIMEOUT _) -> exit r_TIMEOUT
     --
     where r_SAT           = 1
           r_UNSAT         = 2

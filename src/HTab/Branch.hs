@@ -35,6 +35,7 @@ import qualified HTab.DisjSet as DS
 
 import Data.Maybe(fromJust)
 
+import HTab.Timeout( TimeoutSignal )
 import HTab.Statistics(Statistics)
 import HTab.CommandLine(CmdLineParams, unitProp)
 
@@ -907,7 +908,8 @@ prefixes br = [0..(lastPref br)]
 
 data BranchData = BranchData { branch_info :: BranchInfo,
                                branch_clp :: CmdLineParams,
-                               branch_path :: [Int]}
+                               branch_path :: [Int],
+                               timeout_signal :: TimeoutSignal}
 
 type BranchMonad a = StateT BranchData (StateT Statistics IO) a
 

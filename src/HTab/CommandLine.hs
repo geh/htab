@@ -34,7 +34,7 @@ data CmdLineParams = CLP {
            showHelp        :: Bool,
            filename        :: Maybe FilePath,
            logState        :: Bool,
-           maxtimeout      :: Integer,
+           maxtimeout      :: Int,
            statsStr        :: String,
            semBranch       :: Bool,
            unitProp        :: Bool,
