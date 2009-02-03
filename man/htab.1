@@ -24,9 +24,6 @@ suppress all normal output
 \-s, \--log-state
 display the internals of the tableaux and the rules used during the calculus
 .TP
-\-l FILE, \--latex-output=FILE
-create a LaTeX file of the internals of the tableaux and the rules used during the calculus
-.TP
 \-b [0|1], \--semantic-branching=[0|1]
 disable/enable semantic branching (default is enabled)
 .TP
@@ -74,9 +71,9 @@ The default is ':0:c'
 configuration file
 .SH EXAMPLES
 .TP
-Run HTab without semantic branching nor unit propagation, and write the tableaux states into out.tex:
+Run HTab without semantic branching nor unit propagation:
 .B htab
-\-b 0 \-u 0 \-l out.tex \-f formula.frm
+\-b 0 \-u 0 \-f formula.frm
 .PP
 .TP
 Run HTab in quiet mode:
