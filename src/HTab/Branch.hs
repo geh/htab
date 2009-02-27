@@ -24,7 +24,7 @@ downAlreadyDone, incPropSymbol, incNomSymbol,
 ReducedDisjunct(..)
 ) where
 
-import Control.Monad.State(StateT, MonadState, get)
+import Control.Monad.State(StateT, MonadState)
 import Data.List(delete, nub, minimumBy)
 
 import qualified Data.Map as Map
