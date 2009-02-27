@@ -220,21 +220,22 @@ prettyShowMap_rel_bps_x dasMap
    to prefixes, nominals, and vId/nom rules
 -}
 
+type MergeHistory = [(Prefix,Int)]
 
-addFormulas :: CmdLineParams -> Branch -> [PrFormula] -> Bool -> BranchInfo
-addFormulas clp br (hd:tl) afterClassMerge
-       = case addFormula clp br hd afterClassMerge of
-          BranchOK br2             -> addFormulas clp br2 tl afterClassMerge
+addFormulas :: CmdLineParams -> Branch -> [PrFormula] -> MergeHistory -> BranchInfo
+addFormulas clp br (hd:tl) history
+       = case addFormula clp br hd history of
+          BranchOK br2             -> addFormulas clp br2 tl history
           bi@(BranchClash _ _ _ _) -> bi
 
 addFormulas _ br [] _ = BranchOK br
 
 
 -- 3 main cases : adding a positive nominal, adding a disjunction, and otherwise.
-addFormula :: CmdLineParams -> Branch -> PrFormula -> Bool -> BranchInfo
-addFormula clp br f@(PrFormula pr newFormulaBprs f2@(Lit (PosLit (N (NomSymbol n))))) afterClassMerge
- | afterClassMerge = addFormulaBaseCase clp br f
- | not afterClassMerge
+addFormula :: CmdLineParams -> Branch -> PrFormula -> MergeHistory -> BranchInfo
+addFormula clp br f@(PrFormula pr newFormulaBprs f2@(Lit (PosLit (N (NomSymbol n))))) history
+ | (pr,n) `elem` history = addFormulaBaseCase clp br f
+ | otherwise
    = result
      where classes = nomPrefClasses br
            ((DS.Prefix rootP),classes2) = DS.find (DS.Prefix pr) classes
@@ -293,7 +294,7 @@ addFormula clp br f@(PrFormula pr newFormulaBprs f2@(Lit (PosLit (N (NomSymbol n
                                                  diaRlCh        = newDiaRlCh,
                                                  clashStr       = newClashable_info}
                          in
-                             addFormulas clp brUpdated nubbedNewFormulas True
+                             addFormulas clp brUpdated nubbedNewFormulas ((newUrfather,n):history)
 
 -- if Unit Propagation enabled : try to reduce disjunction
 addFormula clp br pf@(PrFormula pr bprs disF@(Dis fs)) _
@@ -434,7 +435,7 @@ addBoxConstraint :: CmdLineParams -> Branch -> Prefix -> RelSymbol -> Formula ->
 addBoxConstraint clp br nonRepresentativePr (RelSymbol r) f bprs
  = addFormulas clp newBr
                ( map (\(bprs2,p) -> PrFormula p (bps_union bprs bprs2) f) accessibleBprsPrs )
-               False
+               []
    where pr = getUrfather br (DS.Prefix nonRepresentativePr)
          newBr = br{boxConstr = updateBoxConstr pr r f bprs (boxConstr br)}
          updateBoxConstr p1_ r_ f_ bprs_ boxConstr_ =
@@ -453,7 +454,7 @@ addAccFormula :: CmdLineParams -> Branch -> AccFormula -> BranchInfo
 addAccFormula clp br (AccFormula bprs (RelSymbol r) nonRepresentativeP1 p2)
  = addFormulas clp newBr
                ( map (\(bprs2,f) -> PrFormula p2 (bps_union bprs bprs2) f) formulasToSend )
-               False
+               []
    where p1 = getUrfather br (DS.Prefix nonRepresentativeP1)
          newBr    =      br{accStr=updateAccStr p1 r bprs p2 (accStr br)}
          updateAccStr p1_ r_ bprs_ p2_ accStr_ =
@@ -664,7 +665,7 @@ addUnivConstraint :: CmdLineParams -> Branch -> BranchingPrefixes -> Formula -> 
 addUnivConstraint clp br bps f
  = addFormulas clp newBr
                ( map (\p -> PrFormula p bps f) $ urfathers )
-               False
+               []
    where newBr = br{univCons = (bps,f):(univCons br)}
          prefs = [0..(lastPref br)]
          urfathers = filter (isNominalUrfather br) prefs
@@ -677,7 +678,7 @@ addDiffUnivConstraint clp br bprs f pr
                ( (PrFormula pr bprs $ nom newNom)
                  :(map (\somePrefix -> PrFormula somePrefix bprs (Dis [f, nom newNom])) otherUrfathers)
                )
-               False
+               []
    where currentUrfather = getUrfather br (DS.Prefix pr)
          prefs = [0..(lastPref br)]
          otherUrfathers = delete currentUrfather $ filter (isNominalUrfather br) prefs
@@ -696,7 +697,7 @@ createNewPref :: CmdLineParams -> Branch -> BranchInfo
 createNewPref clp br
  = addFormulas clp newBr (   map (\(bps,f) -> PrFormula newPr bps f) univConstraints
                           ++ map (\(bps,f,newNom) -> PrFormula newPr bps (Dis [f, nom newNom])) diffBoxConstraints)
-                         False
+                         []
    where newPr = (lastPref br) + 1
          newBr = br{lastPref = newPr}
          univConstraints = univCons br
