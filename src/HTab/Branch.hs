@@ -25,7 +25,7 @@ ReducedDisjunct(..)
 ) where
 
 import Control.Monad.State(StateT, MonadState)
-import Data.List(delete, nub, minimumBy)
+import Data.List(delete, minimumBy)
 
 import qualified Data.Map as Map
 import qualified Data.List as List
@@ -33,7 +33,7 @@ import qualified Data.Set as Set
 
 import qualified HTab.DisjSet as DS
 
-import Data.Maybe(fromJust)
+import Data.Maybe( fromJust, catMaybes)
 
 import HTab.Timeout( TimeoutSignal )
 import HTab.Statistics(Statistics)
@@ -233,68 +233,59 @@ addFormulas _ br [] _ = BranchOK br
 
 -- 3 main cases : adding a positive nominal, adding a disjunction, and otherwise.
 addFormula :: CmdLineParams -> Branch -> PrFormula -> MergeHistory -> BranchInfo
-addFormula clp br f@(PrFormula pr newFormulaBprs f2@(Lit (PosLit (N (NomSymbol n))))) history
+addFormula clp br f@(PrFormula pr fBprs f2@(Lit (PosLit (N (NomSymbol n))))) history
  | (pr,n) `elem` history = addFormulaBaseCase clp br f
  | otherwise
-   = result
-     where classes = nomPrefClasses br
-           ((DS.Prefix rootP),classes2) = DS.find (DS.Prefix pr) classes
+   = let
+         (DS.Prefix ur1,classes1) = DS.find  (DS.Prefix pr) (nomPrefClasses br)
+         (nomAncestor  ,classes2) = DS.find  (DS.Nominal n) classes1
+         classes3                 = DS.union (DS.Prefix pr) (DS.Nominal n) classes2
+     in
+      case nomAncestor of
+       DS.Nominal _  ->     -- nominal not yet in the equivalence classes
+            let
+                newBr = addClassDeps ur1 fBprs $ br { nomPrefClasses = classes3 }
+            in
+                addFormula clp newBr ( PrFormula ur1 fBprs f2 ) ((ur1,n):history)
+       DS.Prefix ur2
+         | ur1 == ur2       -- same class
+            -> addFormula clp (addClassDeps ur1 fBprs br) ( PrFormula ur1 fBprs f2 ) ((ur1,n):history)
+         | otherwise        -- two different classes
+            ->
+              let
+                 oldUr                    = max ur1 ur2
+                 newUr                    = min ur1 ur2
+                 clashableInfoSlots       = catMaybes $ map (\ur -> Map.lookup ur (clashStr br))  [ur1,ur2]
+                 currentDependencies      = bps_unions $ fBprs:(map (findDeps br) [ur1,ur2])
+                 newPrToBrPrefs           = Map.insert newUr currentDependencies (prToBrPrefs br)
+                 newClashableSlotUrfather = addDepsToClashableSlot currentDependencies $ clashableInfoSlotsUnions clashableInfoSlots
+              in
+                 case newClashableSlotUrfather of
+                  Slot_UpdateFailure clashingDeps ->
+                      BranchClash br pr (bps_union clashingDeps currentDependencies) f2
 
-           (nomAncestor,classes3) = DS.find (DS.Nominal n) classes2
+                  Slot_UpdateSuccess urfatherSlot ->
+                      let newClashStr    = Map.delete oldUr $ Map.insert newUr urfatherSlot (clashStr br)
+                          newPrefToForms = moveInMap (prefToForms br) oldUr newUr Set.union
+                          newBoxConstr   = moveInnerDataDMapPlusDeps fBprs (boxConstr br) oldUr newUr
+                          newAccStr      = moveInnerDataDMapPlusDeps fBprs (accStr br)    oldUr newUr
+                          newDiaRlCh     = moveInMap (diaRlCh br) oldUr newUr Set.union
 
-           involvedUrfathers = nub $ rootP : case nomAncestor of
-                                              (DS.Nominal _) -> []            -- if the nominal was not yet in the classes
-                                              (DS.Prefix rr) -> [rr]
+                          mapBoxs = map (\idx -> Map.findWithDefault (Map.empty) idx (boxConstr br) ) [ur1,ur2]
+                          mapAccs = map (\idx -> Map.findWithDefault (Map.empty) idx (accStr br)    ) [ur1,ur2]
+                          formulasToSend = concatMap (newFormulasToSend fBprs) $ almostCartesianProduct mapBoxs mapAccs
 
-           newUrfather = minimum involvedUrfathers
-           exUrfathers = delete newUrfather involvedUrfathers
-
-           classes4 = DS.union (DS.Prefix pr) (DS.Nominal n) classes3
-
-           currentDependencies = bps_unions $ newFormulaBprs:(map (findDeps br) involvedUrfathers)
-           newPrToBrPrefs = Map.insert newUrfather currentDependencies (prToBrPrefs br)
-
-           -- get clashable formulas from ex urfathers, add the current dependencies, union and see if there is a clash or not
-           mClashableInfoSlots = map        (\exUrfather -> Map.lookup exUrfather (clashStr br))  involvedUrfathers
-           clashableInfoSlots  = concatMap  (\(mSlot) -> maybe [] (\slot -> [slot]) mSlot )       mClashableInfoSlots
-
-           successOrFailure_newClashableSlotUrfather = addDepsToClashableSlot (clashableInfoSlotsUnions clashableInfoSlots) currentDependencies
-
-           result = case successOrFailure_newClashableSlotUrfather of
-                     Slot_UpdateFailure clashingDeps ->
-{-clash-}                 BranchClash br pr (bps_union clashingDeps currentDependencies) f2 -- if clash, it's because of: clashable formulas deps, new formula desps, involved classes deps
-                     Slot_UpdateSuccess urfatherSlot ->
-{-success-}           let newClashable_info = let augmented = Map.insert newUrfather urfatherSlot (clashStr br) in
-                                              foldr (\exUr cInfo -> Map.delete exUr cInfo) augmented exUrfathers
-
-                          -- move formulas of the prefix-to-formula map  (to keep consistency for inclusion urfather calculation)
-                          newPrefixToFormulas = if requireLocalFormulasTracking br
-                                                  then foldr (\exUrfather prefToForms_ -> moveInMap prefToForms_ exUrfather newUrfather Set.union) (prefToForms br) exUrfathers
-                                                  else (prefToForms br)
-
-                          -- add the new formulas that should be sent to accessible prefixes to the branch
-                          mapBoxs = map (\idx -> Map.findWithDefault (Map.empty) idx (boxConstr br) ) involvedUrfathers
-                          mapAccs = map (\idx -> Map.findWithDefault (Map.empty) idx (accStr br)    ) involvedUrfathers
-                          formulasToSend = concatMap (uncurry $ newFormulasToSend newFormulaBprs)
-                                                     $ almostCartesianProduct mapBoxs mapAccs
-
-                          -- move box constraint and accessibility relation data to the new urfather
-                          newBoxConstr = foldr (\exUrfather boxStr_  -> moveInnerDataDMapPlusDeps newFormulaBprs boxStr_  exUrfather newUrfather)   (boxConstr br)  exUrfathers
-                          newAccStr    = foldr (\exUrfather accStr_  -> moveInnerDataDMapPlusDeps newFormulaBprs accStr_  exUrfather newUrfather)   (accStr br)     exUrfathers
-
-                          -- same for (<>) rule chart
-                          newDiaRlCh = foldr (\exUrfather diaRlCh_ -> moveInMap diaRlCh_ exUrfather newUrfather Set.union)   (diaRlCh br) exUrfathers
-
-                          nubbedNewFormulas = nubAndMergeDeps $ [PrFormula newUrfather newFormulaBprs f2] ++ formulasToSend
-                          brUpdated         = br{nomPrefClasses = classes4,
+                          formulasToAdd  = nubAndMergeDeps (PrFormula newUr fBprs f2:formulasToSend)
+                          newBr             = br{nomPrefClasses = classes3,
                                                  boxConstr      = newBoxConstr,
                                                  accStr         = newAccStr,
                                                  prToBrPrefs    = newPrToBrPrefs,
-                                                 prefToForms    = newPrefixToFormulas,
+                                                 prefToForms    = newPrefToForms,
                                                  diaRlCh        = newDiaRlCh,
-                                                 clashStr       = newClashable_info}
-                         in
-                             addFormulas clp brUpdated nubbedNewFormulas ((newUrfather,n):history)
+                                                 clashStr       = newClashStr    }
+                      in
+                          addFormulas clp newBr formulasToAdd ((newUr,n):history)
+
 
 -- if Unit Propagation enabled : try to reduce disjunction
 addFormula clp br pf@(PrFormula pr bprs disF@(Dis fs)) _
@@ -421,10 +412,13 @@ getUrfatherAndDeps br p =
 findDeps :: Branch -> Prefix -> BranchingPrefixes
 findDeps br pr = Map.findWithDefault bps_empty pr (prToBrPrefs br)
 
+addClassDeps :: Prefix -> BranchingPrefixes -> Branch -> Branch
+addClassDeps pr bprs br = br { prToBrPrefs = Map.insert pr bprs (prToBrPrefs br) }
+
 {-     box-related constraints     -}
 
-newFormulasToSend :: BranchingPrefixes -> Map.Map Rel [(BranchingPrefixes,Formula)] -> Map.Map Rel [(BranchingPrefixes,Prefix)] -> [PrFormula]
-newFormulasToSend deps mapBox mapAcc
+newFormulasToSend :: BranchingPrefixes -> (Map.Map Rel [(BranchingPrefixes,Formula)], Map.Map Rel [(BranchingPrefixes,Prefix)]) -> [PrFormula]
+newFormulasToSend deps (mapBox, mapAcc)
  = [PrFormula p (bps_unions [deps,bps1,bps2]) f |
                       r1 <- Map.keys mapBox,
                       r2 <- Map.keys mapAcc,    r1 == r2,
@@ -834,8 +828,8 @@ updateClashableInfoSlot cis a             bool  bprs  -- nominals, propositional
 
 -- Other functions related to clashable information
 
-addDepsToClashableSlot :: Slot_UpdateResult -> BranchingPrefixes -> Slot_UpdateResult
-addDepsToClashableSlot res_cis bps =
+addDepsToClashableSlot :: BranchingPrefixes -> Slot_UpdateResult -> Slot_UpdateResult
+addDepsToClashableSlot bps res_cis =
  case res_cis of
   Slot_UpdateSuccess cis         ->  Slot_UpdateSuccess $ Map.map (\(a,currentBps) -> (a,bps_union currentBps bps)) cis
   failure@(Slot_UpdateFailure _) -> failure
