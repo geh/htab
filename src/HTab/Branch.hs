@@ -163,7 +163,7 @@ emptyBranch l blockingMode immediate =
 
 instance Show Branch where
     show br = "Input language: " ++ show (inputLanguage br) ++
-              "\nClashable formulas: " ++ prettyShowMap_ (clashStr br) (\v -> "(" ++ prettyShowMap_clashable v ++ ")") "\n " ++
+              "\nClashable formulas: " ++ "\n " ++ prettyShowMap_ (clashStr br) (\v -> "(" ++ prettyShowMap_clashable v ++ ")") "\n " ++
               "\nConjunctions: "   ++ show (Set.toList $ conjStr br)  ++
               "\nDisjunctions: "   ++ show (Set.toList $ disjStr br)  ++
               "\nDiamonds: "       ++ show (Set.toList $ diaStr br)   ++
@@ -181,8 +181,8 @@ instance Show Branch where
               "\nDown var relevant chart: " ++ prettyShowMap_ (downVarRelevantCh br) show ", " ++
               "\nUniv constraints: "++ show (univCons br) ++
               "\nDiff box constraints: "++ show (dBoxCons br) ++
-              "\nPrefix to branching prefixes: " ++ prettyShowMap_ (prToBrPrefs br) bps_show "\n " ++
-              "\nPrefix to formulas: " ++ prettyShowMap_ (prefToForms br) (show . Set.toList) "\n " ++
+              "\nPrefix to branching prefixes: " ++ "\n " ++ prettyShowMap_ (prToBrPrefs br) bps_show "\n " ++
+              "\nPrefix to formulas: " ++ "\n " ++ prettyShowMap_ (prefToForms br) (show . Set.toList) "\n " ++
               "\nParent: " ++ prettyShowMap (prefParent br) ", " ++
               "\nInclusion urfather map: "  ++ show (inclUrMap br) ++
               "\nIncreased prefixes: " ++ show (incrPrs br) ++
@@ -220,7 +220,7 @@ prettyShowMap_rel_bps_x dasMap
    to prefixes, nominals, and vId/nom rules
 -}
 
-type MergeHistory = [(Prefix,Int)]
+type MergeHistory = [(Prefix,String)]
 
 addFormulas :: CmdLineParams -> Branch -> [PrFormula] -> MergeHistory -> BranchInfo
 addFormulas clp br (hd:tl) history
@@ -353,8 +353,6 @@ addFormula3 _ br pf@(PrFormula _ _ f2@(At _ _))
                          then br
                          else br{ atStr = Set.insert pf (atStr br),
                                  atRlCh = Set.insert f2 (atRlCh br)}
-
-addFormula3 _ _ (PrFormula _ _ (Atv _ _)) = error "addFormula Atv : should not happen"
 
 addFormula3 _ br pf@(PrFormula pr _ f2@(Down _ _))
            = BranchOK $ block $ if downAlreadyDone br pr f2
@@ -574,7 +572,6 @@ forInclusion br (Lit (NegLit atom)) = forInclAtom br atom
 forInclusion _ (Con _) = False
 forInclusion _ (Dis _) = False
 forInclusion _ (At _ _) = False
-forInclusion _ (Atv _ _) = False
 forInclusion _ (Down _ _) = False
 forInclusion _ (Box _ _) = True
 forInclusion _ (Dia _ _) = True
@@ -587,7 +584,6 @@ forInclAtom :: Branch -> Atom -> Bool
 forInclAtom _  Taut  = False
 forInclAtom br (N n) = Set.member n (relevantNominals br)
 forInclAtom _  (P _) = True
-forInclAtom _  (V _) = error "forInclAtom statevar : should not happen"
 
 addParentPrefix :: Branch -> Prefix -> Prefix -> Branch
 addParentPrefix br son father =  br{prefParent = Map.insert son father (prefParent br)}
@@ -696,23 +692,23 @@ createNewPref clp br
 --
 
 incPropSymbol :: PropSymbol -> PropSymbol
-incPropSymbol (PropSymbol n) = PropSymbol (n+1)
+incPropSymbol (PropSymbol n) = PropSymbol (n++"'")
 
 
 createNewProp :: Branch -> Branch
 createNewProp br
  = br{lastProp = Just newProp}
-    where newProp = maybe (PropSymbol 0) incPropSymbol (lastProp br)
+    where newProp = maybe (PropSymbol "P0") incPropSymbol (lastProp br)
 
 --
 
 incNomSymbol :: NomSymbol -> NomSymbol
-incNomSymbol (NomSymbol n) = NomSymbol (n+1)
+incNomSymbol (NomSymbol n) = NomSymbol (n++"'")
 
 createNewNom :: Branch -> (Branch, NomSymbol)
 createNewNom br
  = (br{lastNom = Just newNom}, newNom)
-    where newNom =  maybe (NomSymbol 0) incNomSymbol (lastNom br)
+    where newNom =  maybe (NomSymbol "N0") incNomSymbol (lastNom br)
 
 
 createNewNomTestRelevance :: Branch -> Formula -> Branch
@@ -722,7 +718,7 @@ createNewNomTestRelevance br f
       downVarRelevantCh = newDVRC
      }
    where (relevant, newDVRC) = doMemoize checkIfVariableNegatedOnce f (downVarRelevantCh br)
-         newNom = maybe (NomSymbol 0) incNomSymbol (lastNom br)
+         newNom = maybe (NomSymbol "N0") incNomSymbol (lastNom br)
 
 --
 
@@ -735,7 +731,6 @@ remFormula br f@(PrFormula _ _ (At _ _))       = br{atStr   =(Set.delete f (atSt
 remFormula br f@(PrFormula _ _ (D _))          = br{diffStr =(Set.delete f (diffStr br))}
 remFormula br f@(PrFormula _ _ (Down _ _))     = br{downStr =(Set.delete f (downStr br))}
 remFormula _    (PrFormula _ _ (Box _ _))      = error "that formula should never be deleted"
-remFormula _    (PrFormula _ _ (Atv _ _))      = error "that formula should never be deleted"
 remFormula _    (PrFormula _ _ (A _))          = error "that formula should never be deleted"
 remFormula _    (PrFormula _ _ (B _))          = error "that formula should never be deleted"
 remFormula _    (PrFormula _ _ (Lit (PosLit _))) = error "that formula should never be deleted"

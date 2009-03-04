@@ -256,12 +256,12 @@ getNewPref br = (lastPref br)+1
 --
 
 getNewProp :: Branch -> PropSymbol
-getNewProp br = maybe (PropSymbol 0) incPropSymbol (lastProp br)
+getNewProp br = maybe (PropSymbol "p_0") incPropSymbol (lastProp br)
 
 --
 
 getNewNom :: Branch -> NomSymbol
-getNewNom br = maybe (NomSymbol 0) incNomSymbol (lastNom br)
+getNewNom br = maybe (NomSymbol "n_0") incNomSymbol (lastNom br)
 
 -- E
 existRule :: PrFormula -> Branch -> Rule

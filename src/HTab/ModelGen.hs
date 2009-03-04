@@ -10,7 +10,7 @@ import qualified HyLo.Model.Herbrand as H
 import qualified HyLo.Formula.NNF as NNF
 
 import HTab.Formula( Prefix, Atom (..), Rel,
-                     NomSymbol(..), RelSymbol(..), PropSymbol(..), StateVar,
+                     NomSymbol(..), RelSymbol(..), PropSymbol(..),
                      LanguageInfo(..) )
 import HTab.Branch( Branch(..), prefixes,
                     isInTheModel, getModelRepresentative )
@@ -26,32 +26,31 @@ buildHerbrandModel branch =
  where
        bias = if null $ languageNoms $ inputLanguage branch
                then 0
-               else 1 + (maximum $ map unpackNomSymbol $ languageNoms $ inputLanguage branch)
+               else 1 + (length $ languageNoms $ inputLanguage branch)
        prefixAndPropCouples = prefixAndProps branch
        es = Set.union
              (Set.fromList
                [NNF.At
-                (NomSymbol ((urfatherOrPrefixZero branch n) + bias))
+                (NomSymbol $ show (urfatherOrPrefixZero branch n + bias))
                 (NNF.Nom n) | n <- (languageNoms $ inputLanguage branch)]
              )
              (Set.fromList
                [NNF.At
-                (NomSymbol (p + bias))
-                (NNF.Nom (NomSymbol (p + bias))) | p <- (prefixes branch), isInTheModel branch p]
+                (NomSymbol $ show (p + bias))
+                (NNF.Nom (NomSymbol $ show (p + bias))) | p <- (prefixes branch), isInTheModel branch p]
              )
        ps = Set.fromList
              [NNF.At
-               (NomSymbol (pre+bias))
+               (NomSymbol $ show (pre + bias))
                (NNF.Prop pro) | (pre,pro) <- prefixAndPropCouples]
        rs = Set.fromList $ map accToNNF
               $ concatMap (\((p1,rel),bp_ps) -> map (\(_,p2) -> (p1 + bias, rel, (getModelRepresentative branch p2) + bias))
                                                     bp_ps)
                           (filter (isInTheModel branch . fst . fst) $ flattenDMap $ accStr branch)
 
-accToNNF :: (Prefix,Rel,Prefix)
-             -> NNF.Formula NomSymbol PropSymbol RelSymbol StateVar (NNF.At NNF.Nom (NNF.Diam NNF.Nom))
+accToNNF :: (Prefix,Rel,Prefix) -> NNF.Formula NomSymbol PropSymbol RelSymbol (NNF.At (NNF.Diam NNF.Nom))
 accToNNF (p1,r,p2) =
-  NNF.At (NomSymbol p1) $ NNF.Diam (RelSymbol r) $ NNF.Nom (NomSymbol p2)
+  NNF.At (NomSymbol (show p1)) $ NNF.Diam (RelSymbol r) $ NNF.Nom (NomSymbol (show p2))
 
 urfatherOrPrefixZero :: Branch -> NomSymbol -> Prefix
 urfatherOrPrefixZero br (NomSymbol n) =
@@ -69,6 +68,6 @@ prefixAndProps br =
        isPosLitProp   (P _)  = True
        isPosLitProp     _    = False
 
-unpackNomSymbol :: NomSymbol -> Int
-unpackNomSymbol (NomSymbol n) = n
+--unpackNomSymbol :: NomSymbol -> String
+--unpackNomSymbol (NomSymbol n) = n
 
