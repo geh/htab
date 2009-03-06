@@ -1,4 +1,6 @@
 module HTab.DisjSet where
+
+import Data.Maybe (isNothing)
 import qualified Data.Map as Map
 
 -- a disjoint-set forest
@@ -31,8 +33,7 @@ union a b s = case compare rootA rootB of
                      (rootB,modifiedDisjSet2) = find b modifiedDisjSet1
 
 isRoot :: Ord x => x -> DisjSet x -> Bool
-isRoot n s = maybe True (\_ -> False) m
-              where m = Map.lookup n s
+isRoot n s = isNothing $ Map.lookup n s
 
 -- constructor of an empty disjoint-set forest
 mkDSet :: Ord x => DisjSet x
@@ -43,7 +44,7 @@ data Pointer = Prefix Int | Nominal Int
  deriving (Eq)
 
 instance Show Pointer where
- show (Prefix p)  = "P" ++ show p
+ show (Prefix p)  = 'P' : show p
  show (Nominal n) = "N" ++ show n
 
 instance Ord Pointer where
