@@ -55,7 +55,7 @@ instance Show Atom where
 
 instance Show Literal where
  show (PosLit a) = show a
- show (NegLit a) =  "!" ++ show a
+ show (NegLit a) =  '!' : show a
 
 data Formula
      = Lit Literal
@@ -88,7 +88,7 @@ parse :: String -> Formula
 parse = convert . InputFile.parse
 
 convert :: [F.Formula NomSymbol PropSymbol RelSymbol] -> Formula
-convert fs = conv_ $ foldr (\f1 f2 -> f1 F.:&: f2) F.Top fs
+convert = conv_ . foldr (\f1 f2 -> f1 F.:&: f2) F.Top
 
 conv_ :: F.Formula NomSymbol PropSymbol RelSymbol -> Formula
 conv_ F.Top = taut
@@ -151,13 +151,13 @@ instance Ord PrFormula where
    EQ -> compare (pr1,f1) (pr2,f2)
 
 instance Show PrFormula where
- show (PrFormula pr bprs f) = (show pr)++":"++(show $ IntSet.toList bprs)++":"++(show f)
+ show (PrFormula pr bprs f) = show pr ++ ":" ++ (show $ IntSet.toList bprs) ++ ":" ++ show f
 
 showLess :: PrFormula -> String
-showLess (PrFormula pr _ f) = (show pr)++":"++(show f)
+showLess (PrFormula pr _ f) = show pr ++ ":" ++ show f
 
 prefixList :: Prefix -> BranchingPrefixes -> [Formula] -> [PrFormula]
-prefixList p bps fl = [(PrFormula p bps formula)|formula <-fl]
+prefixList p bps fl = [PrFormula p bps formula|formula <-fl]
 
 firstPrefixedFormula :: Formula -> PrFormula
 firstPrefixedFormula = PrFormula 0 bps_empty
@@ -169,9 +169,9 @@ taut :: Formula
 prop :: PropSymbol -> Formula
 nom  :: NomSymbol -> Formula
 
-taut   = Lit $ PosLit Taut
-prop p = Lit $ PosLit $ P p
-nom  n = Lit $ PosLit $ N n
+taut = Lit $ PosLit Taut
+prop = Lit . PosLit . P
+nom  = Lit . PosLit . N
 
 {- Modalities -}
 box, diamond :: RelSymbol -> Formula -> Formula
@@ -185,11 +185,11 @@ dExistMod  = D
 
 {- binder -}
 downArrow :: NomSymbol -> Formula -> Formula
-downArrow v f = Down v f
+downArrow = Down
 
 {- Hybrid operators -}
 at :: NomSymbol -> Formula -> Formula
-at  n  f    = At  n f
+at = At
 
 {- Conjunction and disjunction -}
 
@@ -247,7 +247,7 @@ data AccFormula = AccFormula BranchingPrefixes RelSymbol Prefix Prefix
      deriving (Eq, Ord)
 
 instance Show AccFormula where
- show (AccFormula bprs r p1 p2) = (show bprs) ++ ":" ++ (show p1)++"<"++(show r)++">"++(show p2)
+ show (AccFormula bprs r p1 p2) = show bprs ++ ":" ++ show p1 ++ "<" ++ show r ++ ">" ++ show p2
 
 {- recognize trivial formulas to trim conjunctions and disjunctions -}
 isTrue, isFalse :: Formula -> Bool
@@ -256,22 +256,19 @@ isTrue  _                   = False
 isFalse (Lit (NegLit Taut)) = True
 isFalse  _                  = False
 
-
--- deep negation
--- digs until it finds another negation, or an atom
 neg :: Formula -> Formula
-neg (Con l)      = Dis (map neg l)
-neg (Dis l)      = Con (map neg l)
-neg (At n f)     = At   n (neg f)
-neg (Down v f)   = Down v (neg f)
-neg (Box r f)    = Dia  r (neg f)
-neg (Dia r f)    = Box  r (neg f)
-neg (A f)        = E (neg f)
-neg (E f)        = A (neg f)
-neg (D f)        = B (neg f)
-neg (B f)        = D (neg f)
-neg (Lit (PosLit a)) = Lit $ NegLit a --
-neg (Lit (NegLit a)) = Lit $ PosLit a -- cases where it doesn't go deeper
+neg (Con l)          = Dis (map neg l)
+neg (Dis l)          = Con (map neg l)
+neg (At n f)         = At   n (neg f)
+neg (Down v f)       = Down v (neg f)
+neg (Box r f)        = Dia  r (neg f)
+neg (Dia r f)        = Box  r (neg f)
+neg (A f)            = E (neg f)
+neg (E f)            = A (neg f)
+neg (D f)            = B (neg f)
+neg (B f)            = D (neg f)
+neg (Lit (PosLit a)) = Lit (NegLit a)
+neg (Lit (NegLit a)) = Lit (PosLit a)
 
 data LanguageInfo = LanguageInfo {   languageNoms :: [NomSymbol], -- ascending list
                                      relevantNoms :: [NomSymbol],
@@ -291,9 +288,9 @@ formulaLanguageInfo f
                     languageDown = hasDownArrow f }
 
     where (allNoms_,relNoms_) = extractNominals f
-          noms = Set.toAscList $ allNoms_
+          noms    = Set.toAscList allNoms_
           relNoms = Set.toAscList relNoms_
-          props = Set.toAscList $ extractProps f
+          props   = Set.toAscList $ extractProps f
 
 -- composeXX functions follow the idea from
 -- "A pattern for almost compositional functions", Bringert and Ranta.
@@ -301,7 +298,7 @@ composeFold :: b
             -> (b -> b -> b)
             -> (Formula -> b)
             -> (Formula -> b)
-composeFold zero combine g = \e -> case e of
+composeFold zero combine g e = case e of
     Con fs     -> foldr1 combine $ map g fs
     Dis fs     -> foldr1 combine $ map g fs
     Dia _ f    -> g f
@@ -317,7 +314,7 @@ composeFold zero combine g = \e -> case e of
 composeMap :: (Formula -> Formula)
            -> (Formula -> Formula)
            -> (Formula -> Formula)
-composeMap baseCase g = \e -> case e of
+composeMap baseCase g e = case e of
     Con fs     -> Con $ map g fs
     Dis fs     -> Dis $ map g fs
     Dia r f    -> Dia r (g f)
