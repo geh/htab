@@ -33,7 +33,7 @@ import qualified Data.Set as Set
 
 import qualified HTab.DisjSet as DS
 
-import Data.Maybe( fromJust, catMaybes)
+import Data.Maybe( fromJust, fromMaybe, catMaybes)
 
 import HTab.Timeout( TimeoutSignal )
 import HTab.Statistics(Statistics)
@@ -271,8 +271,8 @@ addFormula clp br f@(PrFormula pr fBprs f2@(Lit (PosLit (N (NomSymbol n))))) his
                           newAccStr      = moveInnerDataDMapPlusDeps fBprs (accStr br)    oldUr newUr
                           newDiaRlCh     = moveInMap (diaRlCh br) oldUr newUr Set.union
 
-                          mapBoxs = map (\idx -> Map.findWithDefault (Map.empty) idx (boxConstr br) ) [ur1,ur2]
-                          mapAccs = map (\idx -> Map.findWithDefault (Map.empty) idx (accStr br)    ) [ur1,ur2]
+                          mapBoxs = map (\idx -> Map.findWithDefault Map.empty idx (boxConstr br) ) [ur1,ur2]
+                          mapAccs = map (\idx -> Map.findWithDefault Map.empty idx (accStr br)    ) [ur1,ur2]
                           formulasToSend = concatMap (newFormulasToSend fBprs) $ almostCartesianProduct mapBoxs mapAccs
 
                           formulasToAdd  = nubAndMergeDeps (PrFormula newUr fBprs f2:formulasToSend)
@@ -307,7 +307,7 @@ addFormulaBaseCase clp br f@(PrFormula pr bprs f2)
       newBr = br{nomPrefClasses = newClasses}
       fToAdd = if urfather == pr -- always the case if we are in the modal language
                 then f
-                else (PrFormula urfather (bps_union bprs bprs2) f2)
+                else PrFormula urfather (bps_union bprs bprs2) f2
 
 addFormula2 :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
 addFormula2 clp br pf@(PrFormula pr _ f) =
@@ -388,7 +388,7 @@ addToPrefToForms :: Branch -> PrFormula -> Branch
 addToPrefToForms br (PrFormula pre _ f) =
   br{prefToForms = newMap}
  where currentPtf = prefToForms br
-       newMap = Map.insertWith (Set.union) pre (Set.singleton f) currentPtf
+       newMap = Map.insertWith Set.union pre (Set.singleton f) currentPtf
 
 isNominalUrfather :: Branch -> Prefix -> Bool
 isNominalUrfather b p = DS.isRoot (DS.Prefix p) classes
@@ -469,7 +469,7 @@ isNotBlocked br pr =
  case blockMode br of
    Nothing                      -> True
    Just InclusionBlockingGlobal -> let ur =  getUrfather br (DS.Prefix pr) in
-                                   (getModelRepresentative br ur) == ur  -- i'm not happy to call this model related function
+                                   getModelRepresentative br ur == ur  -- i'm not happy to call this model related function
    Just InclusionBlockingChain  -> not $ isChainInclusionBlocked br pr
 
 isChainInclusionBlocked :: Branch -> Prefix -> Bool
@@ -491,13 +491,8 @@ isInTheModel :: Branch -> Prefix -> Bool
 isInTheModel br pr
  = case blockMode br of
     Nothing                      -> isNominalUrfather br pr -- could be just pr as well, but here we have a smaller model
-    Just InclusionBlockingGlobal -> if isNominalUrfather br pr
-                                       then (getModelRepresentative br pr) == pr
-                                       else False
-    Just InclusionBlockingChain  -> if isNominalUrfather br pr
-                                       then (getModelRepresentative br pr) == pr
-                                       else False
-
+    Just InclusionBlockingGlobal -> isNominalUrfather br pr && getModelRepresentative br pr == pr
+    Just InclusionBlockingChain  -> isNominalUrfather br pr && getModelRepresentative br pr == pr
 
 getModelRepresentative :: Branch -> Prefix -> Prefix  -- which is also an inclusion representative
 getModelRepresentative br pr
@@ -516,7 +511,7 @@ getModelRepresentative br pr
                                            go :: Branch -> Prefix -> Prefix -> Maybe Prefix -> Prefix
                                            go br_ initial current mBlocker =
                                               case fatherOf current of
-                                                Nothing       -> maybe initial id mBlocker
+                                                Nothing       -> fromMaybe initial mBlocker
                                                 Just ancestor -> let urAncestor = getUrfather br (DS.Prefix ancestor) in
                                                                  if formulasIncluded br_ initial urAncestor
                                                                   then go br_ initial ancestor (Just urAncestor)
@@ -658,7 +653,7 @@ atAlreadyDone _ _ = error "at already done : wrong formula kind"
 addUnivConstraint :: CmdLineParams -> Branch -> BranchingPrefixes -> Formula -> BranchInfo
 addUnivConstraint clp br bps f
  = addFormulas clp newBr
-               ( map (\p -> PrFormula p bps f) $ urfathers )
+               ( map (\p -> PrFormula p bps f) urfathers )
                []
    where newBr = br{univCons = (bps,f):(univCons br)}
          prefs = [0..(lastPref br)]
@@ -692,7 +687,7 @@ createNewPref clp br
  = addFormulas clp newBr (   map (\(bps,f) -> PrFormula newPr bps f) univConstraints
                           ++ map (\(bps,f,newNom) -> PrFormula newPr bps (Dis [f, nom newNom])) diffBoxConstraints)
                          []
-   where newPr = (lastPref br) + 1
+   where newPr = lastPref br + 1
          newBr = br{lastPref = newPr}
          univConstraints = univCons br
          diffBoxConstraints = dBoxCons br
@@ -723,7 +718,7 @@ createNewNom br
 createNewNomTestRelevance :: Branch -> Formula -> Branch
 createNewNomTestRelevance br f
  = br{lastNom = Just newNom ,
-      relevantNominals = if relevant then Set.insert newNom (relevantNominals br) else (relevantNominals br),
+      relevantNominals = if relevant then Set.insert newNom (relevantNominals br) else relevantNominals br,
       downVarRelevantCh = newDVRC
      }
    where (relevant, newDVRC) = doMemoize checkIfVariableNegatedOnce f (downVarRelevantCh br)
@@ -822,7 +817,7 @@ updateClashableInfoSlot cis a             bool  bprs  -- nominals, propositional
     Just (bool2,bprs2) -> if bool == bool2
                            then Slot_UpdateSuccess $ Map.insert a (bool,bprs_to_keep) cis
                            else Slot_UpdateFailure $ bps_union bprs bprs2
-                             where bprs_to_keep = if (deps_min bprs2) <  (deps_min bprs) then bprs2 else bprs
+                             where bprs_to_keep = if deps_min bprs2 < deps_min bprs then bprs2 else bprs
                                   -- if the same information is caused by an earlier
                                   -- branching, only keep the information of the earliest set of dependencies
 
@@ -882,16 +877,16 @@ block :: Branch -> Branch
 block br = br{blockMode = Just $ defaultBlockMode br }
 
 hasUnivMod :: Branch -> Bool
-hasUnivMod br = languageUniv $ inputLanguage br
+hasUnivMod = languageUniv . inputLanguage
 
 hasDiffMod :: Branch -> Bool
-hasDiffMod br = languageDiff $ inputLanguage br
+hasDiffMod = languageDiff . inputLanguage
 
 hasDownArrow :: Branch -> Bool
-hasDownArrow br = languageDown $ inputLanguage br
+hasDownArrow = languageDown . inputLanguage
 
 requireLocalFormulasTracking :: Branch -> Bool
-requireLocalFormulasTracking br = (hasUnivMod br) || (hasDiffMod br) || (hasDownArrow br) || (blockMode br /= Nothing)
+requireLocalFormulasTracking br = hasUnivMod br || hasDiffMod br || hasDownArrow br || blockMode br /= Nothing
 -- TODO directly put a boolean for this in BranchData , and an explicit one
 
 
@@ -915,5 +910,5 @@ addZeroInPath :: BranchData -> BranchData
 addZeroInPath bd = bd{branch_path=(0:(branch_path bd))}
 
 incPathHead :: BranchData -> BranchData
-incPathHead bd = bd{branch_path=(((head (branch_path bd))+1):(tail $ branch_path bd))}
+incPathHead bd = bd{branch_path=(( head (branch_path bd) + 1 ):(tail $ branch_path bd))}
 
