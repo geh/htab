@@ -374,12 +374,10 @@ extractProps f              = composeFold Set.empty Set.union extractProps f
 
 hasUnivModality :: Formula -> Bool
 hasUnivModality (A _)     = True
-hasUnivModality (E _)     = True  -- remove this line when formulas are NNF
 hasUnivModality f         = composeFold False (||) hasUnivModality f
 
 hasDiffModality :: Formula -> Bool
 hasDiffModality (B _)     = True
-hasDiffModality (D _)     = True  -- remove this line when formulas are NNF
 hasDiffModality f         = composeFold False (||) hasDiffModality f
 
 hasDownArrow :: Formula -> Bool
