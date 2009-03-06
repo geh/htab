@@ -75,7 +75,7 @@ updateMetrics f stat = stat{metrics           = map (f $!) (metrics stat),
 updateStep :: Statistics -> Statistics
 updateStep s@(Stat _ [] _     _)         = s
 updateStep s@(Stat _ _  _     Nothing)   = s
-updateStep stat                          = stat{count = (count stat)+1}
+updateStep stat                          = stat{count = count stat + 1}
 
 needsToPrintOut :: Statistics -> Bool
 needsToPrintOut (Stat _ [] _     _)         = False
@@ -101,12 +101,12 @@ initialStatisticsStateFor f = flip f emptyStats
 {- addMetric: - Adds a metric at the end of the list (thus,
    metrics are printed out in the order in which they were added -}
 addMetric :: Metric -> StatisticsState ()
-addMetric newMetric  = modify (\stat -> stat{metrics = (metrics stat)++[newMetric]})
+addMetric newMetric  = modify (\stat -> stat{metrics = metrics stat ++[newMetric]})
 
 {- addInspectionMetric: - Adds a metric that will be printed out
    at regular intervals -}
 addInspectionMetric :: Metric -> StatisticsState ()
-addInspectionMetric newMetric = modify (\stat -> stat{inspectionMetrics = (inspectionMetrics stat)++[newMetric]})
+addInspectionMetric newMetric = modify (\stat -> stat{inspectionMetrics = inspectionMetrics stat ++[newMetric]})
 
 setPrintOutInterval :: Int -> StatisticsState ()
 setPrintOutInterval i = modify $ \s -> s{step = guard (i > 0) >> return i}
@@ -115,21 +115,20 @@ recordFiredRule :: RuleId -> StatisticsState ()
 recordFiredRule rule = modify (updateMetrics $ recordFiredRuleM rule)
 
 recordClosedBranch :: StatisticsState ()
-recordClosedBranch = modify (updateMetrics $ recordClosedBranchM)
+recordClosedBranch = modify (updateMetrics recordClosedBranchM)
 
 printOutAllMetrics :: StatisticsStateIO ()
 printOutAllMetrics = get >>= (liftIO . printOutAllMetrics')
 
 printOutAllMetrics' :: Statistics -> IO ()
 printOutAllMetrics' stats =
-    do
         unless (noStats stats) $ do
             liftIO $ putStrLn "(final statistics)"
             liftIO $ printOutList (inspectionMetrics stats ++ metrics stats)
 
 printOutInspectionMetrics :: StatisticsStateIO ()
 printOutInspectionMetrics = do  shouldPrint <- gets needsToPrintOut
-                                when ( shouldPrint ) $ do
+                                when shouldPrint  $ do
                                     liftIO $ putStr "(partial statistics: iteration "
                                     iter <- gets count
                                     liftIO . putStr . show $ iter
@@ -156,9 +155,9 @@ data Metric = RC  (Map RuleId Int) -- Rule application count
 type MetricModificator = Metric -> Metric
 
 instance Show Metric where
-  show (CB  x)   = "Closed branches: " ++ (show x)
+  show (CB  x)   = "Closed branches: " ++ show x
   show (RC  x)   = "Rule applications:" ++ concatMap p (Map.toList x)
-      where p (i,c) = "\n  " ++ (show i) ++ " rule: " ++ (show c)
+      where p (i,c) = "\n  " ++ show i ++ " rule: " ++ show c
 
 
 recordFiredRuleM :: RuleId -> MetricModificator
