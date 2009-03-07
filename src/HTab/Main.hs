@@ -15,19 +15,17 @@ import HTab.CommandLine( filename, maxtimeout, CmdLineParams, logState, genModel
                          configureMetrics, quietMode, inclBlockGlobal, inclBlockChain,
                          immediateBlock )
 import HTab.Branch( Branch, BranchInfo(..),initialBranchStateFor,BranchMonad, BranchData(..),
-                    emptyBranch, lastPref, BlockingMode(..) )
+                    emptyBranch, lastPref, BlockingMode(..), addFormulas )
 import HTab.Statistics( Statistics, initialStatisticsStateFor, printOutAllMetrics' )
 import HTab.Base( vPutStrLn )
 import HTab.Tableau( liftStats, tableau, OpenFlag(..) )
 import HTab.Formula( firstPrefixedFormula, formulaLanguageInfo, bps_empty,
-                     PrFormula(..), LanguageInfo(..), NomSymbol, Formula(..),
+                     PrFormula(..), LanguageInfo(..), Formula(..),
                      nom, parse )
 import HTab.ModelGen ( HerbrandModel, inducedModel )
 
 
 import HTab.Timeout ( withNoTimeout, notifyOnTimeout, TimeoutSignal )
-
-import HTab.Rules(BranchModification(..), applyMod)
 
 data SatFlagAndStats = SAT HerbrandModel Statistics | UNSAT Statistics | TIMEOUT Statistics
 
@@ -49,10 +47,12 @@ runWithParams clp =
      --
      f `seq` myPutStrLn ("\nInput:\n{ " ++ (show f) ++" }\nEnd of input\n\n");
      --
-     let branchInfo = addFirstFormulas clp (emptyBranch fLang blockMode (immediateBlock clp)) f (languageNoms fLang)
-                        where blockMode = case (inclBlockGlobal clp , inclBlockChain clp) of
-                                             (False, True) -> InclusionBlockingChain
-                                             ( _  ,   _  ) -> InclusionBlockingGlobal
+     let initialBranch = emptyBranch fLang blockMode (immediateBlock clp)
+                          where blockMode
+                                  = if inclBlockChain clp && (not $ inclBlockGlobal clp)
+                                     then InclusionBlockingChain
+                                     else InclusionBlockingGlobal
+     let branchInfo    = addFirstFormulas clp initialBranch f fLang
      --
      let handleTimeout
           | (maxtimeout clp) > 0 = notifyOnTimeout (maxtimeout clp)
@@ -109,12 +109,11 @@ tableauStart clp =
 -- add the input formula at prefix 0
 -- add a nominal formula at a different prefix for each nominal of the input formula
 
-addFirstFormulas :: CmdLineParams -> Branch -> Formula -> [NomSymbol] -> BranchInfo
-addFirstFormulas clp br_ f ns
- = applyMod clp br
-     ( BM_AddFormulas ( pf : ( map (\(p,n) ->  PrFormula p bps_empty (nom n)) $ zip [1..] ns))
-     )
-    where nbNs = length ns
+addFirstFormulas :: CmdLineParams -> Branch -> Formula -> LanguageInfo -> BranchInfo
+addFirstFormulas clp br_ f fLang
+ = addFormulas clp br ( pf : ( map (\(p,n) ->  PrFormula p bps_empty (nom n)) $ zip [1..] ns)) []
+    where ns = languageNoms fLang
+          nbNs = length ns
           br = br_{lastPref = (lastPref br_) + nbNs}
           pf = firstPrefixedFormula f
 
