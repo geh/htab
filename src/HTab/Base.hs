@@ -30,132 +30,15 @@ USA.
 module HTab.Base
 
 where
-
-import Data.List(intersperse)
+import Control.Monad ( when )
 import qualified Data.Map as Map
 
-infixr $.
-($.) :: (c -> c') -> (a -> b -> c) -> (a -> b -> c')
-($.) = (.) . (.)
-
-{- filterFirst:
-   Removes the first (i.e. leftmost) occurrence that satisfies f
--}
-filterFirst :: (a -> Bool) -> [a] -> [a]
-filterFirst _  []    = []
-filterFirst f (x:xs) = if f x then xs else (x:(filterFirst f xs))
-
-{- partition: Given
-
-  - a predicate p (a -> Bool)
-  - l, a list of [a]
-
-  returns a pair (l1, l2) such that l1 ++ l2 is a permutation of l
-  and x appears in l1 iff p x is True
--}
-partition :: (a -> Bool) -> [a] -> ([a], [a])
-partition _  []    = ([], [])
-partition p (x:xs) = if p x then (x:posxs, negxs) else (posxs, x:negxs)
-                  where (posxs, negxs) = partition p xs
-
-compareUsing :: Ord b => (a -> b) -> a -> a -> Ordering
-compareUsing f x y = compare (f x) (f y)
-
-{- both: Given
-
-  - a predicate p1
-  - a predicate p2
-
-  returns True iff both p1(x) and p2(x) return True
--}
-both :: (a -> Bool) -> (a -> Bool) -> (a -> Bool)
-both p1 p2 x = (p1 x) && (p2 x)
-
-{- atLeastOne: Given
-
-  - a predicate p1
-  - a predicate p2
-  - an element x
-
-  returns True iff p1(x) or p2(x) return True
--}
-atLeastOne :: (a -> Bool) -> (a -> Bool) -> (a -> Bool)
-atLeastOne p1 p2 x = (p1 x) || (p2 x)
-
-insertLookup :: Ord k => k -> v -> Map.Map k v -> (Maybe v, Map.Map k v)
-insertLookup = Map.insertLookupWithKey (\_ _ oldVal -> oldVal)
-
-adjustOrInsert ::  Ord k => (v -> v) -> k -> v -> Map.Map k v -> Map.Map k v
-adjustOrInsert f = Map.insertWith (const f)
-
-{- separate: Given
-
-  - a separator s
-  - a list l of some instance of Show
-
-  returns a String with that "shows" all the elements of l,
-  separating every contiguous elements with s
--}
-separate :: Show a => String -> [a] -> String
-separate _ []  = []
-separate _ [x] = show x
-separate s (x:xs) = (show x) ++ s ++ (separate s xs)
-
-
-{- commaSeparate: Given
-
-  - a list l of some instance of Show
-
-  returns a String with all the elements of l separated by commas
--}
-commaSeparate :: Show a => [a] -> String
-commaSeparate l = separate ", " l
-
-{- commaSeparateHdr: Given
-
-  - a string which represents a header
-  - a list l of some instance of Show
-
-  returns a String with the header, followed by all the elements
-  of l separated by commas, one below the other, and properly indented.
--}
-commaSeparateHdr :: Show a => String -> [a] -> String
-commaSeparateHdr hdr l = hdr ++ (separate separator l)
-           where separator = ",\n" ++ indent
-                 indent    = map (const ' ') hdr
-
-{- printcommaSeparateHdr: Given
-
-  - a string which represents a header
-  - a list l of some instance of Show
-
-  prints the header, followed by all the elements
-  of l separated by commas, one below the other, and properly indented.
--}
-printCommaSeparateHdr :: Show a => String -> [a] -> IO ()
-printCommaSeparateHdr hdr l = do
-                             let indent    = map (const ' ') hdr
-                             let separator = ",\n" ++ indent
-                             putStr hdr;
-                             putStr (separate separator l)
-
-showListWith :: (a -> ShowS) -> ShowS -> [a] -> ShowS -> ShowS
-showListWith f open xs close = open . commaSep xs . close
-    where commaSep = foldr1 (.) . intersperse (showString ", ") . map f
-
 vPutStrLn :: String -> Bool -> IO ()
-vPutStrLn s b = if b then putStrLn s
-                     else return ()
+vPutStrLn s b = when b $ putStrLn s
 
 intToBool :: Int -> Bool
 intToBool i | i == 0 = False
 intToBool _          = True
-
-listIncluded :: Eq a => [a] -> [a] -> Bool
--- is the first list included in the second list ?
--- (like a set inclusion, but with lists, ie, no multi-valuation)
-listIncluded l1 l2 = and $ map (\e -> elem e l2) l1
-
 
 almostCartesianProduct :: [a] -> [b] -> [(a,b)]
 -- example:

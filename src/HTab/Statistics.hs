@@ -51,8 +51,8 @@ import qualified Control.Monad.State as State(liftIO)
 
 import Data.Map(Map)
 import qualified Data.Map as Map(insertWith, toList, empty)
+import Data.List ( intercalate )
 
-import HTab.Base (separate)
 import HTab.RuleMetadata(RuleId(..))
 
 
@@ -140,6 +140,7 @@ printOutInspectionMetrics = do  shouldPrint <- gets needsToPrintOut
 printOutList :: Show a => [a] -> IO ()
 printOutList ms = unless ( null ms ) $ do
                           let separator = "\n----------------------------------\n"
+                          let separate sep l = intercalate sep $ map show l
                           putStr "begin"
                           putStr separator
                           putStr (separate separator ms)
