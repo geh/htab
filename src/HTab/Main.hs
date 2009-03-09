@@ -1,6 +1,6 @@
 module HTab.Main
 
-( runWithParams, SatFlagAndStats(..) )
+( runWithParams, OpenFlag(..))
 
 where
 import Control.Applicative ( (<$>) )
@@ -24,17 +24,13 @@ import HTab.Formula( firstPrefixedFormula, formulaLanguageInfo, bps_empty,
                      nom, parse )
 import HTab.ModelGen ( HerbrandModel, inducedModel )
 
-
 import HTab.Timeout ( withNoTimeout, notifyOnTimeout, TimeoutSignal )
 
-data SatFlagAndStats = SAT HerbrandModel Statistics | UNSAT Statistics | TIMEOUT Statistics
-
-
-runWithParams :: CmdLineParams -> IO (SatFlagAndStats)
+runWithParams :: CmdLineParams -> IO (OpenFlag)
 runWithParams clp =
  do  start <- getCPUTime
      --
-     let myPutStrLn = if quietMode clp then const (return ()) else putStrLn
+     let myPutStrLn str = vPutStrLn str (not $ quietMode clp)
      --
      let fromStdIn = do myPutStrLn $ "Reading from stdin (run again with" ++
                                      "`--help' for usage options)"
@@ -45,7 +41,7 @@ runWithParams clp =
      --
      let fLang = formulaLanguageInfo f
      --
-     f `seq` myPutStrLn ("\nInput:\n{ " ++ (show f) ++" }\nEnd of input\n\n");
+     f `seq` myPutStrLn ("\nInput:\n{ " ++ show f ++ " }\nEnd of input\n\n")
      --
      let initialBranch = emptyBranch fLang blockMode (immediateBlock clp)
                           where blockMode
@@ -55,43 +51,39 @@ runWithParams clp =
      let branchInfo    = addFirstFormulas clp initialBranch f fLang
      --
      let handleTimeout
-          | (maxtimeout clp) > 0 = notifyOnTimeout (maxtimeout clp)
-          | otherwise            = withNoTimeout
+          | maxtimeout clp > 0 = notifyOnTimeout (maxtimeout clp)
+          | otherwise          = withNoTimeout
      --
      result <- handleTimeout (tableauInit branchInfo clp)
      --
      case result of
-        SAT m stats   -> do myPutStrLn "The formula is satisfiable."
-                            saveGenModel clp m
-                            unless (quietMode clp) $
-                                printOutAllMetrics' stats
-        UNSAT stats   -> do myPutStrLn "The formula is unsatisfiable."
-                            unless (quietMode clp) $
-                                printOutAllMetrics' stats
-        TIMEOUT stats -> do myPutStrLn "TIMEOUT"
-                            unless (quietMode clp) $
-                                printOutAllMetrics' stats
-
+        (OPEN m, stats)   -> do myPutStrLn "The formula is satisfiable."
+                                saveGenModel clp m
+                                unless (quietMode clp) $
+                                   printOutAllMetrics' stats
+        (CLOSED _, stats) -> do myPutStrLn "The formula is unsatisfiable."
+                                unless (quietMode clp) $
+                                   printOutAllMetrics' stats
+        (TIMEOUT, stats)  -> do myPutStrLn "TIMEOUT"
+                                unless (quietMode clp) $
+                                   printOutAllMetrics' stats
      --
      end <- getCPUTime
      let elapsedTime = fromInteger (end - start) / 1000000000000.0
      myPutStrLn $ "Elapsed time: " ++ show (elapsedTime :: Double)
      --
-     return result
+     return $ fst result
 
 saveGenModel :: CmdLineParams -> HerbrandModel -> IO ()
 saveGenModel clp m = maybe (return ()) doWrite (genModel clp)
     where doWrite f = do writeFile f (show . inducedModel $ m)
                          unless (quietMode clp) $ putStrLn $ "Model saved as " ++ f
 
-tableauInit :: BranchInfo -> CmdLineParams -> TimeoutSignal -> IO (SatFlagAndStats)
+tableauInit :: BranchInfo -> CmdLineParams -> TimeoutSignal -> IO (OpenFlag,Statistics)
 tableauInit bi clp ts =
         do vPutStrLn ">> Starting rules application" (logState clp)
-           res <- initStatsState $ initBranchState bd $ tableauStart clp
-           case res of
-            ((OPEN m,_),stats)   -> return $ SAT m stats
-            ((CLOSED _,_),stats) -> return $ UNSAT stats
-            ((TIMEOUT_,_),stats) -> return $ TIMEOUT stats
+           ((openflag,_),stats) <- initStatsState $ initBranchState bd $ tableauStart clp
+           return (openflag,stats)
  where initStatsState  = initialStatisticsStateFor runStateT
        initBranchState = initialBranchStateFor runStateT
        bd              = BranchData
@@ -106,14 +98,14 @@ tableauStart clp =
     tableau
 
 -- preparation of the branch at the beginning of the calculus:
--- add the input formula at prefix 0
--- add a nominal formula at a different prefix for each nominal of the input formula
+--  - add the input formula at prefix 0
+--  - add a nominal formula at a fresh prefix for each nominal of the input formula
 
 addFirstFormulas :: CmdLineParams -> Branch -> Formula -> LanguageInfo -> BranchInfo
 addFirstFormulas clp br_ f fLang
  = addFormulas clp br ( pf : ( map (\(p,n) ->  PrFormula p bps_empty (nom n)) $ zip [1..] ns)) []
     where ns = languageNoms fLang
           nbNs = length ns
-          br = br_{lastPref = (lastPref br_) + nbNs}
+          br = br_{lastPref = lastPref br_ + nbNs}
           pf = firstPrefixedFormula f
 

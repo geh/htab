@@ -16,7 +16,7 @@ import Paths_HTab ( version )
 import Prelude hiding ( catch )
 import Control.Exception   ( catch )
 
-import HTab.Main ( runWithParams, SatFlagAndStats(..) )
+import HTab.Main ( runWithParams, OpenFlag(..) )
 
 main :: IO ()
 main = do r <- runCmdLineVersion
@@ -26,9 +26,9 @@ main = do r <- runCmdLineVersion
           --
           case r of
             Nothing          -> exit r_DID_NOT_RUN
-            Just (SAT _ _)   -> exit r_SAT
-            Just (UNSAT _)   -> exit r_UNSAT
-            Just (TIMEOUT _) -> exit r_TIMEOUT
+            Just (OPEN   _)  -> exit r_SAT
+            Just (CLOSED _)  -> exit r_UNSAT
+            Just (TIMEOUT )  -> exit r_TIMEOUT
     --
     where r_SAT           = 1
           r_UNSAT         = 2
@@ -40,7 +40,7 @@ exit :: Int -> IO a
 exit = exitWith . ExitFailure
 
 
-runCmdLineVersion :: IO (Maybe SatFlagAndStats)
+runCmdLineVersion :: IO (Maybe OpenFlag)
 runCmdLineVersion =
     do p_clp <- getCmdLineParams
        case p_clp of

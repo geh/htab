@@ -18,7 +18,7 @@ import HTab.Timeout( isTimeout )
 
 type DependencySet = BranchingPrefixes -- to handle backjumping
 
-data OpenFlag = OPEN HerbrandModel | CLOSED DependencySet | TIMEOUT_
+data OpenFlag = OPEN HerbrandModel | CLOSED DependencySet | TIMEOUT
 
 --
 
@@ -31,7 +31,7 @@ tableau =
          let signal = timeout_signal bd
          timeout <- isTimeout signal
          if timeout
-          then return TIMEOUT_
+          then return TIMEOUT
           else do debugMsg_NewSection
                   case (branch_info bd) of
                      BranchClash br pr bprs f ->
@@ -64,7 +64,7 @@ chooseBranch_ currentDepSet (hd:tl) =
     res <- tableau
     let currentBranchingDepth = branch_depth bd
     case res of
-     TIMEOUT_      -> return TIMEOUT_
+     TIMEOUT       -> return TIMEOUT
      o@(OPEN _)    -> return o
      CLOSED depSet -> if bps_member currentBranchingDepth depSet  -- was the clash because of this branching ?
                          then do put $ incPathHead bd
