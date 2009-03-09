@@ -29,6 +29,7 @@ parse
 
 import qualified Data.Set as Set
 import qualified Data.IntSet as IntSet
+import Data.Function ( on )
 
 import HyLo.Signature.Simple( PropSymbol(..),
                               NomSymbol(..),
@@ -233,36 +234,23 @@ disj    f          f'
     | otherwise            = skipSingleton Dis (sortAndNub2 f f')
 
 dimp :: Formula -> Formula -> Formula
-dimp f1 f2 = disj (conj f1 f2) (conj (neg f1) (neg f2))
+dimp f1 f2 = (f1 `conj` f2) `disj` (neg f1 `conj` neg f2)
 
 imp :: Formula -> Formula -> Formula
-imp f1 f2 = disj (neg f1) f2
+imp f1 f2 = neg f1 `disj` f2
 
 skipSingleton :: ([Formula] -> Formula) -> [Formula] -> Formula
 skipSingleton _ [x] = x
 skipSingleton c xs  = c xs
 
 mergeAndNub :: [Formula] -> [Formula] -> [Formula]
-mergeAndNub xs         []         = xs
-mergeAndNub []         ys         = ys
-mergeAndNub xs@(x:xs') ys@(y:ys') = case compare x y of
-                                      LT -> x:mergeAndNub xs' ys
-                                      EQ -> x:mergeAndNub xs' ys'
-                                      GT -> y:mergeAndNub xs  ys'
+mergeAndNub xs ys = Set.toAscList $ on Set.union Set.fromList xs ys
 
 insertAndNub :: Formula -> [Formula] -> [Formula]
-insertAndNub x []         = [x]
-insertAndNub x ys@(y:ys') = case compare x y of
-                              LT -> x:ys
-                              EQ -> ys
-                              GT -> y:insertAndNub x ys'
+insertAndNub f fs = Set.toAscList $ Set.insert f $ Set.fromList fs
 
 sortAndNub2 :: Formula -> Formula -> [Formula]
-sortAndNub2 x y = case compare x y of
-                    LT -> [x,y]
-                    EQ -> [x]
-                    GT -> [y,x]
-
+sortAndNub2  x y = mergeAndNub [x,y] []
 
 {- Accessibility Formulas -}
 -- of the kind i<>j with i and j prefixes
