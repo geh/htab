@@ -12,7 +12,7 @@ module HTab.Branch
 Branch(..), BranchMonad, createNewProp, createNewPref, createNewNomTestRelevance, BranchInfo(..),
 addFormulas, addFormula, addAccFormula, remFormula,
 addDiaRuleCheck, addDownRuleCheck, addDiffRuleCheck,
-addParentPrefix,
+addParentPrefix, addFirstFormulas,
 BranchData(..),branch_depth,
 emptyBranch,initialBranchStateFor,
 addZeroInPath,incPathHead,prefixes,
@@ -38,7 +38,7 @@ import Data.Maybe( fromJust, fromMaybe, catMaybes)
 
 import HTab.Timeout( TimeoutSignal )
 import HTab.Statistics(Statistics)
-import HTab.CommandLine(CmdLineParams, unitProp)
+import HTab.CommandLine(CmdLineParams(..))
 
 import HTab.Formula
 
@@ -126,8 +126,9 @@ branch_depth :: BranchData -> Int
 branch_depth b = length $ branch_path b
 
 --
-emptyBranch :: LanguageInfo -> BlockingMode -> Bool -> Branch
-emptyBranch l blockingMode immediate =
+
+emptyBranch :: CmdLineParams -> LanguageInfo -> Branch
+emptyBranch clp fLang =
                 Branch
                 { clashStr= Map.empty::Clashable_info,
                   conjStr= Set.empty::Conj_structure,
@@ -153,14 +154,18 @@ emptyBranch l blockingMode immediate =
                   prefToForms= Map.empty::PrefToFormulas,
                   prToDepSet= Map.empty::PrefToDepSet,
                   nomPrefClasses= DS.mkDSet::EquivClasses,
-                  inputLanguage = l,
+                  inputLanguage = fLang,
                   inclUrMap = Nothing,
                   incrPrs = [],
                   blockMode = if immediate then Just blockingMode else Nothing,
                   defaultBlockMode = blockingMode,
                   prefParent = Map.empty::PrefixParent,
-                  relevantNominals = Set.fromList $ languageNoms l
+                  relevantNominals = Set.fromList $ languageNoms fLang
                 }
+ where immediate    = immediateBlock clp
+       blockingMode = if inclBlockChain clp && (not $ inclBlockGlobal clp)
+                       then InclusionBlockingChain
+                       else InclusionBlockingGlobal
 
 instance Show Branch where
     show br = "Input language: " ++ show (inputLanguage br) ++
@@ -750,6 +755,17 @@ remFormula _    (PrFormula _ _ (A _))          = error "that formula should neve
 remFormula _    (PrFormula _ _ (B _))          = error "that formula should never be deleted"
 remFormula _    (PrFormula _ _ (Lit _ ))       = error "that formula should never be deleted"
 
+-- preparation of the branch at the beginning of the calculus:
+--  - add the input formula at prefix 0
+--  - add a nominal formula at a fresh prefix for each nominal of the input formula
+
+addFirstFormulas :: CmdLineParams -> Branch -> Formula -> LanguageInfo -> BranchInfo
+addFirstFormulas clp br_ f fLang
+ = addFormulas clp br ( pf : ( map (\(p,n) ->  PrFormula p dsEmpty (nom n)) $ zip [1..] ns)) []
+    where ns = languageNoms fLang
+          nbNs = length ns
+          br = br_{lastPref = lastPref br_ + nbNs}
+          pf = firstPrefixedFormula f
 
 {-     functions to handle the "clashable information", ie literals associated to prefixes     -}
 

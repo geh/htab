@@ -12,16 +12,13 @@ import System.CPUTime( getCPUTime )
 
 
 import HTab.CommandLine( filename, maxtimeout, CmdLineParams, logState, genModel,
-                         configureMetrics, quietMode, inclBlockGlobal, inclBlockChain,
-                         immediateBlock )
-import HTab.Branch( Branch, BranchInfo(..),initialBranchStateFor,BranchMonad, BranchData(..),
-                    emptyBranch, lastPref, BlockingMode(..), addFormulas )
+                         configureMetrics, quietMode )
+import HTab.Branch( BranchInfo(..),initialBranchStateFor,BranchMonad, BranchData(..),
+                    emptyBranch, addFirstFormulas )
 import HTab.Statistics( Statistics, initialStatisticsStateFor, printOutAllMetrics' )
 import HTab.Base( vPutStrLn )
 import HTab.Tableau( liftStats, tableau, OpenFlag(..) )
-import HTab.Formula( firstPrefixedFormula, formulaLanguageInfo, dsEmpty,
-                     PrFormula(..), LanguageInfo(..), Formula(..),
-                     nom, parse )
+import HTab.Formula( formulaLanguageInfo, parse )
 import HTab.ModelGen ( HerbrandModel, inducedModel )
 
 import HTab.Timeout ( withNoTimeout, notifyOnTimeout, TimeoutSignal )
@@ -43,11 +40,7 @@ runWithParams clp =
      --
      f `seq` myPutStrLn ("\nInput:\n{ " ++ show f ++ " }\nEnd of input\n\n")
      --
-     let initialBranch = emptyBranch fLang blockMode (immediateBlock clp)
-                          where blockMode
-                                  = if inclBlockChain clp && (not $ inclBlockGlobal clp)
-                                     then InclusionBlockingChain
-                                     else InclusionBlockingGlobal
+     let initialBranch = emptyBranch clp fLang
      let branchInfo    = addFirstFormulas clp initialBranch f fLang
      --
      let handleTimeout
@@ -96,16 +89,4 @@ tableauStart :: CmdLineParams -> BranchMonad OpenFlag
 tableauStart clp =
  do liftStats $ configureMetrics clp
     tableau
-
--- preparation of the branch at the beginning of the calculus:
---  - add the input formula at prefix 0
---  - add a nominal formula at a fresh prefix for each nominal of the input formula
-
-addFirstFormulas :: CmdLineParams -> Branch -> Formula -> LanguageInfo -> BranchInfo
-addFirstFormulas clp br_ f fLang
- = addFormulas clp br ( pf : ( map (\(p,n) ->  PrFormula p dsEmpty (nom n)) $ zip [1..] ns)) []
-    where ns = languageNoms fLang
-          nbNs = length ns
-          br = br_{lastPref = lastPref br_ + nbNs}
-          pf = firstPrefixedFormula f
 
