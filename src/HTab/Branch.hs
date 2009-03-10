@@ -21,11 +21,12 @@ getUrfather, getUrfatherAndDeps, isInTheModel,
 getModelRepresentative, hasUnivMod, hasDiffMod, isNotBlocked,
 calculateStepInfo, BlockingMode(..), diaAlreadyDone,
 downAlreadyDone, incPropSymbol, incNomSymbol,
-ReducedDisjunct(..)
+ReducedDisjunct(..), newNomBaseName, newPropBaseName
 ) where
 
 import Control.Monad.State(StateT, MonadState)
 import Data.List(delete, minimumBy)
+import Data.Char ( isNumber )
 
 import qualified Data.Map as Map
 import qualified Data.List as List
@@ -147,8 +148,8 @@ emptyBranch l blockingMode immediate =
                   dBoxCons = [],
                   univCons=[],
                   lastPref = 0,
-                  lastNom  = if null (languageNoms l) then Nothing else Just (maximum $ languageNoms l),   -- | TODO
-                  lastProp = if null (languageProps l) then Nothing else Just (maximum $ languageProps l), -- |   avoid this
+                  lastNom  = Nothing,
+                  lastProp = Nothing,
                   prefToForms= Map.empty::PrefToFormulas,
                   prToBrPrefs= Map.empty::PrefToBrPrefs,
                   nomPrefClasses= DS.mkDSet::EquivClasses,
@@ -692,23 +693,23 @@ createNewPref clp br
 --
 
 incPropSymbol :: PropSymbol -> PropSymbol
-incPropSymbol (PropSymbol n) = PropSymbol (n++"'")
+incPropSymbol (PropSymbol n) = PropSymbol (nextName n)
 
 
 createNewProp :: Branch -> Branch
 createNewProp br
  = br{lastProp = Just newProp}
-    where newProp = maybe (PropSymbol "P0") incPropSymbol (lastProp br)
+    where newProp = maybe (PropSymbol newPropBaseName) incPropSymbol (lastProp br)
 
 --
 
 incNomSymbol :: NomSymbol -> NomSymbol
-incNomSymbol (NomSymbol n) = NomSymbol (n++"'")
+incNomSymbol (NomSymbol n) = NomSymbol (nextName n)
 
 createNewNom :: Branch -> (Branch, NomSymbol)
 createNewNom br
  = (br{lastNom = Just newNom}, newNom)
-    where newNom =  maybe (NomSymbol "N0") incNomSymbol (lastNom br)
+    where newNom =  maybe (NomSymbol newNomBaseName) incNomSymbol (lastNom br)
 
 
 createNewNomTestRelevance :: Branch -> Formula -> Branch
@@ -718,7 +719,21 @@ createNewNomTestRelevance br f
       downVarRelevantCh = newDVRC
      }
    where (relevant, newDVRC) = doMemoize checkIfVariableNegatedOnce f (downVarRelevantCh br)
-         newNom = maybe (NomSymbol "N0") incNomSymbol (lastNom br)
+         newNom = maybe (NomSymbol newNomBaseName) incNomSymbol (lastNom br)
+
+--
+
+newNomBaseName, newPropBaseName :: String
+newNomBaseName = "0N"
+newPropBaseName = "0P"
+
+nextName :: String -> String
+nextName name
+ = newNumString ++ remainder
+   where (numString,remainder) = span isNumber name
+         newNumString          = increaseNumString numString
+         increaseNumString ss  = show ((read ss) + 1::Int)
+
 
 --
 
@@ -733,8 +748,7 @@ remFormula br f@(PrFormula _ _ (Down _ _))     = br{downStr =(Set.delete f (down
 remFormula _    (PrFormula _ _ (Box _ _))      = error "that formula should never be deleted"
 remFormula _    (PrFormula _ _ (A _))          = error "that formula should never be deleted"
 remFormula _    (PrFormula _ _ (B _))          = error "that formula should never be deleted"
-remFormula _    (PrFormula _ _ (Lit (PosLit _))) = error "that formula should never be deleted"
-remFormula _    (PrFormula _ _ (Lit (NegLit _))) = error "that formula should never be deleted"
+remFormula _    (PrFormula _ _ (Lit _ ))       = error "that formula should never be deleted"
 
 
 {-     functions to handle the "clashable information", ie literals associated to prefixes     -}
@@ -786,12 +800,12 @@ unionClashableInfoSlots cis1 cis2
     where ucis_helper :: Clashable_info_slot -> [(Atom,(Bool,BranchingPrefixes))] -> Slot_UpdateResult
           ucis_helper cis a_b_bps_s =
              let (updateStatus,clashing_bps_s)
-                                 = foldr (\(a,(bool,bps)) (upResult,clashingBps_s)
-                                              -> case upResult of
-                                                    Slot_UpdateSuccess cis_  ->  (updateClashableInfoSlot cis_ a bool bps, clashingBps_s      )
-                                                    Slot_UpdateFailure bps_s ->  (updateClashableInfoSlot cis a bool bps, bps_s:clashingBps_s)  -- we reuse the input Clashabe Info Slot
-                                         )
-                                         (Slot_UpdateSuccess cis,[])   a_b_bps_s
+                  = foldr (\(a,(bool,bps)) (upResult,clashingBps_s)
+                           -> case upResult of
+                               Slot_UpdateSuccess cis_  ->  (updateClashableInfoSlot cis_ a bool bps, clashingBps_s     )
+                               Slot_UpdateFailure bps_s ->  (updateClashableInfoSlot cis a bool bps, bps_s:clashingBps_s)  -- we reuse the input Clashabe Info Slot
+                          )
+                          (Slot_UpdateSuccess cis,[])   a_b_bps_s
                  result = case clashing_bps_s of
                               []    -> updateStatus                                    -- is 'success'
                               bps_s -> Slot_UpdateFailure $ findEarliestSet bps_s

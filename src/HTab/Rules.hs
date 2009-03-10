@@ -8,11 +8,11 @@ applyMod
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 
-import HTab.Formula( Formula(..), PrFormula(..), showLess, neg, Atom(..), Literal(..),
+import HTab.Formula( Formula(..), PrFormula(..), showLess, neg, Atom(..),
                      BranchingPrefix,
                      bps_insert, prefixList, AccFormula(..),
                      Prefix, NomSymbol(..), PropSymbol(..),
-                     nom, replaceVar,
+                     nom, prop, replaceVar,
                      BranchingPrefixes, bps_union )
 import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewNomTestRelevance,
                     BranchInfo(..),
@@ -21,7 +21,7 @@ import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewNomTestRe
                     addParentPrefix, reduceDisjunctionAgainstBranch,
                     getUrfatherAndDeps, isNotBlocked, 
                     diaAlreadyDone, downAlreadyDone, incPropSymbol, incNomSymbol,
-                    ReducedDisjunct(..) )
+                    ReducedDisjunct(..), newPropBaseName, newNomBaseName )
 import HTab.CommandLine(CmdLineParams, semBranch, unitProp)
 import HTab.RuleMetadata(RuleId(..))
 import qualified HTab.DisjSet as DS
@@ -59,17 +59,20 @@ getMods :: Branch -> Rule -> [[BranchModification]]
 getMods _ (ClashRule bprs f) = [[BM_Clash bprs f]]
 
 getMods _ (ConjRule todelete toadds) =
- [[BM_RemFormula todelete, BM_AddFormulas toadds]]
+ [[BM_RemFormula todelete,
+   BM_AddFormulas toadds]]
 
 getMods _ (DiaRule todelete@(PrFormula pr _ f) acctoadd@(AccFormula _ _ p1 p2) toadd) =
- [[BM_RemFormula todelete, BM_AddAccFormula acctoadd,
+ [[BM_RemFormula todelete,
+   BM_AddAccFormula acctoadd,
    BM_AddFormulas [toadd],
    BM_AddDiaRuleCheck pr f,
    BM_AddParentPrefix p2 p1,
    BM_CreateNewPref]]
 
 getMods _ (ExistModRule todelete toadd) =
- [[BM_RemFormula todelete, BM_AddFormulas [toadd],
+ [[BM_RemFormula todelete,
+   BM_AddFormulas [toadd],
    BM_CreateNewPref]]
 
 getMods _ (DisjRule todelete toadds) =
@@ -93,8 +96,8 @@ getMods br (DiffRule (pr, bprs , f2)) =
   Nothing -> [[BM_RemFormula todelete,
                BM_CreateNewPref, BM_CreateNewProp,
                BM_AddFormulas [PrFormula newPref bprs f2,
-                               PrFormula newPref bprs (Lit $ PosLit $ P newProp),
-                               PrFormula pr      bprs (Lit $ NegLit $ P newProp)],
+                               PrFormula newPref bprs (prop newProp),
+                               PrFormula pr      bprs (neg $ prop newProp)],
                BM_AddDiffRuleCheck f2 newProp False
              ]]
               where newPref = getNewPref br
@@ -105,7 +108,7 @@ getMods br (DiffRule (pr, bprs , f2)) =
                    case (do clashSlot <- Map.lookup pr (clashStr br)
                             Map.lookup (P diffProp) clashSlot ) of -- are we already at the "different place" ?
                     Nothing -> [[BM_RemFormula (PrFormula pr bprs (D f2)),
-                                 BM_AddFormulas [PrFormula pr bprs (Dis [Lit $ NegLit $ P diffProp, D f2])]
+                                 BM_AddFormulas [PrFormula pr bprs (Dis [neg $ prop diffProp, D f2])]
                                  -- no, so mark oneself as different from the "different place"; and when it is no longer true,
                                  -- we will generate another different world
                                ]]
@@ -122,8 +125,8 @@ getMods br (DiffRule (pr, bprs , f2)) =
                            [[BM_RemFormula todelete,
                              BM_CreateNewPref, BM_CreateNewProp,
                              BM_AddFormulas [PrFormula newPref (bps_union bprs bprs_) f2,
-                                             PrFormula newPref (bps_union bprs bprs_) (Lit $ PosLit $ P newProp),
-                                             PrFormula pr      (bps_union bprs bprs_) (Lit $ NegLit $ P newProp)],
+                                             PrFormula newPref (bps_union bprs bprs_) (prop newProp),
+                                             PrFormula pr      (bps_union bprs bprs_) (neg $ prop newProp)],
                              BM_AddDiffRuleCheck f2 newProp True
                            ]]
                       else [[BM_RemFormula todelete]] -- we are already marked as different from the "different place"
@@ -215,14 +218,14 @@ applyMods _ br [] = BranchOK br
 applyMod :: CmdLineParams -> Branch -> BranchModification -> BranchInfo
 applyMod clp br (BM_AddFormulas li)              = addFormulas clp br li []
 applyMod clp br (BM_AddAccFormula accFor)        = addAccFormula clp br accFor
-applyMod  _  br (BM_AddDiaRuleCheck pr f)        = BranchOK (addDiaRuleCheck br pr f)
-applyMod  _  br (BM_AddDownRuleCheck pr f)       = BranchOK (addDownRuleCheck br pr f)
+applyMod  _  br (BM_AddDiaRuleCheck pr f)        = BranchOK $ addDiaRuleCheck br pr f
+applyMod  _  br (BM_AddDownRuleCheck pr f)       = BranchOK $ addDownRuleCheck br pr f
 applyMod clp br (BM_CreateNewPref)               = createNewPref clp br
 applyMod  _  br (BM_CreateNewProp)               = BranchOK $ createNewProp br
 applyMod  _  br (BM_CreateNewNomTestRelevance f) = BranchOK $ createNewNomTestRelevance br f
-applyMod  _  br (BM_RemFormula f)                = BranchOK (remFormula br f)
-applyMod  _  br (BM_AddDiffRuleCheck f prop b)   = BranchOK (addDiffRuleCheck br f prop b)
-applyMod  _  br (BM_AddParentPrefix son father)  = BranchOK (addParentPrefix br son father)
+applyMod  _  br (BM_RemFormula f)                = BranchOK $ remFormula br f
+applyMod  _  br (BM_AddDiffRuleCheck f pr b)     = BranchOK $ addDiffRuleCheck br f pr b
+applyMod  _  br (BM_AddParentPrefix son father)  = BranchOK $ addParentPrefix br son father
 applyMod  _  br (BM_Clash bprs (PrFormula pr bprs2 f)) = BranchClash br pr (bps_union bprs bprs2) f
 
 -- the actual rules and their helper functions
@@ -256,12 +259,14 @@ getNewPref br = (lastPref br)+1
 --
 
 getNewProp :: Branch -> PropSymbol
-getNewProp br = maybe (PropSymbol "p_0") incPropSymbol (lastProp br)
+getNewProp br = maybe (PropSymbol newPropBaseName) incPropSymbol (lastProp br)
+
 
 --
 
 getNewNom :: Branch -> NomSymbol
-getNewNom br = maybe (NomSymbol "n_0") incNomSymbol (lastNom br)
+getNewNom br =  maybe (NomSymbol newNomBaseName) incNomSymbol (lastNom br)
+
 
 -- E
 existRule :: PrFormula -> Branch -> Rule

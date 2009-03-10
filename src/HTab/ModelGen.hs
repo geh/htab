@@ -12,7 +12,7 @@ import qualified HyLo.Formula.NNF as NNF
 import HTab.Formula( Prefix, Atom (..), Rel,
                      NomSymbol(..), RelSymbol(..), PropSymbol(..),
                      LanguageInfo(..) )
-import HTab.Branch( Branch(..), prefixes,
+import HTab.Branch( Branch(..), prefixes, getUrfather,
                     isInTheModel, getModelRepresentative )
 
 import qualified HTab.DisjSet as DS
@@ -31,8 +31,8 @@ buildHerbrandModel branch =
        es = Set.union
              (Set.fromList
                [NNF.At
-                (NomSymbol $ show (urfatherOrPrefixZero branch n + bias))
-                (NNF.Nom n) | n <- (languageNoms $ inputLanguage branch)]
+                (NomSymbol $ show (getUrfather branch (DS.Nominal nString) + bias))
+                (NNF.Nom n) | n@(NomSymbol nString) <- (languageNoms $ inputLanguage branch)]
              )
              (Set.fromList
                [NNF.At
@@ -52,13 +52,6 @@ accToNNF :: (Prefix,Rel,Prefix) -> NNF.Formula NomSymbol PropSymbol RelSymbol (N
 accToNNF (p1,r,p2) =
   NNF.At (NomSymbol (show p1)) $ NNF.Diam (RelSymbol r) $ NNF.Nom (NomSymbol (show p2))
 
-urfatherOrPrefixZero :: Branch -> NomSymbol -> Prefix
-urfatherOrPrefixZero br (NomSymbol n) =
-  if DS.isRoot (DS.Nominal n) (nomPrefClasses br)
-   then 0
-   else let (DS.Prefix p,_) = DS.find (DS.Nominal n) (nomPrefClasses br)
-         in p
-
 prefixAndProps :: Branch -> [(Prefix,PropSymbol)]
 prefixAndProps br =
   [(pr, p_) | (pr , P p_) <- prPosLitProp]
@@ -67,7 +60,4 @@ prefixAndProps br =
        prPosLitProp          = filter (isPosLitProp . snd) $ map fst $ filter (fst . snd) $ flattenDMap clashableRelevant
        isPosLitProp   (P _)  = True
        isPosLitProp     _    = False
-
---unpackNomSymbol :: NomSymbol -> String
---unpackNomSymbol (NomSymbol n) = n
 
