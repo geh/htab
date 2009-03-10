@@ -62,8 +62,6 @@ chooseBranch_ currentDepSet (hd:tl) =
      o@(OPEN _)    -> return o
      CLOSED depSet -> if dsMember currentBranchingDepth depSet  -- was the clash because of this branching ?
                          then do put $ incPathHead bd
-                                 -- put bd (BranchData) as it was before branching
-                                 -- in order to retrieve the path at that stage
                                  chooseBranch_ (dsUnion currentDepSet depSet) tl
                          else return $ CLOSED depSet
 
@@ -90,14 +88,14 @@ debugMsg_NewSection =
     let path = branch_path bd
     let depth = branch_depth bd
     let width = head path 
-    let traceMsg = ("Depth " ++ (show depth) ++ " Width " ++ (show width) ++ " path " ++ (show path) )
+    let traceMsg = "Depth " ++ show depth ++ " Width " ++ show width ++ " path " ++ show path
     liftIO $ vPutStrLn ("\n>> " ++ traceMsg) showState
 
 debugMsg_BranchClash :: Branch -> Prefix -> DependencySet -> Formula -> BranchMonad ()
 debugMsg_BranchClash br pr bprs f =
  do bd <- get
     let showState = logState $ branch_clp bd
-    liftIO $ vPutStrLn ((show br) ++ "\nClasher : " ++ (show (pr,bprs,f))) showState
+    liftIO $ vPutStrLn (show br ++ "\nClasher : " ++ show (pr,bprs,f)) showState
 
 debugMsg_BranchOK :: Branch -> BranchMonad ()
 debugMsg_BranchOK br =
@@ -109,7 +107,7 @@ debugMsg_BranchOK_applicableRule :: Rule -> BranchMonad ()
 debugMsg_BranchOK_applicableRule rule =
  do bd <- get
     let showState = logState $ branch_clp bd
-    liftIO $ vPutStrLn ("\n>> Rule : " ++ (show rule)) showState
+    liftIO $ vPutStrLn ("\n>> Rule : " ++ show rule) showState
 
 debugMsg_BranchOK_saturated :: BranchMonad ()
 debugMsg_BranchOK_saturated =
