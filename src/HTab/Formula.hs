@@ -24,7 +24,6 @@ firstPrefixedFormula,
 parse
 )
 
-
  where
 
 import qualified Data.Set as Set
@@ -109,59 +108,6 @@ conv_ (F.E f) = existMod (conv_ f)
 conv_ (F.D f) = dExistMod (conv_ f)
 conv_ (F.B f) = dUnivMod (conv_ f)
 
---
--- Required structures to implement backjumping
---
-
-type BranchingPrefix = Int
-type BranchingPrefixes = IntSet.IntSet
-
-bps_union :: BranchingPrefixes -> BranchingPrefixes -> BranchingPrefixes
-bps_union  = IntSet.union
-
-bps_unions :: [BranchingPrefixes] -> BranchingPrefixes
-bps_unions = IntSet.unions
-
-bps_insert :: BranchingPrefix -> BranchingPrefixes -> BranchingPrefixes
-bps_insert = IntSet.insert
-
-bps_member :: BranchingPrefix -> BranchingPrefixes -> Bool
-bps_member = IntSet.member
-
-bps_empty :: BranchingPrefixes
-bps_empty  = IntSet.empty
-
-deps_min :: BranchingPrefixes -> Int
-deps_min deps
-  =  case IntSet.toAscList deps of
-       []    -> 0
-       (hd:_)-> hd
-
-bps_show :: BranchingPrefixes -> String
-bps_show = show . IntSet.toList
-
-data PrFormula = PrFormula Prefix BranchingPrefixes Formula
- deriving Eq
-
-instance Ord PrFormula where
- compare (PrFormula pr1 deps1 f1) (PrFormula pr2 deps2 f2) =
-  case (compare (deps_min deps1) (deps_min deps2)) of
-   LT -> LT
-   GT -> GT
-   EQ -> compare (pr1,f1) (pr2,f2)
-
-instance Show PrFormula where
- show (PrFormula pr bprs f) = show pr ++ ":" ++ (show $ IntSet.toList bprs) ++ ":" ++ show f
-
-showLess :: PrFormula -> String
-showLess (PrFormula pr _ f) = show pr ++ ":" ++ show f
-
-prefixList :: Prefix -> BranchingPrefixes -> [Formula] -> [PrFormula]
-prefixList p bps fl = [PrFormula p bps formula|formula <-fl]
-
-firstPrefixedFormula :: Formula -> PrFormula
-firstPrefixedFormula = PrFormula 0 bps_empty
-
 -- CONSTRUCTORS
 
 {- Atoms -}
@@ -241,15 +187,6 @@ insertAndNub f fs = Set.toAscList $ Set.insert f $ Set.fromList fs
 sortAndNub2 :: Formula -> Formula -> [Formula]
 sortAndNub2  x y = mergeAndNub [x,y] []
 
-{- Accessibility Formulas -}
--- of the kind i<>j with i and j prefixes
-data AccFormula = AccFormula BranchingPrefixes RelSymbol Prefix Prefix
-     deriving (Eq, Ord)
-
-instance Show AccFormula where
- show (AccFormula bprs r p1 p2) = show bprs ++ ":" ++ show p1 ++ "<" ++ show r ++ ">" ++ show p2
-
-{- recognize trivial formulas to trim conjunctions and disjunctions -}
 isTrue, isFalse :: Formula -> Bool
 isTrue (Lit (PosLit Taut))  = True
 isTrue  _                   = False
@@ -269,6 +206,33 @@ neg (D f)            = B (neg f)
 neg (B f)            = D (neg f)
 neg (Lit (PosLit a)) = Lit (NegLit a)
 neg (Lit (NegLit a)) = Lit (PosLit a)
+
+-- prefixed formula
+
+data PrFormula = PrFormula Prefix BranchingPrefixes Formula
+ deriving Eq
+
+instance Show PrFormula where
+ show (PrFormula pr bprs f) = show pr ++ ":" ++ (show $ IntSet.toList bprs) ++ ":" ++ show f
+
+showLess :: PrFormula -> String
+showLess (PrFormula pr _ f) = show pr ++ ":" ++ show f
+
+prefixList :: Prefix -> BranchingPrefixes -> [Formula] -> [PrFormula]
+prefixList p bps fl = [PrFormula p bps formula|formula <-fl]
+
+firstPrefixedFormula :: Formula -> PrFormula
+firstPrefixedFormula = PrFormula 0 bps_empty
+
+-- accessibility Formulas
+
+data AccFormula = AccFormula BranchingPrefixes RelSymbol Prefix Prefix
+     deriving (Eq, Ord)
+
+instance Show AccFormula where
+ show (AccFormula bprs r p1 p2) = show bprs ++ ":" ++ show p1 ++ "<" ++ show r ++ ">" ++ show p2
+
+-- formula language
 
 data LanguageInfo = LanguageInfo {   languageNoms :: [NomSymbol], -- ascending list
                                      relevantNoms :: [NomSymbol],
@@ -372,4 +336,41 @@ checkIfVariableNegatedOnce (Down v_ f_)
          go v f                     = composeFold False (||) (go v) f
 
 checkIfVariableNegatedOnce _ = error "checkIfVariableNegatedOnce : only down-arrow formulas"
+
+
+-- backjumping
+
+type BranchingPrefix = Int
+type BranchingPrefixes = IntSet.IntSet
+
+instance Ord PrFormula where
+ compare (PrFormula pr1 deps1 f1) (PrFormula pr2 deps2 f2) =
+  case (compare (deps_min deps1) (deps_min deps2)) of
+   LT -> LT
+   GT -> GT
+   EQ -> compare (pr1,f1) (pr2,f2)
+
+bps_union :: BranchingPrefixes -> BranchingPrefixes -> BranchingPrefixes
+bps_union  = IntSet.union
+
+bps_unions :: [BranchingPrefixes] -> BranchingPrefixes
+bps_unions = IntSet.unions
+
+bps_insert :: BranchingPrefix -> BranchingPrefixes -> BranchingPrefixes
+bps_insert = IntSet.insert
+
+bps_member :: BranchingPrefix -> BranchingPrefixes -> Bool
+bps_member = IntSet.member
+
+bps_empty :: BranchingPrefixes
+bps_empty  = IntSet.empty
+
+deps_min :: BranchingPrefixes -> Int
+deps_min deps
+  =  case IntSet.toAscList deps of
+       []    -> 0
+       (hd:_)-> hd
+
+bps_show :: BranchingPrefixes -> String
+bps_show = show . IntSet.toList
 
