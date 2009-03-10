@@ -6,15 +6,12 @@ import qualified Data.Set as Set
 import qualified Data.Map as Map
 import HyLo.Model.Herbrand ( inducedModel )
 import qualified HyLo.Model.Herbrand as H
-
 import qualified HyLo.Formula.NNF as NNF
 
-import HTab.Formula( Prefix, Atom (..), Rel,
-                     NomSymbol(..), RelSymbol(..), PropSymbol(..),
-                     LanguageInfo(..) )
+import HTab.Formula( Prefix, Atom (..), Rel, LanguageInfo(..),
+                     NomSymbol(..), RelSymbol(..), PropSymbol(..) )
 import HTab.Branch( Branch(..), prefixes, getUrfather,
                     isInTheModel, getModelRepresentative )
-
 import qualified HTab.DisjSet as DS
 import HTab.DMap (flattenDMap)
 
