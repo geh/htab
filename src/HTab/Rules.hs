@@ -9,11 +9,10 @@ import qualified Data.Set as Set
 import qualified Data.Map as Map
 
 import HTab.Formula( Formula(..), PrFormula(..), showLess, neg, Atom(..),
-                     BranchingPrefix,
-                     bps_insert, prefixList, AccFormula(..),
+                     Dependency, DependencySet, dsUnion, dsInsert,
+                     prefixList, AccFormula(..),
                      Prefix, NomSymbol(..), PropSymbol(..),
-                     nom, prop, replaceVar,
-                     BranchingPrefixes, bps_union )
+                     nom, prop, replaceVar )
 import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewNomTestRelevance,
                     BranchInfo(..),
                     addFormulas, addAccFormula, remFormula,
@@ -38,7 +37,7 @@ data BranchModification =    BM_AddFormulas   [PrFormula]
                            | BM_CreateNewProp
                            | BM_CreateNewNomTestRelevance Formula
                            | BM_AddParentPrefix Prefix Prefix
-                           | BM_Clash BranchingPrefixes PrFormula
+                           | BM_Clash DependencySet PrFormula
 
 -- each rule constructor contains exactly the needed data to know the effect of the rule
 data Rule =  ConjRule   PrFormula [PrFormula]
@@ -47,16 +46,16 @@ data Rule =  ConjRule   PrFormula [PrFormula]
            | SemBrRule  PrFormula [[PrFormula]]
            | AtRule     PrFormula PrFormula
            | DownRule   PrFormula PrFormula PrFormula
-           | DiffRule   (Prefix, BranchingPrefixes, Formula)
+           | DiffRule   (Prefix, DependencySet, Formula)
            | ExistModRule PrFormula PrFormula                 -- creates a prefix
            | DiscardRule PrFormula
-           | ClashRule BranchingPrefixes PrFormula
+           | ClashRule DependencySet PrFormula
 
 -- from the description of a rule application, creates the list of lists of modifications to the branch
 -- for certain rules, we need to look in the branch to see what modifications we do
 
 getMods :: Branch -> Rule -> [[BranchModification]]
-getMods _ (ClashRule bprs f) = [[BM_Clash bprs f]]
+getMods _ (ClashRule ds f) = [[BM_Clash ds f]]
 
 getMods _ (ConjRule todelete toadds) =
  [[BM_RemFormula todelete,
@@ -91,13 +90,13 @@ getMods _ (DownRule todelete@(PrFormula pr _ f) toadd1 toadd2) =
    BM_AddDownRuleCheck pr f
  ]]
 
-getMods br (DiffRule (pr, bprs , f2)) =
+getMods br (DiffRule (pr, ds , f2)) =
  case Map.lookup f2 (dDiaRlCh br) of
   Nothing -> [[BM_RemFormula todelete,
                BM_CreateNewPref, BM_CreateNewProp,
-               BM_AddFormulas [PrFormula newPref bprs f2,
-                               PrFormula newPref bprs (prop newProp),
-                               PrFormula pr      bprs (neg $ prop newProp)],
+               BM_AddFormulas [PrFormula newPref ds f2,
+                               PrFormula newPref ds (prop newProp),
+                               PrFormula pr      ds (neg $ prop newProp)],
                BM_AddDiffRuleCheck f2 newProp False
              ]]
               where newPref = getNewPref br
@@ -107,12 +106,12 @@ getMods br (DiffRule (pr, bprs , f2)) =
           -> -- the "different place" for this D-formula has already been created
                    case (do clashSlot <- Map.lookup pr (clashStr br)
                             Map.lookup (P diffProp) clashSlot ) of -- are we already at the "different place" ?
-                    Nothing -> [[BM_RemFormula (PrFormula pr bprs (D f2)),
-                                 BM_AddFormulas [PrFormula pr bprs (Dis [neg $ prop diffProp, D f2])]
+                    Nothing -> [[BM_RemFormula  (PrFormula pr ds (D f2)),
+                                 BM_AddFormulas [PrFormula pr ds (Dis [neg $ prop diffProp, D f2])]
                                  -- no, so mark oneself as different from the "different place"; and when it is no longer true,
                                  -- we will generate another different world
                                ]]
-                    Just (bool_,bprs_) ->
+                    Just (bool_,ds_) ->
                      if bool_
                       then  -- we are at the "different place"
                        if doneTwiceBool
@@ -124,14 +123,14 @@ getMods br (DiffRule (pr, bprs , f2)) =
                            in
                            [[BM_RemFormula todelete,
                              BM_CreateNewPref, BM_CreateNewProp,
-                             BM_AddFormulas [PrFormula newPref (bps_union bprs bprs_) f2,
-                                             PrFormula newPref (bps_union bprs bprs_) (prop newProp),
-                                             PrFormula pr      (bps_union bprs bprs_) (neg $ prop newProp)],
+                             BM_AddFormulas [PrFormula newPref (dsUnion ds ds_) f2,
+                                             PrFormula newPref (dsUnion ds ds_) (prop newProp),
+                                             PrFormula pr      (dsUnion ds ds_) (neg $ prop newProp)],
                              BM_AddDiffRuleCheck f2 newProp True
                            ]]
                       else [[BM_RemFormula todelete]] -- we are already marked as different from the "different place"
 
- where todelete = PrFormula pr bprs (D f2)
+ where todelete = PrFormula pr ds (D f2)
 
 getMods _ (DiscardRule todelete) =
  [[BM_RemFormula todelete]]
@@ -165,7 +164,7 @@ ruleToId r = case r of
 
 -- the rules application strategy is defined here:
 -- the first rule is the one that will be applied at the next tableau step
-applicableRules :: Branch -> CmdLineParams -> BranchingPrefix -> [Rule]
+applicableRules :: Branch -> CmdLineParams -> Dependency -> [Rule]
 applicableRules br clp d = -- d = current depth in the tableau (add as dependency for branching rules)
                            (applicableConjRules br)
  ++                        (applicableAtRules br)
@@ -183,10 +182,10 @@ applicableDiaRules :: Branch -> [Rule]
 applicableDiaRules br = [diaRule f br | f@(PrFormula pr _ _) <- Set.toAscList $ diaStr br, isNotBlocked br pr]
                         -- TODO memoization for the isNotBlocked call
 
-applicableDisjRules :: CmdLineParams -> Branch -> BranchingPrefix -> [Rule]
+applicableDisjRules :: CmdLineParams -> Branch -> Dependency -> [Rule]
 applicableDisjRules clp br d = [disjRule clp f br d | f <- Set.toAscList $ disjStr br]
 
-applicableSemBrRules :: CmdLineParams -> Branch -> BranchingPrefix -> [Rule]
+applicableSemBrRules :: CmdLineParams -> Branch -> Dependency -> [Rule]
 applicableSemBrRules clp br d = [semBrRule clp f br d | f <- Set.toAscList $ disjStr br]
 
 applicableAtRules :: Branch -> [Rule]
@@ -226,7 +225,7 @@ applyMod  _  br (BM_CreateNewNomTestRelevance f) = BranchOK $ createNewNomTestRe
 applyMod  _  br (BM_RemFormula f)                = BranchOK $ remFormula br f
 applyMod  _  br (BM_AddDiffRuleCheck f pr b)     = BranchOK $ addDiffRuleCheck br f pr b
 applyMod  _  br (BM_AddParentPrefix son father)  = BranchOK $ addParentPrefix br son father
-applyMod  _  br (BM_Clash bprs (PrFormula pr bprs2 f)) = BranchClash br pr (bps_union bprs bprs2) f
+applyMod  _  br (BM_Clash ds (PrFormula pr ds2 f)) = BranchClash br pr (dsUnion ds ds2) f
 
 -- the actual rules and their helper functions
 
@@ -237,15 +236,15 @@ conjRule :: PrFormula -> Branch -> Rule
 conjRule f _ = ConjRule f (breakConj f)
 
 breakConj :: PrFormula -> [PrFormula]
-breakConj (PrFormula pr bprs (Con formulaList)) = prefixList pr bprs formulaList
+breakConj (PrFormula pr ds (Con formulaList)) = prefixList pr ds formulaList
 breakConj _ = error $ "breakConj error"
 
 -- dia (may create a discard rule)
 diaRule :: PrFormula -> Branch -> Rule
-diaRule f@(PrFormula pr bprs f1@(Dia r f2)) br
+diaRule f@(PrFormula pr ds f1@(Dia r f2)) br
   = if (diaAlreadyDone br pr f1)
      then DiscardRule f
-     else DiaRule f (AccFormula bprs r pr newPr) (PrFormula newPr bprs f2)
+     else DiaRule f (AccFormula ds r pr newPr) (PrFormula newPr ds f2)
       where newPr = getNewPref br
 
 
@@ -270,40 +269,40 @@ getNewNom br =  maybe (NomSymbol newNomBaseName) incNomSymbol (lastNom br)
 
 -- E
 existRule :: PrFormula -> Branch -> Rule
-existRule f@(PrFormula _ bprs (E f2)) br
-  = ExistModRule f (PrFormula newPr bprs f2)
+existRule f@(PrFormula _ ds (E f2)) br
+  = ExistModRule f (PrFormula newPr ds f2)
      where newPr = getNewPref br
 existRule _ _ = error $ "existRule"
 
 -- D
 diffRule :: PrFormula -> Branch -> Rule
-diffRule (PrFormula pr bprs (D f2)) _
-  = DiffRule (pr, bprs, f2)
+diffRule (PrFormula pr ds (D f2)) _
+  = DiffRule (pr, ds, f2)
 
 diffRule _ _ = error $ "diffRule"
 
 -- disjunction
-disjRule :: CmdLineParams -> PrFormula -> Branch -> BranchingPrefix -> Rule
-disjRule clp df@(PrFormula pr bprs (Dis fs)) br d
+disjRule :: CmdLineParams -> PrFormula -> Branch -> Dependency -> Rule
+disjRule clp df@(PrFormula pr ds (Dis fs)) br d
   = if not $ unitProp clp
      then DisjRule df (breakDisj df d)
      else case reduceDisjunctionAgainstBranch br pr fs of
-             Triviality                 -> DiscardRule df
-             Contradiction brps_clash   -> ClashRule (bps_union bprs brps_clash) df
-             Reduced new_bprs disjuncts -> DisjRule df (prefixList pr (bps_insert d $ bps_union bprs new_bprs) disjuncts)
+             Triviality               -> DiscardRule df
+             Contradiction ds_clash   -> ClashRule (dsUnion ds ds_clash) df
+             Reduced new_ds disjuncts -> DisjRule df (prefixList pr (dsInsert d $ dsUnion ds new_ds) disjuncts)
 -- todo: if only one conjunct remaining, do not add d , but still create a DisjRule
 disjRule _ _ _ _ = error "disjRule"
 
 -- semantic branching
-semBrRule :: CmdLineParams -> PrFormula -> Branch -> BranchingPrefix -> Rule    -- todo : unit propagation, part 2 (b)
-semBrRule clp df@(PrFormula pr bprs (Dis fs)) br d
+semBrRule :: CmdLineParams -> PrFormula -> Branch -> Dependency -> Rule    -- todo : unit propagation, part 2 (b)
+semBrRule clp df@(PrFormula pr ds (Dis fs)) br d
 -- = SemBrRule df (sbModList disjointed) where disjointed = breakDisj df d
  = if not $ unitProp clp
     then SemBrRule df (sbModList $ breakDisj df d)
     else case reduceDisjunctionAgainstBranch br pr fs of
-            Triviality                 -> DiscardRule df
-            Contradiction brps_clash   -> ClashRule (bps_union bprs brps_clash) df
-            Reduced new_bprs disjuncts -> SemBrRule df (sbModList $ prefixList pr (bps_insert d $ bps_union bprs new_bprs) disjuncts)
+            Triviality               -> DiscardRule df
+            Contradiction ds_clash   -> ClashRule (dsUnion ds ds_clash) df
+            Reduced new_ds disjuncts -> SemBrRule df (sbModList $ prefixList pr (dsInsert d $ dsUnion ds new_ds) disjuncts)
 -- todo same remark as above
 semBrRule _ _ _ _ = error "sembrRule"
 
@@ -313,31 +312,31 @@ sbModList fs = go fs []
  where go :: [PrFormula] -> [PrFormula] -> [[PrFormula]]
        go (hd:tl) negated = 
            (hd:negated):(go tl ((neg_ hd):negated))
-           where neg_ (PrFormula pr bprs f) = PrFormula pr bprs (neg f)
+           where neg_ (PrFormula pr ds f) = PrFormula pr ds (neg f)
        go [] _ = []
 
 
 
 -- helper function for disjunction and semantic branching
 -- updates the branching pointers of each formula
-breakDisj :: PrFormula -> BranchingPrefix -> [PrFormula]
-breakDisj (PrFormula pr bprs (Dis formulaList)) bpr = prefixList pr (bps_insert bpr bprs) formulaList
+breakDisj :: PrFormula -> Dependency -> [PrFormula]
+breakDisj (PrFormula pr ds (Dis formulaList)) d = prefixList pr (dsInsert d ds) formulaList
 breakDisj _ _ = error $ "breakDisj error"
 
 -- @
 atRule :: PrFormula -> Branch -> Rule
-atRule af@(PrFormula _ bprs (At (NomSymbol n) f)) br
- = AtRule af (PrFormula earliestPrefix (bps_union bprs bprs2) f)
-    where (earliestPrefix,bprs2,_) = getUrfatherAndDeps br (DS.Nominal n)
+atRule af@(PrFormula _ ds (At (NomSymbol n) f)) br
+ = AtRule af (PrFormula earliestPrefix (dsUnion ds ds2) f)
+    where (earliestPrefix,ds2,_) = getUrfatherAndDeps br (DS.Nominal n)
 
 atRule _ _ = error "atRule error"
 
 -- down
 downRule :: PrFormula -> Branch -> Rule
-downRule df@(PrFormula pr bprs f1@(Down v f)) br
+downRule df@(PrFormula pr ds f1@(Down v f)) br
  = if (downAlreadyDone br pr f1)
     then DiscardRule df
-    else DownRule df (PrFormula pr bprs (replaceVar v newNom f)) (PrFormula pr bprs $ nom newNom)
+    else DownRule df (PrFormula pr ds (replaceVar v newNom f)) (PrFormula pr ds $ nom newNom)
     where newNom = getNewNom br
 downRule _ _ = error "downRule error"
 

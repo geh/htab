@@ -1,7 +1,7 @@
 module HTab.DMap where
 
 import qualified Data.Map as Map
-import HTab.Formula(BranchingPrefixes, bps_union)
+import HTab.Formula(DependencySet, dsUnion)
 
 
 {- a DMap , or double map, is a nesting of two Maps -}
@@ -32,17 +32,17 @@ moveInnerDataDMap m origKey destKey innerInnerMergeF
 
 
 -- a specialised version of the previous function, that handles dependencies merging and adding
-moveInnerDataDMapPlusDeps :: (Ord a, Ord b) => BranchingPrefixes -> DMap a b [(BranchingPrefixes,c)] -> a -> a -> DMap a b [(BranchingPrefixes,c)]
+moveInnerDataDMapPlusDeps :: (Ord a, Ord b) => DependencySet -> DMap a b [(DependencySet,c)] -> a -> a -> DMap a b [(DependencySet,c)]
 moveInnerDataDMapPlusDeps newDeps m origKey destKey
  = result
    where mOrigInnerMap = Map.lookup origKey m
          mDestInnerMap = Map.lookup destKey m
          innerInnerMergeF = (++)
          prunedM = Map.delete origKey m
-         addDepsToMap :: BranchingPrefixes -> Map.Map k [(BranchingPrefixes,c)] -> Map.Map k [(BranchingPrefixes,c)]
+         addDepsToMap :: DependencySet -> Map.Map k [(DependencySet,c)] -> Map.Map k [(DependencySet,c)]
          addDepsToMap newBps = Map.map (addDeps newBps)
-         addDeps :: BranchingPrefixes -> [(BranchingPrefixes,k)] -> [(BranchingPrefixes,k)]
-         addDeps newBps = map (\(oldBps,el) -> (bps_union oldBps newBps,el))
+         addDeps :: DependencySet -> [(DependencySet,k)] -> [(DependencySet,k)]
+         addDeps newBps = map (\(oldBps,el) -> (dsUnion oldBps newBps,el))
          result = case (mOrigInnerMap, mDestInnerMap) of
                       (Nothing, _) -> m
                       (Just origInnerMap, Nothing) -> let origInnerMapPlusDeps = addDepsToMap newDeps origInnerMap

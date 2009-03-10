@@ -19,7 +19,7 @@ import HTab.Branch( Branch, BranchInfo(..),initialBranchStateFor,BranchMonad, Br
 import HTab.Statistics( Statistics, initialStatisticsStateFor, printOutAllMetrics' )
 import HTab.Base( vPutStrLn )
 import HTab.Tableau( liftStats, tableau, OpenFlag(..) )
-import HTab.Formula( firstPrefixedFormula, formulaLanguageInfo, bps_empty,
+import HTab.Formula( firstPrefixedFormula, formulaLanguageInfo, dsEmpty,
                      PrFormula(..), LanguageInfo(..), Formula(..),
                      nom, parse )
 import HTab.ModelGen ( HerbrandModel, inducedModel )
@@ -103,7 +103,7 @@ tableauStart clp =
 
 addFirstFormulas :: CmdLineParams -> Branch -> Formula -> LanguageInfo -> BranchInfo
 addFirstFormulas clp br_ f fLang
- = addFormulas clp br ( pf : ( map (\(p,n) ->  PrFormula p bps_empty (nom n)) $ zip [1..] ns)) []
+ = addFormulas clp br ( pf : ( map (\(p,n) ->  PrFormula p dsEmpty (nom n)) $ zip [1..] ns)) []
     where ns = languageNoms fLang
           nbNs = length ns
           br = br_{lastPref = lastPref br_ + nbNs}

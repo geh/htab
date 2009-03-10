@@ -11,9 +11,9 @@ module HTab.Formula
 (PropSymbol(..), NomSymbol(..), RelSymbol(..),
 Rel, Prefix,
 Formula(..), Literal(..), Atom(..),
-BranchingPrefix, BranchingPrefixes,
-bps_union, bps_unions, bps_insert, bps_member,
-bps_empty, deps_min, bps_show,
+DependencySet, Dependency,
+dsUnion, dsUnions, dsInsert, dsMember,
+dsEmpty, dsMin, dsShow,
 PrFormula(..),showLess, AccFormula(..),
 LanguageInfo(..), neg,
 box, diamond, at, conj, disj, univMod, existMod,
@@ -209,7 +209,7 @@ neg (Lit (NegLit a)) = Lit (PosLit a)
 
 -- prefixed formula
 
-data PrFormula = PrFormula Prefix BranchingPrefixes Formula
+data PrFormula = PrFormula Prefix DependencySet Formula
  deriving Eq
 
 instance Show PrFormula where
@@ -218,15 +218,15 @@ instance Show PrFormula where
 showLess :: PrFormula -> String
 showLess (PrFormula pr _ f) = show pr ++ ":" ++ show f
 
-prefixList :: Prefix -> BranchingPrefixes -> [Formula] -> [PrFormula]
+prefixList :: Prefix -> DependencySet -> [Formula] -> [PrFormula]
 prefixList p bps fl = [PrFormula p bps formula|formula <-fl]
 
 firstPrefixedFormula :: Formula -> PrFormula
-firstPrefixedFormula = PrFormula 0 bps_empty
+firstPrefixedFormula = PrFormula 0 dsEmpty
 
 -- accessibility Formulas
 
-data AccFormula = AccFormula BranchingPrefixes RelSymbol Prefix Prefix
+data AccFormula = AccFormula DependencySet RelSymbol Prefix Prefix
      deriving (Eq, Ord)
 
 instance Show AccFormula where
@@ -340,37 +340,34 @@ checkIfVariableNegatedOnce _ = error "checkIfVariableNegatedOnce : only down-arr
 
 -- backjumping
 
-type BranchingPrefix = Int
-type BranchingPrefixes = IntSet.IntSet
+type Dependency = Int
+type DependencySet = IntSet.IntSet
 
 instance Ord PrFormula where
  compare (PrFormula pr1 deps1 f1) (PrFormula pr2 deps2 f2) =
-  case (compare (deps_min deps1) (deps_min deps2)) of
+  case compare (dsMin deps1) (dsMin deps2) of
    LT -> LT
    GT -> GT
    EQ -> compare (pr1,f1) (pr2,f2)
 
-bps_union :: BranchingPrefixes -> BranchingPrefixes -> BranchingPrefixes
-bps_union  = IntSet.union
+dsUnion :: DependencySet -> DependencySet -> DependencySet
+dsUnion  = IntSet.union
 
-bps_unions :: [BranchingPrefixes] -> BranchingPrefixes
-bps_unions = IntSet.unions
+dsUnions :: [DependencySet] -> DependencySet
+dsUnions = IntSet.unions
 
-bps_insert :: BranchingPrefix -> BranchingPrefixes -> BranchingPrefixes
-bps_insert = IntSet.insert
+dsInsert :: Dependency -> DependencySet -> DependencySet
+dsInsert = IntSet.insert
 
-bps_member :: BranchingPrefix -> BranchingPrefixes -> Bool
-bps_member = IntSet.member
+dsMember :: Dependency -> DependencySet -> Bool
+dsMember = IntSet.member
 
-bps_empty :: BranchingPrefixes
-bps_empty  = IntSet.empty
+dsEmpty :: DependencySet
+dsEmpty  = IntSet.empty
 
-deps_min :: BranchingPrefixes -> Int
-deps_min deps
-  =  case IntSet.toAscList deps of
-       []    -> 0
-       (hd:_)-> hd
+dsMin :: DependencySet -> Int
+dsMin deps = case IntSet.toAscList deps of { []-> 0 ; (hd:_)-> hd }
 
-bps_show :: BranchingPrefixes -> String
-bps_show = show . IntSet.toList
+dsShow :: DependencySet -> String
+dsShow = show . IntSet.toList
 

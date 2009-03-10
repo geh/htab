@@ -10,17 +10,11 @@ import HTab.CommandLine(logState,CmdLineParams)
 import HTab.Rules(Rule,applyRule,
                   applicableRules,ruleToId)
 import HTab.Statistics(Statistics)
-import HTab.Formula(Prefix,BranchingPrefixes,Formula,bps_empty,bps_member,bps_union)
+import HTab.Formula(Prefix,DependencySet,Formula,dsEmpty,dsMember,dsUnion)
 import HTab.ModelGen ( HerbrandModel, buildHerbrandModel )
 import HTab.Timeout( isTimeout )
 
---
-
-type DependencySet = BranchingPrefixes -- to handle backjumping
-
 data OpenFlag = OPEN HerbrandModel | CLOSED DependencySet | TIMEOUT
-
---
 
 tableau :: BranchMonad OpenFlag
 tableau =
@@ -42,7 +36,7 @@ tableau =
                       do debugMsg_BranchOK br_
                          let currentBranchingDepth = (branch_depth bd) + 1
                          let br = calculateStepInfo br_
-                         case (applicableRules br clp currentBranchingDepth) of
+                         case applicableRules br clp currentBranchingDepth of
                           (rule:_) ->
                            do debugMsg_BranchOK_applicableRule rule
                               liftStats $ recordFiredRule $ ruleToId rule
@@ -55,9 +49,9 @@ tableau =
 
 -- depth-first branch-choosing strategy
 chooseBranch :: [BranchInfo] ->  BranchMonad OpenFlag
-chooseBranch = chooseBranch_ bps_empty
+chooseBranch = chooseBranch_ dsEmpty
 
-chooseBranch_ :: BranchingPrefixes -> [BranchInfo] -> BranchMonad OpenFlag
+chooseBranch_ :: DependencySet -> [BranchInfo] -> BranchMonad OpenFlag
 chooseBranch_ currentDepSet (hd:tl) =
  do bd <- get
     put bd{branch_info=hd}
@@ -66,11 +60,11 @@ chooseBranch_ currentDepSet (hd:tl) =
     case res of
      TIMEOUT       -> return TIMEOUT
      o@(OPEN _)    -> return o
-     CLOSED depSet -> if bps_member currentBranchingDepth depSet  -- was the clash because of this branching ?
+     CLOSED depSet -> if dsMember currentBranchingDepth depSet  -- was the clash because of this branching ?
                          then do put $ incPathHead bd
                                  -- put bd (BranchData) as it was before branching
                                  -- in order to retrieve the path at that stage
-                                 chooseBranch_ (bps_union currentDepSet depSet) tl
+                                 chooseBranch_ (dsUnion currentDepSet depSet) tl
                          else return $ CLOSED depSet
 
 chooseBranch_ currentDepSet [] = return $ CLOSED currentDepSet
@@ -99,7 +93,7 @@ debugMsg_NewSection =
     let traceMsg = ("Depth " ++ (show depth) ++ " Width " ++ (show width) ++ " path " ++ (show path) )
     liftIO $ vPutStrLn ("\n>> " ++ traceMsg) showState
 
-debugMsg_BranchClash :: Branch -> Prefix -> BranchingPrefixes -> Formula -> BranchMonad ()
+debugMsg_BranchClash :: Branch -> Prefix -> DependencySet -> Formula -> BranchMonad ()
 debugMsg_BranchClash br pr bprs f =
  do bd <- get
     let showState = logState $ branch_clp bd
