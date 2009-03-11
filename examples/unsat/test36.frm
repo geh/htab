@@ -1,3 +1,4 @@
-begin
-!((down (x1 dia (x1 ^ p1) )) -> p1)
-end
+signature { automatic } theory
+{
+!((down (N1 dia (N1 ^ p1) )) --> p1)
+}

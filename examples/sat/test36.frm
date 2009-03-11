@@ -1,6 +1,7 @@
-begin
+signature { automatic } theory
+{
 N1;
-<R1>true;
-[R1]<R1>true;
-[R1]N1
-end
+<>true;
+[]<>true;
+[]N1
+}

@@ -1,3 +1,4 @@
-begin
+signature { automatic } theory
+{
 !(N1 : N1)
-end
+}

@@ -1,3 +1,4 @@
-begin
+signature { automatic } theory
+{
 n1 & B <>n1
-end
+}

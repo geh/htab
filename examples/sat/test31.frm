@@ -1,3 +1,4 @@
-begin
-A(@ N0 true)
-end
+signature { automatic } theory
+{
+A(N0 : true)
+}

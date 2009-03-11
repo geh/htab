@@ -1,3 +1,4 @@
-begin
-A(-N0 v -N1)
-end
+signature { automatic } theory
+{
+A(!N0 v !N1)
+}

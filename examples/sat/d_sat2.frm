@@ -1,3 +1,4 @@
-begin
+signature { automatic } theory
+{
 B N1
-end
+}

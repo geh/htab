@@ -1,3 +1,4 @@
-begin
-<>([]-N0 ^ Bfalse)
-end
+signature { automatic } theory
+{
+<>([]!N0 ^ B false)
+}

@@ -1,4 +1,5 @@
-begin
-down(x1 -x1)
-end
+signature { automatic } theory
+{
+down(N1 !N1)
+}
 

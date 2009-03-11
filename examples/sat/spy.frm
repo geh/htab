@@ -1,5 +1,6 @@
-begin
-(down (x1 []([]( down( x2 (x1:<>(x2)))))));
-([]<>true);
-([] (down (x1 (!<>x1))))
-end
+signature { automatic } theory
+{
+down (N1 []([]( down( N2 (N1:<>(N2))))));
+[]<>true;
+[] (down (N1 (!<>N1)))
+}

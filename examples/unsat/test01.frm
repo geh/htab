@@ -1,4 +1,5 @@
+signature { automatic } theory
 
-begin
+{
  P1 & !P1
-end
+}

@@ -1,3 +1,4 @@
-begin
+signature { automatic } theory
+{
 A (D (P1))
-end
+}
