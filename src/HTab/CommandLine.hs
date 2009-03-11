@@ -81,7 +81,7 @@ options =
           ["save-model"]
           (ReqArg ((not . null) ?-> \s c -> return c{genModel = Just s}) "FILE")
           (unlines [
-          "if the formulas are satisfiable, output a model",
+          "if the theory is satisfiable, output a model",
           "to FILE"]),
    Option ['s']
           ["log-state"]
