@@ -87,7 +87,7 @@ data BlockingMode = InclusionBlockingGlobal | InclusionBlockingChain
  deriving (Eq,Show)
 
 data Branch = Branch {clashStr :: Clashable_info,
-                 -- pending formulas
+                 -- pending formulas / todo lists
                        conjStr :: Conj_structure,
                        disjStr :: Disj_structure,
                         diaStr :: Dia_structure,
@@ -95,26 +95,34 @@ data Branch = Branch {clashStr :: Clashable_info,
                          atStr :: At_structure,
                        downStr :: Down_structure,
                        diffStr :: Diff_structure, -- D
-                 -- other data
-                        accStr :: Acc_structure,
+                 -- immediate rules constraints
                      boxConstr :: Box_constraints,
-                       diaRlCh :: Dia_rule_chart,    -- saturation of the diamond rule
-                      downRlCh :: Down_rule_chart,   -- saturatino of the down-arrow rule
-                        atRlCh :: At_rule_chart,     -- saturation of the @ rule
-                     existRlCh :: Exist_rule_chart,  -- saturation of the exist rule
-                      dDiaRlCh :: Diff_Dia_rule_chart, -- saturation of the diff diamond rule chart (D)
-             downVarRelevantCh :: DownVarRelevant_chart,
                       univCons :: Univ_constraints,
                       dBoxCons :: Diff_Box_constraints, -- constraints of the (B) modality
+                 -- saturation of rules
+                       diaRlCh :: Dia_rule_chart,       -- saturation of the diamond rule
+                      downRlCh :: Down_rule_chart,      -- saturatino of the down-arrow rule
+                        atRlCh :: At_rule_chart,        -- saturation of the @ rule
+                     existRlCh :: Exist_rule_chart,     -- saturation of the exist rule
+                      dDiaRlCh :: Diff_Dia_rule_chart,  -- saturation of the diff diamond rule chart (D)
+                 -- formulas true in an equivalence class
+                   prefToForms :: PrefToFormulas,
+                 -- backjumping data attached to equivalence classes
+                    prToDepSet :: PrefToDepSet,
+                 -- other data
+                        accStr :: Acc_structure,
+                 -- equivalence classes
+                nomPrefClasses :: EquivClasses,
+                 -- book keeping
                       lastPref :: Prefix,
                        lastNom :: Maybe NomSymbol,
                       lastProp :: Maybe PropSymbol,
-                   prefToForms :: PrefToFormulas,
-                    prToDepSet :: PrefToDepSet,
-                nomPrefClasses :: EquivClasses,
+                       incrPrs :: AugmentedPrefixes,
+                 -- caching / memoisation data
+             downVarRelevantCh :: DownVarRelevant_chart,
+                 -- information about language of input formula and blocking mode
                  inputLanguage :: LanguageInfo,
                      inclUrMap :: Maybe InclusionUrfathersMap,
-                       incrPrs :: AugmentedPrefixes,
                      blockMode :: Maybe BlockingMode,
               defaultBlockMode :: BlockingMode,
                     prefParent :: PrefixParent,
@@ -218,8 +226,6 @@ prettyShowMap_rel_ds_x dasMap
                                            $ map (\(d,x) -> show x ++ " " ++ dsShow d) d_x_s
                                         )
           $ Map.toList dasMap
-
---
 
 {-
    "add formula(s)" functions, that handle all that is related
@@ -912,8 +918,6 @@ hasDownArrow = languageDown . inputLanguage
 
 requireLocalFormulasTracking :: Branch -> Bool
 requireLocalFormulasTracking br = hasUnivMod br || hasDiffMod br || hasDownArrow br || blockMode br /= Nothing
--- TODO directly put a boolean for this in BranchData , and an explicit one
-
 
 prefixes :: Branch -> [Prefix]
 prefixes br = [0..(lastPref br)]
