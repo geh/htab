@@ -1,6 +1,6 @@
 module HTab.Main
 
-( runWithParams, OpenFlag(..))
+( runWithParams, TaskRunFlag(..))
 
 where
 import Control.Applicative ( (<$>) )
@@ -10,6 +10,7 @@ import Control.Monad.State( runStateT )
 import System.IO           ( hSetBuffering, stdin, BufferMode(LineBuffering)) 
 import System.CPUTime( getCPUTime )
 
+import HyLo.InputFile.Parser ( QueryType(..) )
 
 import HTab.CommandLine( filename, maxtimeout, CmdLineParams, logState, genModel,
                          configureMetrics, quietMode )
@@ -18,15 +19,18 @@ import HTab.Branch( BranchInfo(..),initialBranchStateFor,BranchMonad, BranchData
 import HTab.Statistics( Statistics, initialStatisticsStateFor, printOutAllMetrics' )
 import HTab.Base( vPutStrLn )
 import HTab.Tableau( liftStats, tableau, OpenFlag(..) )
-import HTab.Formula( formulaLanguageInfo, parse )
+import HTab.Formula( formulaLanguageInfo, parse, Theory, RelInfo, Task,
+                     Formula, encodeValidityTest, encodeSatTest )
 import HTab.ModelGen ( HerbrandModel, inducedModel )
 
 import HTab.Timeout ( withNoTimeout, notifyOnTimeout, TimeoutSignal )
 
-runWithParams :: CmdLineParams -> IO (OpenFlag)
+data TaskRunFlag = SUCCESS | FAILURE | TIMEOUT_
+
+runWithParams :: CmdLineParams -> IO (TaskRunFlag)
 runWithParams clp =
- do  start <- getCPUTime
-     --
+ time clp "Total time: "
+  $ do
      let myPutStrLn str = vPutStrLn str (not $ quietMode clp)
      --
      let fromStdIn = do myPutStrLn $ "Reading from stdin (run again with" ++
@@ -34,43 +38,99 @@ runWithParams clp =
                         hSetBuffering stdin LineBuffering
                         getContents
 
-     f <- parse <$> maybe fromStdIn readFile (filename clp)
-     --
-     let fLang = formulaLanguageInfo f
-     --
-     f `seq` myPutStrLn ("\nInput:\n{ " ++ show f ++ " }\nEnd of input\n\n")
-     --
-     let initialBranch = emptyBranch clp fLang
-     let branchInfo    = addFirstFormulas clp initialBranch f fLang
+     allTasks <- parse <$> maybe fromStdIn readFile (filename clp)
      --
      let handleTimeout
           | maxtimeout clp > 0 = notifyOnTimeout (maxtimeout clp)
           | otherwise          = withNoTimeout
      --
-     result <- handleTimeout (tableauInit branchInfo clp)
+     result <- handleTimeout (runTasks allTasks clp)
      --
      case result of
-        (OPEN m, stats)   -> do myPutStrLn "The formula is satisfiable."
-                                saveGenModel clp m
+        SUCCESS  -> myPutStrLn "\nAll tasks successful.\n"
+        FAILURE  -> myPutStrLn "\nOne task failed.\n"
+        TIMEOUT_ -> myPutStrLn "\nTimeout.\n"
+     --
+     return result
+
+--
+
+runTasks :: (Theory,RelInfo,[Task]) -> CmdLineParams -> TimeoutSignal ->  IO (TaskRunFlag)
+runTasks allTasks@(theory,relInfo,tasks) clp ts =
+ do
+    let myPutStrLn str = vPutStrLn str (not $ quietMode clp)
+    myPutStrLn "== Checking theory satisfiability =="
+    res <- runOneTask (Satisfiable, genModel clp,[]) relInfo theory clp ts
+    case res of
+     SUCCESS | length tasks == 0 -> return SUCCESS
+             | otherwise         -> do myPutStrLn "\n==         Starting tasks         =="
+                                       res2 <- runTasks2 allTasks clp ts
+                                       myPutStrLn "\n==         End of   tasks         =="
+                                       return res2
+     failOrTimeout               -> return failOrTimeout
+
+--
+
+runTasks2 :: (Theory,RelInfo,[Task]) -> CmdLineParams -> TimeoutSignal -> IO (TaskRunFlag)
+runTasks2 (_,_,[]) _ _                    = error "runTasks2 empty list error"
+runTasks2 (theory,relInfo,(hd:tl)) clp ts =
+ do res <- runOneTask hd relInfo theory clp ts
+    case res of
+      SUCCESS | length tl == 0 -> return SUCCESS
+              | otherwise      -> runTasks2  (theory,relInfo,tl) clp ts
+      failOrTimeout            -> return failOrTimeout
+
+--
+
+runOneTask :: Task -> RelInfo -> Formula -> CmdLineParams -> TimeoutSignal -> IO (TaskRunFlag)
+runOneTask (query,mOutFile,fs) relInfo theory clp ts=
+ time clp "Task time:"
+ $ do
+     let myPutStrLn str = vPutStrLn str (not $ quietMode clp)
+     --
+     myPutStrLn $ "\n* " ++ case query of {Valid -> "Validity task"; Satisfiable -> "Satisfiability task"}
+     --
+     let f = case query of { Valid -> encodeValidityTest relInfo theory fs ; Satisfiable -> encodeSatTest relInfo theory fs}
+     --
+     f `seq` myPutStrLn ("\nInput for SAT test:\n{ " ++ show f ++ " }\nEnd of input\n")
+     --
+     let fLang         = formulaLanguageInfo f
+     let initialBranch = emptyBranch clp fLang
+     let branchInfo    = addFirstFormulas clp initialBranch f fLang
+     --
+     result <- tableauInit branchInfo clp ts
+     --
+     case result of
+        (OPEN m, stats)   -> do myPutStrLn $
+                                  case query of
+                                      Valid       -> "The formula is not valid."
+                                      Satisfiable -> "The formula is satisfiable."
+                                saveGenModel clp mOutFile m
                                 unless (quietMode clp) $
                                    printOutAllMetrics' stats
-        (CLOSED _, stats) -> do myPutStrLn "The formula is unsatisfiable."
+        (CLOSED _, stats) -> do myPutStrLn $
+                                  case query of
+                                      Valid       -> "The formula is valid."
+                                      Satisfiable -> "The formula is unsatisfiable."
                                 unless (quietMode clp) $
                                    printOutAllMetrics' stats
         (TIMEOUT, stats)  -> do myPutStrLn "TIMEOUT"
                                 unless (quietMode clp) $
                                    printOutAllMetrics' stats
      --
-     end <- getCPUTime
-     let elapsedTime = fromInteger (end - start) / 1000000000000.0
-     myPutStrLn $ "Elapsed time: " ++ show (elapsedTime :: Double)
-     --
-     return $ fst result
+     return $ case (query, fst result) of
+               (     _     , TIMEOUT ) -> TIMEOUT_
+               (Satisfiable, OPEN   _) -> SUCCESS
+               (Satisfiable, CLOSED _) -> FAILURE
+               (Valid      , OPEN   _) -> FAILURE
+               (Valid      , CLOSED _) -> SUCCESS
 
-saveGenModel :: CmdLineParams -> HerbrandModel -> IO ()
-saveGenModel clp m = maybe (return ()) doWrite (genModel clp)
+--
+
+saveGenModel :: CmdLineParams -> (Maybe FilePath) -> HerbrandModel -> IO ()
+saveGenModel clp mOutFile m = maybe (return ()) doWrite mOutFile
     where doWrite f = do writeFile f (show . inducedModel $ m)
-                         unless (quietMode clp) $ putStrLn $ "Model saved as " ++ f
+                         unless (quietMode clp) $ vPutStrLn ("Model saved as " ++ f) (logState clp)
 
 tableauInit :: BranchInfo -> CmdLineParams -> TimeoutSignal -> IO (OpenFlag,Statistics)
 tableauInit bi clp ts =
@@ -89,4 +149,16 @@ tableauStart :: CmdLineParams -> BranchMonad OpenFlag
 tableauStart clp =
  do liftStats $ configureMetrics clp
     tableau
+
+--
+
+time :: CmdLineParams -> String -> IO a -> IO a
+time clp message action =
+  do start  <- getCPUTime
+     result <- action
+     end <- getCPUTime
+     let elapsedTime = fromInteger (end - start) / 1000000000000.0
+     let myPutStrLn str = vPutStrLn str (not $ quietMode clp)
+     myPutStrLn $ message ++ show (elapsedTime :: Double)
+     return result
 
