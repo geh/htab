@@ -14,6 +14,8 @@ import System.Environment ( getArgs              )
 import HyLo.Model
 import HyLo.Model.Herbrand
 import HyLo.InputFile
+import HyLo.Signature.String ( NomSymbol(..), PropSymbol(..), RelSymbol(..) )
+
 
 import HTab.CommandLine
 import HTab.Main
@@ -44,33 +46,39 @@ frmFiles dir = map (dir </>) . filter (endsWith ".frm") <$>
 endsWith :: String -> String -> Bool
 endsWith t s = t `elem` (tails s)
 
-runHTab :: FilePath -> IO SatFlagAndStats
+runHTab :: FilePath -> IO TaskRunFlag
 runHTab f = runWithParams clp
     where clp = defaultParams{filename   = Just f,
                               maxtimeout = 20,
-                              quietMode  = True}
+                              quietMode  = True,
+                              genModel   = Just modelTmpFile}
+
+modelTmpFile :: String
+modelTmpFile = "model.tmp"
 
 runExpecting :: Expected -> FilePath -> IO Bool
 runExpecting exp_result file =
     do putStr (file ++ "......... ")
        r <- runHTab file
        case (r, exp_result) of
-         (UNSAT _, Unsat) -> putStrLn "OK!" >> return True
-         (UNSAT _, Sat)   -> putStrLn "FAILED! (unsat)" >> return False
-         (SAT m _, Sat)   -> do b <- isASatisfyingModel (inducedModel m)
+         (FAILURE, Unsat) -> putStrLn "OK!" >> return True
+         (FAILURE, Sat)   -> putStrLn "FAILED! (unsat)" >> return False
+         (SUCCESS, Sat)   -> do b <- isASatisfyingModel
                                 if b
                                   then do putStrLn "OK!"
                                           return True
                                   else do putStrLn "MODELCHECK FAILED"
                                           return False
-         (SAT _ _, Unsat) -> putStrLn "FAILED! (sat)" >> return False
-         (TIMEOUT _, _)     -> putStrLn "FAILED! (timeout)" >> return False
+         (SUCCESS, Unsat) -> putStrLn "FAILED! (sat)" >> return False
+         (TIMEOUT_ , _)   -> putStrLn "FAILED! (timeout)" >> return False
     --
 
-    where isASatisfyingModel m =
+    where isASatisfyingModel =
             do fs <- parse <$> readFile file
+               m  <- read  <$> readFile modelTmpFile :: IO M
                --
                let ws = Set.toList (worlds m)
-               let g  = newVal (head ws)
                --
-               return $ any (\w -> and [(m,g,w) |= f | f <- fs]) ws
+               return $ any (\w -> and [(m,w) |= f | f <- fs]) ws
+
+type M = Model NomSymbol NomSymbol PropSymbol RelSymbol
