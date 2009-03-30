@@ -4,17 +4,18 @@ import Control.Monad.State(StateT,lift,modify, put, get)
 import HTab.Base(vPutStrLn)
 import HTab.Statistics(updateStep,printOutInspectionMetrics,
                        recordClosedBranch,recordFiredRule)
-import HTab.Branch(BranchInfo(..),Branch,BranchMonad, BranchData(..),branch_depth,
-                   addZeroInPath, incPathHead, calculateStepInfo )
+import HTab.Branch(BranchInfo(..),Branch(..),BranchMonad, BranchData(..),branch_depth,
+                   addZeroInPath, incPathHead, calculateStepInfo, collectUevBprs,
+                   getBranch )
 import HTab.CommandLine(logState,backJumping,CmdLineParams)
 import HTab.Rules(Rule,applyRule,
                   applicableRules,ruleToId)
 import HTab.Statistics(Statistics)
-import HTab.Formula(Prefix,DependencySet,Formula,dsEmpty,dsMember,dsUnion)
+import HTab.Formula(Prefix,DependencySet,Formula,dsEmpty,dsMember,dsUnion,languageTrans)
 import HTab.ModelGen ( Model, buildModel )
 import HTab.Timeout( isTimeout )
 
-data OpenFlag = OPEN Model | CLOSED DependencySet | TIMEOUT
+data OpenFlag = OPEN HerbrandModel | CLOSED DependencySet | TIMEOUT
 
 tableau :: BranchMonad OpenFlag
 tableau =
@@ -45,7 +46,7 @@ tableau =
                               chooseBranch possibleBranches
                           []   ->
                            do debugMsg_BranchOK_saturated
-                              return $ OPEN (buildModel br)
+                              return $ OPEN (buildHerbrandModel br)
 
 -- depth-first branch-choosing strategy
 chooseBranch :: [BranchInfo] ->  BranchMonad OpenFlag
@@ -57,22 +58,13 @@ chooseBranch_ currentDepSet (hd:tl) =
     put bd{branch_info=hd}
     res <- tableau
     let currentBranchingDepth = branch_depth bd
-    let backjump = backJumping $ branch_clp bd
     case res of
      TIMEOUT       -> return TIMEOUT
      o@(OPEN _)    -> return o
-     CLOSED depSet ->
-      if backjump
-       then
-          if dsMember currentBranchingDepth depSet  -- was the clash because of this branching ?
-             then do put $ incPathHead bd
-                     chooseBranch_ (dsUnion currentDepSet depSet) tl
-             else return $ CLOSED depSet
-       else
-        do put $ incPathHead bd
-           chooseBranch_ (dsUnion currentDepSet depSet) tl
-
-
+     CLOSED depSet -> if dsMember currentBranchingDepth depSet  -- was the clash because of this branching ?
+                         then do put $ incPathHead bd
+                                 chooseBranch_ (dsUnion currentDepSet depSet) tl
+                         else return $ CLOSED depSet
 
 chooseBranch_ currentDepSet [] = return $ CLOSED currentDepSet
 

@@ -60,6 +60,10 @@ instance Show Atom where
 showNom :: NomSymbol -> String
 showNom (NomSymbol n) = n
 
+showRel :: RelSymbol -> String
+showRel (RelSymbol r)    = r
+showRel (InvRelSymbol r) = '-':r
+
 instance Show Literal where
  show (PosLit a) = show a
  show (NegLit a) =  '!' : show a
@@ -69,9 +73,11 @@ data Formula
      | Con   [Formula]
      | Dis   [Formula]
      | At     NomSymbol Formula
+     | Box    RelSymbol     Formula
+     | Dia    RelSymbol     Formula
      | Down   NomSymbol Formula
-     | Box    RelSymbol Formula
-     | Dia    RelSymbol Formula
+     | BoxX   RelSymbol Formula
+     | DiaX   RelSymbol Formula
      | A      Formula
      | E      Formula
      | D      Formula
@@ -83,8 +89,10 @@ instance Show Formula where
  show (Con fs)   = "^" ++ show fs
  show (Dis fs)   = "v" ++ show fs
  show (At n f)   = showNom n  ++ ":(" ++ show f ++ ")"
- show (Box r f)  = "[" ++ case r of { RelSymbol rs -> rs ; InvRelSymbol rs -> rs }  ++ "]" ++ show f
- show (Dia r f)  = "<" ++ case r of { RelSymbol rs -> rs ; InvRelSymbol rs -> rs }  ++ ">" ++ show f
+ show (Box r f)  = "[" ++ showRel r ++ "]" ++ show f
+ show (Dia r f)  = "<" ++ showRel r ++ ">" ++ show f
+ show (BoxX r f) = "[" ++ showRel r ++ "*]" ++ show f
+ show (DiaX r f) = "<" ++ showRel r ++ "*>" ++ show f
  show (A f)      = "A" ++ show f
  show (E f)      = "E" ++ show f
  show (D f)      = "D" ++ show f
@@ -134,7 +142,9 @@ specialiseDia r relI = case lookup r relI of
                                              then dExistMod
                                              else if P.Universal `elem` properties
                                                    then existMod
-                                                   else diamond r
+                                                   else case findRTClos properties of
+                                                         Just r2 -> diamondX r2
+                                                         Nothing -> diamond r
 
 specialiseBox :: RelSymbol -> RelInfo -> (Formula -> Formula)
 specialiseBox r relI = case lookup r relI of
@@ -143,7 +153,16 @@ specialiseBox r relI = case lookup r relI of
                                              then dUnivMod
                                              else if P.Universal `elem` properties
                                                    then univMod
-                                                   else box r
+                                                   else case findRTClos properties of
+                                                         Just r2 -> boxX r2
+                                                         Nothing -> box r
+
+findRTClos :: [P.RelProperties] -> Maybe RelSymbol
+findRTClos (rp:tl) = case rp of { P.TRClosureOf r -> Just r ; _ -> findRTClos tl}
+findRTClos [] = Nothing
+
+
+
 type HyLoFormula = F.Formula NomSymbol PropSymbol RelSymbol
 
 encodeValidityTest :: RelInfo -> Formula -> [HyLoFormula] -> Formula
@@ -153,7 +172,6 @@ encodeValidityTest relI th fs
 encodeSatTest :: RelInfo -> Formula -> [HyLoFormula] -> Formula
 encodeSatTest relI th fs
  = conj th (convert relI fs)
-
 
 -- CONSTRUCTORS
 
@@ -167,10 +185,12 @@ prop = Lit . PosLit . P
 nom  = Lit . PosLit . N
 
 {- Modalities -}
-box, diamond :: RelSymbol -> Formula -> Formula
+box, diamond, boxX, diamondX :: RelSymbol -> Formula -> Formula
 univMod, existMod, dUnivMod, dExistMod :: Formula -> Formula
 box        = Box
 diamond    = Dia
+boxX       = BoxX
+diamondX   = DiaX
 univMod    = A
 existMod   = E
 dUnivMod   = B
@@ -247,6 +267,8 @@ neg (At n f)         = At   n (neg f)
 neg (Down v f)       = Down v (neg f)
 neg (Box r f)        = Dia  r (neg f)
 neg (Dia r f)        = Box  r (neg f)
+neg (BoxX r f)       = DiaX r (neg f)
+neg (DiaX r f)       = BoxX r (neg f)
 neg (A f)            = E (neg f)
 neg (E f)            = A (neg f)
 neg (D f)            = B (neg f)
@@ -285,7 +307,9 @@ data LanguageInfo = LanguageInfo {   languageNoms :: [NomSymbol], -- ascending l
                                      relevantNoms :: [NomSymbol],
                                     languageProps :: [PropSymbol], -- ascending list
                                      languageUniv :: Bool,
+                                     languagePast :: Bool,
                                      languageDiff :: Bool,
+                                    languageTrans :: Bool,
                                      languageDown :: Bool }
  deriving (Show)
 
@@ -295,7 +319,9 @@ formulaLanguageInfo f
                     relevantNoms = relNoms,
                    languageProps = props,
                     languageUniv = hasUnivModality f,
+                    languagePast = hasPast f,
                     languageDiff = hasDiffModality f,
+                   languageTrans = hasTransClosure f,
                     languageDown = hasDownArrow f }
 
     where (allNoms_,relNoms_) = extractNominals f
@@ -314,6 +340,8 @@ composeFold zero combine g e = case e of
     Dis fs     -> foldr1 combine $ map g fs
     Dia _ f    -> g f
     Box _ f    -> g f
+    DiaX _ f    -> g f
+    BoxX _ f    -> g f
     At  _ f    -> g f
     Down _ f   -> g f
     A f        -> g f
@@ -330,6 +358,8 @@ composeMap baseCase g e = case e of
     Dis fs     -> Dis $ map g fs
     Dia r f    -> Dia r (g f)
     Box r f    -> Box r (g f)
+    DiaX r f   -> DiaX r (g f)
+    BoxX r f   -> BoxX r (g f)
     At   i f   -> At  i (g f)
     A f        -> A (g f)
     E f        -> E (g f)
@@ -358,9 +388,19 @@ hasUnivModality :: Formula -> Bool
 hasUnivModality (A _)     = True
 hasUnivModality f         = composeFold False (||) hasUnivModality f
 
+hasPast :: Formula -> Bool
+hasPast (Dia (InvRelSymbol _) _) = True
+hasPast f                        = composeFold False (||) hasPast f
+
+
 hasDiffModality :: Formula -> Bool
 hasDiffModality (B _)     = True
 hasDiffModality f         = composeFold False (||) hasDiffModality f
+
+hasTransClosure :: Formula -> Bool
+hasTransClosure (BoxX _ _) = True
+hasTransClosure (DiaX _ _) = True
+hasTransClosure f          = composeFold False (||) hasTransClosure f
 
 hasDownArrow :: Formula -> Bool
 hasDownArrow (Down _ _ ) = True

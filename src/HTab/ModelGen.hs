@@ -12,16 +12,16 @@ import qualified HyLo.Model as M
 import HTab.Formula( Prefix, Atom (..), Rel, LanguageInfo(..),
                      NomSymbol(..), RelSymbol(..), PropSymbol(..), RelInfo )
 import HTab.Branch( Branch(..), prefixes, getUrfather,
-                    isInTheModel, getModelRepresentative,
-                    isTransitive )
+                    isInTheModel, getModelRepresentative )
 import qualified HTab.DisjSet as DS
-import HTab.DMap (flattenDMap)
+import HTab.DMap (flattenDMap, DMap(..), toMap )
+import HTab.Relations ( getAllRels )
 
 type Model = M.Model NomSymbol NomSymbol PropSymbol RelSymbol
 
-buildModel :: Branch -> Model
-buildModel branch =
-  completeModel (relInfo branch) $ inducedModel $ H.herbrand es ps rs
+buildHerbrandModel :: Branch -> HerbrandModel
+buildHerbrandModel branch =
+  H.herbrand es ps rs
  where
        bias = if null $ languageNoms $ inputLanguage branch
                then 0
@@ -40,9 +40,8 @@ buildModel branch =
              [(NomSymbol $ show (pre + bias), pro)
              | (pre,pro) <- prefixAndPropCouples]
        rs = Set.fromList $ map toSimpSig
-              $ concatMap (\((p1,rel),bp_ps) -> map (\(_,p2) -> (p1 + bias, rel, (getModelRepresentative branch p2) + bias))
-                                                    bp_ps)
-                          (filter (isInTheModel branch . fst . fst) $ flattenDMap $ accStr branch)
+              $ map (\(p1,r,p2) -> (p1 + bias, r, (getModelRepresentative branch p2) + bias))
+                    $ filter (relationIsInTheModel branch) $ getAllRels $ accStr branch
 
 toSimpSig :: (Prefix,Rel,Prefix) -> (NomSymbol,RelSymbol,NomSymbol)
 toSimpSig (p1,r,p2) = (NomSymbol (show p1), RelSymbol r, NomSymbol (show p2))
@@ -50,9 +49,9 @@ toSimpSig (p1,r,p2) = (NomSymbol (show p1), RelSymbol r, NomSymbol (show p2))
 prefixAndProps :: Branch -> [(Prefix,PropSymbol)]
 prefixAndProps br =
   [(pr, p_) | (pr , P p_) <- prPosLitProp]
- where clashable             = clashStr br
+ where clashable             = toMap $ clashStr br
        clashableRelevant     = Map.filterWithKey (\k _ -> isInTheModel br k) clashable
-       prPosLitProp          = filter (isPosLitProp . snd) $ map fst $ filter (fst . snd) $ flattenDMap clashableRelevant
+       prPosLitProp          = filter (isPosLitProp . snd) $ map fst $ filter (fst . snd) $ flattenDMap $ DMap clashableRelevant
        isPosLitProp   (P _)  = True
        isPosLitProp     _    = False
 

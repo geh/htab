@@ -37,6 +37,7 @@ import Data.Ix
 
 data RuleId = R_Conj    -- Conjunction
             | R_Dia     -- Diamond <r>
+            | R_DiaX    -- DiamondX <r*>
             | R_Disj    -- Disjunction
             | R_SemBr   -- Semantic Branching
             | R_At      -- Satisfaction operator (@) rule

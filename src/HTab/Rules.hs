@@ -7,6 +7,7 @@ applyMod
 
 import qualified Data.Set as Set
 import qualified Data.Map as Map
+import qualified HTab.DMap as DMap
 
 import HTab.Formula( Formula(..), PrFormula(..), showLess, neg, Atom(..),
                      Dependency, DependencySet, dsUnion, dsInsert,
@@ -16,10 +17,11 @@ import HTab.Formula( Formula(..), PrFormula(..), showLess, neg, Atom(..),
 import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewNomTestRelevance,
                     BranchInfo(..),
                     addFormulas, addAccFormula, remFormula,
-                    addDiaRuleCheck, addDownRuleCheck, addDiffRuleCheck,
+                    addDiaRuleCheck, addDiaXRuleCheck,
+                    addDownRuleCheck, addDiffRuleCheck,
                     addParentPrefix, reduceDisjunctionAgainstBranch,
                     getUrfatherAndDeps, isNotBlocked, 
-                    diaAlreadyDone, downAlreadyDone, incPropSymbol, incNomSymbol,
+                    diaAlreadyDone,  diaXAlreadyDone, downAlreadyDone, incPropSymbol, incNomSymbol,
                     ReducedDisjunct(..), newPropBaseName, newNomBaseName )
 import HTab.CommandLine(CmdLineParams, semBranch, unitProp, strategyStr)
 import HTab.RuleMetadata(RuleId(..))
@@ -30,6 +32,7 @@ import qualified HTab.DisjSet as DS
 data BranchModification =    BM_AddFormulas   [PrFormula]
                            | BM_AddAccFormula AccFormula
                            | BM_AddDiaRuleCheck Prefix Formula
+                           | BM_AddDiaXRuleCheck Prefix Formula
                            | BM_AddDownRuleCheck Prefix Formula
                            | BM_AddDiffRuleCheck Formula PropSymbol Bool
                            | BM_RemFormula PrFormula
@@ -42,6 +45,7 @@ data BranchModification =    BM_AddFormulas   [PrFormula]
 -- each rule constructor contains exactly the needed data to know the effect of the rule
 data Rule =  ConjRule   PrFormula [PrFormula]
            | DiaRule    PrFormula AccFormula PrFormula        -- creates a prefix
+           | DiaXRule   PrFormula PrFormula
            | DisjRule   PrFormula [PrFormula]
            | SemBrRule  PrFormula [[PrFormula]]
            | AtRule     PrFormula PrFormula
@@ -69,6 +73,12 @@ getMods _ (DiaRule todelete@(PrFormula pr _ f) acctoadd@(AccFormula _ _ p1 p2) t
    BM_AddParentPrefix p2 p1,
    BM_CreateNewPref]]
 
+getMods _ (DiaXRule todelete@(PrFormula pr _ f) toadd) =
+ [[BM_RemFormula todelete,
+   BM_AddFormulas [toadd],
+   BM_AddDiaXRuleCheck pr f
+ ]]
+
 getMods _ (ExistModRule todelete toadd) =
  [[BM_RemFormula todelete,
    BM_AddFormulas [toadd],
@@ -85,8 +95,8 @@ getMods _ (AtRule todelete toadd) =
 
 getMods _ (DownRule todelete@(PrFormula pr _ f) toadd1 toadd2) =
  [[BM_RemFormula todelete,
-   BM_CreateNewNomTestRelevance f,  --  order
-   BM_AddFormulas [toadd1, toadd2], -- matters
+   BM_CreateNewNomTestRelevance f,  --  order  --  what about using a monadic
+   BM_AddFormulas [toadd1, toadd2], -- matters -- writing for the getMods functions ?
    BM_AddDownRuleCheck pr f
  ]]
 
@@ -104,8 +114,7 @@ getMods br (DiffRule (pr, ds , f2)) =
 
   Just (diffProp,doneTwiceBool)
           -> -- the "different place" for this D-formula has already been created
-                   case (do clashSlot <- Map.lookup pr (clashStr br)
-                            Map.lookup (P diffProp) clashSlot ) of -- are we already at the "different place" ?
+                   case DMap.lookup pr (P diffProp) (clashStr br) of -- are we already at the "different place" ?
                     Nothing -> [[BM_RemFormula  (PrFormula pr ds (D f2)),
                                  BM_AddFormulas [PrFormula pr ds (Dis [neg $ prop diffProp, D f2])]
                                  -- no, so mark oneself as different from the "different place"; and when it is no longer true,
@@ -139,6 +148,7 @@ getMods _ (DiscardRule todelete) =
 instance Show Rule where
    show (ConjRule  todelete _ )    = "conjunction:        " ++ showLess todelete
    show (DiaRule   todelete _ _ )  = "diamond:            " ++ showLess todelete
+   show (DiaXRule  todelete _ )    = "diamondX:           " ++ showLess todelete
    show (DisjRule  todelete _ )    = "disjunction:        " ++ showLess todelete
    show (SemBrRule todelete _ )    = "semantic branching: " ++ showLess todelete
    show (AtRule    todelete _ )    = "at:                 " ++ showLess todelete
@@ -153,6 +163,7 @@ ruleToId :: Rule -> RuleId
 ruleToId r = case r of
               (ConjRule _ _)     -> R_Conj
               (DiaRule _ _ _)    -> R_Dia
+              (DiaXRule _ _)     -> R_DiaX
               (DisjRule _ _)     -> R_Disj
               (SemBrRule _ _)    -> R_SemBr
               (AtRule _ _ )      -> R_At
@@ -165,21 +176,15 @@ ruleToId r = case r of
 -- the rules application strategy is defined here:
 -- the first rule is the one that will be applied at the next tableau step
 applicableRules :: Branch -> CmdLineParams -> Dependency -> [Rule]
-applicableRules br clp d = concatMap (ruleByChar br clp d) (strategyStr clp)
-
-ruleByChar :: Branch -> CmdLineParams -> Dependency -> Char -> [Rule]
-ruleByChar br clp d char =
- case char of
-  'a' -> applicableConjRules br
-  'o' -> if semBranch clp
-          then applicableSemBrRules clp br d
-          else applicableDisjRules clp br d
-  'd' -> applicableDiaRules br
-  's' -> applicableAtRules br
-  'e' -> applicableExistRules br
-  'D' -> applicableDiffRules br
-  'b' -> applicableDownRules br
-  _   -> error "ruleByChar"
+applicableRules br clp d = -- d = current depth in the tableau (add as dependency for branching rules)
+                           (applicableConjRules br)
+ ++                        (applicableAtRules br)
+ ++                        (applicableDiaRules br)
+ ++                        (applicableExistRules br)
+ ++                        (applicableDiffRules br)
+ ++                        (applicableDownRules br)
+ ++  if semBranch clp then (applicableSemBrRules clp br d)
+                      else (applicableDisjRules clp br d)
 
 applicableConjRules :: Branch -> [Rule]
 applicableConjRules br = [conjRule f br | f <- Set.toAscList $ conjStr br]
@@ -188,11 +193,13 @@ applicableDiaRules :: Branch -> [Rule]
 applicableDiaRules br = [diaRule f br | f@(PrFormula pr _ _) <- Set.toAscList $ diaStr br, isNotBlocked br pr]
                         -- TODO memoization for the isNotBlocked call
 
-applicableDisjRules :: CmdLineParams -> Branch -> Dependency -> [Rule]
-applicableDisjRules clp br d = [disjRule clp f br d | f <- Set.toAscList $ disjStr br]
+applicableDiaXRules :: Branch -> [Rule]
+applicableDiaXRules br = [diaXRule f br | f <- Set.toAscList $ diaXStr br]
 
-applicableSemBrRules :: CmdLineParams -> Branch -> Dependency -> [Rule]
-applicableSemBrRules clp br d = [semBrRule clp f br d | f <- Set.toAscList $ disjStr br]
+applicableDisjRules :: CmdLineParams -> Branch -> Dependency -> [Rule]
+applicableDisjRules clp br d =
+ if semBranch clp then [semBrRule clp f br d | f <- Set.toAscList $ disjStr br]
+                  else [disjRule  clp f br d | f <- Set.toAscList $ disjStr br]
 
 applicableAtRules :: Branch -> [Rule]
 applicableAtRules br = [atRule f br | f <- Set.toAscList $ atStr br]
@@ -221,16 +228,17 @@ applyMods _ br [] = BranchOK br
 
 
 applyMod :: CmdLineParams -> Branch -> BranchModification -> BranchInfo
-applyMod clp br (BM_AddFormulas li)              = addFormulas clp br li []
-applyMod clp br (BM_AddAccFormula accFor)        = addAccFormula clp br accFor
-applyMod  _  br (BM_AddDiaRuleCheck pr f)        = BranchOK $ addDiaRuleCheck br pr f
-applyMod  _  br (BM_AddDownRuleCheck pr f)       = BranchOK $ addDownRuleCheck br pr f
-applyMod clp br (BM_CreateNewPref)               = createNewPref clp br
-applyMod  _  br (BM_CreateNewProp)               = BranchOK $ createNewProp br
-applyMod  _  br (BM_CreateNewNomTestRelevance f) = BranchOK $ createNewNomTestRelevance br f
-applyMod  _  br (BM_RemFormula f)                = BranchOK $ remFormula br f
-applyMod  _  br (BM_AddDiffRuleCheck f pr b)     = BranchOK $ addDiffRuleCheck br f pr b
-applyMod  _  br (BM_AddParentPrefix son father)  = BranchOK $ addParentPrefix br son father
+applyMod clp br (BM_AddFormulas li)                = addFormulas clp br li []
+applyMod clp br (BM_AddAccFormula accFor)          = addAccFormula clp br accFor
+applyMod  _  br (BM_AddDiaRuleCheck pr f)          = BranchOK $ addDiaRuleCheck br pr f
+applyMod  _  br (BM_AddDiaXRuleCheck pr f)         = BranchOK $ addDiaXRuleCheck br pr f
+applyMod  _  br (BM_AddDownRuleCheck pr f)         = BranchOK $ addDownRuleCheck br pr f
+applyMod clp br (BM_CreateNewPref)                 = createNewPref clp br
+applyMod  _  br (BM_CreateNewProp)                 = BranchOK $ createNewProp br
+applyMod  _  br (BM_CreateNewNomTestRelevance f)   = BranchOK $ createNewNomTestRelevance br f
+applyMod  _  br (BM_RemFormula f)                  = BranchOK $ remFormula br f
+applyMod  _  br (BM_AddDiffRuleCheck f pr b)       = BranchOK $ addDiffRuleCheck br f pr b
+applyMod  _  br (BM_AddParentPrefix son father)    = BranchOK $ addParentPrefix br son father
 applyMod  _  br (BM_Clash ds (PrFormula pr ds2 f)) = BranchClash br pr (dsUnion ds ds2) f
 
 -- the actual rules and their helper functions
@@ -253,8 +261,16 @@ diaRule f@(PrFormula pr ds f1@(Dia r f2)) br
      else DiaRule f (AccFormula ds r pr newPr) (PrFormula newPr ds f2)
       where newPr = getNewPref br
 
-
 diaRule _ _ = error $ "diaRule"
+
+-- diaX (may create a discard rule)
+diaXRule :: PrFormula -> Branch -> Rule
+diaXRule f@(PrFormula pr bprs f1@(DiaX r f2)) br
+  = if (diaXAlreadyDone br pr f1)
+     then DiscardRule f
+     else DiaXRule f (PrFormula pr bprs (Dis [f2,  Con [neg f2, Dia r f1]]))
+
+diaXRule _ _ = error $ "diaXRule"
 
 --
 
