@@ -6,7 +6,6 @@ import qualified Data.Set as Set
 import qualified Data.Map as Map
 import HyLo.Model.Herbrand ( inducedModel )
 import qualified HyLo.Model.Herbrand as H
-import qualified HyLo.Formula.NNF as NNF
 
 import HTab.Formula( Prefix, Atom (..), Rel, LanguageInfo(..),
                      NomSymbol(..), RelSymbol(..), PropSymbol(..) )
@@ -27,27 +26,23 @@ buildHerbrandModel branch =
        prefixAndPropCouples = prefixAndProps branch
        es = Set.union
              (Set.fromList
-               [NNF.At
-                (NomSymbol $ show (getUrfather branch (DS.Nominal nString) + bias))
-                (NNF.Nom n) | n@(NomSymbol nString) <- (languageNoms $ inputLanguage branch)]
+               [(NomSymbol $ show (getUrfather branch (DS.Nominal nString) + bias), n)
+               | n@(NomSymbol nString) <- (languageNoms $ inputLanguage branch)]
              )
              (Set.fromList
-               [NNF.At
-                (NomSymbol $ show (p + bias))
-                (NNF.Nom (NomSymbol $ show (p + bias))) | p <- (prefixes branch), isInTheModel branch p]
+               [(NomSymbol $ show (p + bias), NomSymbol $ show (p + bias))
+               | p <- (prefixes branch), isInTheModel branch p]
              )
        ps = Set.fromList
-             [NNF.At
-               (NomSymbol $ show (pre + bias))
-               (NNF.Prop pro) | (pre,pro) <- prefixAndPropCouples]
-       rs = Set.fromList $ map accToNNF
+             [(NomSymbol $ show (pre + bias), pro)
+             | (pre,pro) <- prefixAndPropCouples]
+       rs = Set.fromList $ map toSimpSig
               $ concatMap (\((p1,rel),bp_ps) -> map (\(_,p2) -> (p1 + bias, rel, (getModelRepresentative branch p2) + bias))
                                                     bp_ps)
                           (filter (isInTheModel branch . fst . fst) $ flattenDMap $ accStr branch)
 
-accToNNF :: (Prefix,Rel,Prefix) -> NNF.Formula NomSymbol PropSymbol RelSymbol (NNF.At (NNF.Diam NNF.Nom))
-accToNNF (p1,r,p2) =
-  NNF.At (NomSymbol (show p1)) $ NNF.Diam (RelSymbol r) $ NNF.Nom (NomSymbol (show p2))
+toSimpSig :: (Prefix,Rel,Prefix) -> (NomSymbol,RelSymbol,NomSymbol)
+toSimpSig (p1,r,p2) = (NomSymbol (show p1), RelSymbol r, NomSymbol (show p2))
 
 prefixAndProps :: Branch -> [(Prefix,PropSymbol)]
 prefixAndProps br =
