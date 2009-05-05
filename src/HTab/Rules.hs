@@ -21,7 +21,7 @@ import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewNomTestRe
                     getUrfatherAndDeps, isNotBlocked, 
                     diaAlreadyDone, downAlreadyDone, incPropSymbol, incNomSymbol,
                     ReducedDisjunct(..), newPropBaseName, newNomBaseName )
-import HTab.CommandLine(CmdLineParams, semBranch, unitProp)
+import HTab.CommandLine(CmdLineParams, semBranch, unitProp, strategyStr)
 import HTab.RuleMetadata(RuleId(..))
 import qualified HTab.DisjSet as DS
 
@@ -165,15 +165,21 @@ ruleToId r = case r of
 -- the rules application strategy is defined here:
 -- the first rule is the one that will be applied at the next tableau step
 applicableRules :: Branch -> CmdLineParams -> Dependency -> [Rule]
-applicableRules br clp d = -- d = current depth in the tableau (add as dependency for branching rules)
-                           (applicableConjRules br)
- ++                        (applicableAtRules br)
- ++                        (applicableDiaRules br)
- ++                        (applicableExistRules br)
- ++                        (applicableDiffRules br)
- ++                        (applicableDownRules br)
- ++  if semBranch clp then (applicableSemBrRules clp br d)
-                      else (applicableDisjRules clp br d)
+applicableRules br clp d = concatMap (ruleByChar br clp d) (strategyStr clp)
+
+ruleByChar :: Branch -> CmdLineParams -> Dependency -> Char -> [Rule]
+ruleByChar br clp d char =
+ case char of
+  'a' -> applicableConjRules br
+  'o' -> if semBranch clp
+          then applicableSemBrRules clp br d
+          else applicableDisjRules clp br d
+  'd' -> applicableDiaRules br
+  's' -> applicableAtRules br
+  'e' -> applicableExistRules br
+  'D' -> applicableDiffRules br
+  'b' -> applicableDownRules br
+  _   -> error "ruleByChar"
 
 applicableConjRules :: Branch -> [Rule]
 applicableConjRules br = [conjRule f br | f <- Set.toAscList $ conjStr br]

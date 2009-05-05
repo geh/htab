@@ -32,6 +32,7 @@ module HTab.Base
 where
 import Control.Monad ( when )
 import qualified Data.Map as Map
+import Data.List ( sort )
 
 vPutStrLn :: String -> Bool -> IO ()
 vPutStrLn s b = when b $ putStrLn s
@@ -65,4 +66,7 @@ doMemoize :: Ord a => (a -> b) -> a -> Map.Map a b -> (b, Map.Map a b)
 doMemoize f e m = case Map.lookup e m of
                    Nothing     -> let result = f e in (result, Map.insert e result m)
                    Just result -> (result, m)
+
+permutationOf :: Ord a => [a] -> [a] -> Bool
+permutationOf l1 l2 = sort l1 == sort l2
 

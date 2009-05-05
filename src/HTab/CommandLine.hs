@@ -25,7 +25,7 @@ import Data.Maybe ( isJust )
 import Control.Monad.Error (MonadError(..))
 import Control.Applicative ( (<$>) )
 
-import HTab.Base(intToBool)
+import HTab.Base(intToBool, permutationOf)
 import HTab.Statistics(Metric,closedBranches,StatisticsState,
                        addMetric, addInspectionMetric, setPrintOutInterval,
                        ruleApplicationCount)
@@ -36,6 +36,7 @@ data CmdLineParams = CLP {
            logState        :: Bool,
            maxtimeout      :: Int,
            statsStr        :: String,
+           strategyStr     :: String,
            semBranch       :: Bool,
            unitProp        :: Bool,
            backJumping     :: Bool,
@@ -100,6 +101,25 @@ options =
           ["backjumping"]
           (ReqArg setBackJumping "[0|1]")
           "disable/enable backjumping optimisation",
+   Option ['o']
+          ["strategy"]
+          (ReqArg setStrategy "PAT")
+          (unlines [
+          "PAT configures the strategy of rules applications",
+          "A valid PAT is a permutation of the following list",
+          "of values (priority in PAT goes from left to right):",
+          "  a = and",
+          "  o = or",
+          "  d = diamond",
+          "  s = satisfaction operator",
+          "  e = existential modality",
+          "  D = difference modality",
+          "  b = down-arrow binder",
+          "",
+          "The default is `" ++ strategyStr defaultParams ++ "'",
+          "The rules box, universal modality and converse difference",
+          "modality are immediate, thus have the highest precedence.",
+          ""]),
    Option ['S']
           ["statistics"]
           (ReqArg setStats "PAT")
@@ -159,6 +179,14 @@ setBackJumping = is0or1 ?->  \s c -> return c{backJumping = intToBool $ read s}
 is0or1 :: String -> Bool
 is0or1 s = (s == "1") || (s == "0")
 
+
+setStrategy :: String -> CLPModifier
+setStrategy = permutationOf strategyStrVal ?->
+                   \s c -> return c{strategyStr = s}
+
+strategyStrVal :: String
+strategyStrVal = "asedDbo"
+
 setStats :: String -> CLPModifier
 setStats = (isJust . parseStats) ?->
              \s c -> return c{statsStr = s}
@@ -169,6 +197,7 @@ defaultParams = CLP {showHelp = False,
                      logState = False,
                      maxtimeout  = 0,
                      statsStr    = ":0:c",
+                     strategyStr = "asedDbo",
                      semBranch   = True,
                      unitProp    = True,
                      backJumping = True,
