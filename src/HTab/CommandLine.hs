@@ -38,6 +38,7 @@ data CmdLineParams = CLP {
            statsStr        :: String,
            semBranch       :: Bool,
            unitProp        :: Bool,
+           backJumping     :: Bool,
            genModel        :: Maybe FilePath,
            quietMode       :: Bool,
            inclBlockGlobal :: Bool,
@@ -95,6 +96,10 @@ options =
           ["unit-propagation"]
           (ReqArg setUnitProp "[0|1]")
           "disable/enable unit propagation optimisation",
+   Option ['j']
+          ["backjumping"]
+          (ReqArg setBackJumping "[0|1]")
+          "disable/enable backjumping optimisation",
    Option ['S']
           ["statistics"]
           (ReqArg setStats "PAT")
@@ -148,6 +153,9 @@ setSemanticBranching = is0or1 ?-> \s c -> return c{semBranch = intToBool $ read 
 setUnitProp :: String -> CLPModifier
 setUnitProp = is0or1 ?->  \s c -> return c{unitProp = intToBool $ read s}
 
+setBackJumping :: String -> CLPModifier
+setBackJumping = is0or1 ?->  \s c -> return c{backJumping = intToBool $ read s}
+
 is0or1 :: String -> Bool
 is0or1 s = (s == "1") || (s == "0")
 
@@ -163,6 +171,7 @@ defaultParams = CLP {showHelp = False,
                      statsStr    = ":0:c",
                      semBranch   = True,
                      unitProp    = True,
+                     backJumping = True,
                      genModel    = Nothing,
                      quietMode   = False,
                      inclBlockGlobal = False,

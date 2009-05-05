@@ -6,7 +6,7 @@ import HTab.Statistics(updateStep,printOutInspectionMetrics,
                        recordClosedBranch,recordFiredRule)
 import HTab.Branch(BranchInfo(..),Branch,BranchMonad, BranchData(..),branch_depth,
                    addZeroInPath, incPathHead, calculateStepInfo )
-import HTab.CommandLine(logState,CmdLineParams)
+import HTab.CommandLine(logState,backJumping,CmdLineParams)
 import HTab.Rules(Rule,applyRule,
                   applicableRules,ruleToId)
 import HTab.Statistics(Statistics)
@@ -57,13 +57,22 @@ chooseBranch_ currentDepSet (hd:tl) =
     put bd{branch_info=hd}
     res <- tableau
     let currentBranchingDepth = branch_depth bd
+    let backjump = backJumping $ branch_clp bd
     case res of
      TIMEOUT       -> return TIMEOUT
      o@(OPEN _)    -> return o
-     CLOSED depSet -> if dsMember currentBranchingDepth depSet  -- was the clash because of this branching ?
-                         then do put $ incPathHead bd
-                                 chooseBranch_ (dsUnion currentDepSet depSet) tl
-                         else return $ CLOSED depSet
+     CLOSED depSet ->
+      if backjump
+       then
+          if dsMember currentBranchingDepth depSet  -- was the clash because of this branching ?
+             then do put $ incPathHead bd
+                     chooseBranch_ (dsUnion currentDepSet depSet) tl
+             else return $ CLOSED depSet
+       else
+        do put $ incPathHead bd
+           chooseBranch_ (dsUnion currentDepSet depSet) tl
+
+
 
 chooseBranch_ currentDepSet [] = return $ CLOSED currentDepSet
 
