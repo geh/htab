@@ -1,4 +1,0 @@
-#!/bin/sh
-groff -man -Tps   $1 > $1.ps
-groff -man -Thtml $1 > $1.html
-cat $1 | gzip > $1.gz
