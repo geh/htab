@@ -43,8 +43,7 @@ data CmdLineParams = CLP {
            genModel        :: Maybe FilePath,
            quietMode       :: Bool,
            inclBlockGlobal :: Bool,
-           inclBlockChain  :: Bool,
-           immediateBlock  :: Bool
+           inclBlockChain  :: Bool
          } deriving (Show)
 
 type CLPModifier   = CmdLineParams -> Either ParsingErrMsg CmdLineParams
@@ -149,11 +148,7 @@ options =
   Option []
          ["inclusion-blocking-chain"]
          (NoArg $ \c -> return c{inclBlockChain = True})
-         "enable inclusion blocking among all nodes of a chain",
-  Option []
-         ["immediate-blocking"]
-         (NoArg $ \c -> return c{immediateBlock = True})
-         "enable inclusion blocking immediately (default if formula without universal or difference modalities)"
+         "enable inclusion blocking among all nodes of a chain"
   ]
 
 
@@ -204,8 +199,7 @@ defaultParams = CLP {showHelp = False,
                      genModel    = Nothing,
                      quietMode   = False,
                      inclBlockGlobal = False,
-                     inclBlockChain  = True,
-                     immediateBlock  = False
+                     inclBlockChain  = True
 }
 
 getCmdLineParams :: IO (Either ParsingErrMsg CmdLineParams)
