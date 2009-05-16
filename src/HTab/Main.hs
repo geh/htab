@@ -21,7 +21,7 @@ import HTab.Base( vPutStrLn )
 import HTab.Tableau( liftStats, tableau, OpenFlag(..) )
 import HTab.Formula( formulaLanguageInfo, parse, Theory, RelInfo, Task,
                      Formula, encodeValidityTest, encodeSatTest )
-import HTab.ModelGen ( HerbrandModel, inducedModel )
+import HTab.ModelGen ( Model )
 
 import HTab.Timeout ( withNoTimeout, notifyOnTimeout, TimeoutSignal )
 
@@ -95,7 +95,7 @@ runOneTask (query,mOutFile,fs) relInfo theory clp ts=
      f `seq` myPutStrLn ("\nInput for SAT test:\n{ " ++ show f ++ " }\nEnd of input\n")
      --
      let fLang         = formulaLanguageInfo f
-     let initialBranch = emptyBranch clp fLang
+     let initialBranch = emptyBranch clp fLang relInfo
      let branchInfo    = addFirstFormulas clp initialBranch f fLang
      --
      result <- tableauInit branchInfo clp ts
@@ -127,9 +127,9 @@ runOneTask (query,mOutFile,fs) relInfo theory clp ts=
 
 --
 
-saveGenModel :: CmdLineParams -> (Maybe FilePath) -> HerbrandModel -> IO ()
+saveGenModel :: CmdLineParams -> (Maybe FilePath) -> Model -> IO ()
 saveGenModel clp mOutFile m = maybe (return ()) doWrite mOutFile
-    where doWrite f = do writeFile f (show . inducedModel $ m)
+    where doWrite f = do writeFile f (show m)
                          unless (quietMode clp) $ vPutStrLn ("Model saved as " ++ f) (logState clp)
 
 tableauInit :: BranchInfo -> CmdLineParams -> TimeoutSignal -> IO (OpenFlag,Statistics)

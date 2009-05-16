@@ -23,7 +23,7 @@ checkIfVariableNegatedOnce, replaceVar,
 firstPrefixedFormula,
 parse, Theory, RelInfo, Task,
 encodeValidityTest, encodeSatTest,
-HyLoFormula
+HyLoFormula, RelProperties(..)
 )
 
  where
@@ -39,6 +39,7 @@ import HyLo.Signature.String( PropSymbol(..),
 
 import qualified HyLo.InputFile as InputFile
 import qualified HyLo.InputFile.Parser as P
+import HyLo.InputFile.Parser ( RelProperties(..) )
 import qualified HyLo.Formula as F
 
 type Prefix = Int

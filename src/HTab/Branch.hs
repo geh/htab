@@ -21,7 +21,8 @@ getUrfather, getUrfatherAndDeps, isInTheModel,
 getModelRepresentative, isNotBlocked,
 calculateStepInfo, BlockingMode(..), diaAlreadyDone,
 downAlreadyDone, incPropSymbol, incNomSymbol,
-ReducedDisjunct(..), newNomBaseName, newPropBaseName
+ReducedDisjunct(..), newNomBaseName, newPropBaseName,
+isReflexive, isTransitive
 ) where
 
 import Control.Monad.State(StateT, MonadState)
@@ -125,7 +126,8 @@ data Branch = Branch {clashStr :: Clashable_info,
                      inclUrMap :: Maybe InclusionUrfathersMap,
                      blockMode :: BlockingMode,
                     prefParent :: PrefixParent,
-              relevantNominals :: Set.Set NomSymbol}
+              relevantNominals :: Set.Set NomSymbol,
+                       relInfo :: RelInfo}
 
 --
 
@@ -134,8 +136,9 @@ branch_depth b = length $ branch_path b
 
 --
 
-emptyBranch :: CmdLineParams -> LanguageInfo -> Branch
-emptyBranch clp fLang =
+emptyBranch :: CmdLineParams -> LanguageInfo -> RelInfo -> Branch
+emptyBranch clp fLang relInfo_ =
+ addReflexiveLinks 0 $
                 Branch
                 { clashStr= Map.empty::Clashable_info,
                   conjStr= Set.empty::Conj_structure,
@@ -166,7 +169,8 @@ emptyBranch clp fLang =
                   incrPrs = [],
                   blockMode = blockingMode,
                   prefParent = Map.empty::PrefixParent,
-                  relevantNominals = Set.fromList $ languageNoms fLang
+                  relevantNominals = Set.fromList $ languageNoms fLang,
+                  relInfo = relInfo_
                 }
  where blockingMode = if inclBlockChain clp && (not $ inclBlockGlobal clp)
                        then InclusionBlockingChain
@@ -434,10 +438,13 @@ newFormulasToSend deps (mapBox, mapAcc)
 
 addBoxConstraint :: CmdLineParams -> Branch -> Prefix -> RelSymbol -> Formula -> DependencySet -> BranchInfo
 addBoxConstraint clp br nonRepresentativePr (RelSymbol r) f ds
- = addFormulas clp newBr
-               ( map (\(ds2,p) -> PrFormula p (dsUnion ds ds2) f) accessibleDsPrs )
-               []
-   where pr = getUrfather br (DS.Prefix nonRepresentativePr)
+ = addFormulas clp newBr toAdd []
+   where toAdd = transApplications ++ boxApplications
+         transApplications = if isTransitive (relInfo br) (RelSymbol r)
+                             then map (\(ds2,p) -> PrFormula p (dsUnion ds ds2) (Box (RelSymbol r) f)) accessibleDsPrs
+                             else []
+         boxApplications =  map (\(ds2,p) -> PrFormula p (dsUnion ds ds2) f) accessibleDsPrs
+         pr = getUrfather br (DS.Prefix nonRepresentativePr)
          newBr = br{boxConstr = updateBoxConstr pr r f ds (boxConstr br)}
          updateBoxConstr p1_ r_ f_ ds_ boxConstr_ =
            case Map.lookup p1_ boxConstr_ of
@@ -453,21 +460,31 @@ addBoxConstraint _ _ _ (InvRelSymbol _) _ _ = error "inverse modality not handle
 
 addAccFormula :: CmdLineParams -> Branch -> AccFormula -> BranchInfo
 addAccFormula clp br (AccFormula ds (RelSymbol r) nonRepresentativeP1 p2)
- = addFormulas clp newBr
-               ( map (\(ds2,f) -> PrFormula p2 (dsUnion ds ds2) f) formulasToSend )
-               []
-   where p1 = getUrfather br (DS.Prefix nonRepresentativeP1)
-         newBr    =      br{accStr=updateAccStr p1 r ds p2 (accStr br)}
+ = addFormulas clp newBr toAdd []
+   where toAdd = transApplications ++ boxApplications
+         transApplications = if isTransitive (relInfo br) (RelSymbol r)
+                              then map (\(ds2,f) -> PrFormula p2 (dsUnion ds ds2) (Box (RelSymbol r) f)) formulasToSend
+                              else []
+         boxApplications = map (\(ds2,f) -> PrFormula p2 (dsUnion ds ds2) f) formulasToSend
+         p1 = getUrfather br (DS.Prefix nonRepresentativeP1)
+         newBr    = addAccFormulaRaw br (AccFormula ds (RelSymbol r) p1 p2)
+         formulasToSend = Map.findWithDefault [] r $ Map.findWithDefault Map.empty p1 (boxConstr br) -- [(DependencySet,Prefix)]
+
+
+addAccFormula _ _ (AccFormula _ (InvRelSymbol _) _ _ ) = error "inverse modality not handled"
+
+addAccFormulaRaw :: Branch -> AccFormula -> Branch
+addAccFormulaRaw _ (AccFormula _ (InvRelSymbol _) _ _) = error "addAccFormulaRaw : inverse modality not handled"
+addAccFormulaRaw br (AccFormula ds (RelSymbol r) p1 p2)
+ = br{accStr=updateAccStr p1 r ds p2 (accStr br)}
+   where
          updateAccStr p1_ r_ ds_ p2_ accStr_ =
           case Map.lookup p1_ accStr_ of
             Nothing       -> Map.insert p1_ (Map.singleton r_ [(ds_,p2_)]) accStr_
             Just innerMap -> case Map.lookup r_ innerMap of
                                Nothing             -> Map.insert p1_ (Map.insert r_ [(ds_,p2_)] innerMap)                accStr_
                                Just innerInnerList -> Map.insert p1_ (Map.insert r_ ((ds_,p2_):innerInnerList) innerMap) accStr_
-         formulasToSend = Map.findWithDefault [] r $ Map.findWithDefault Map.empty p1 (boxConstr br) -- [(DependencySet,Prefix)]
 
-
-addAccFormula _ _ (AccFormula _ (InvRelSymbol _) _ _ ) = error "inverse modality not handled"
 
 {-  functions related to blocking conditions and model building -}
 
@@ -685,13 +702,20 @@ addDiffRuleCheck br f propsym b =
 
 createNewPref :: CmdLineParams -> Branch -> BranchInfo
 createNewPref clp br
- = addFormulas clp newBr (   map (\(ds,f) -> PrFormula newPr ds f) univConstraints
+ = addFormulas clp newBrWithRefl
+                         (   map (\(ds,f) -> PrFormula newPr ds f) univConstraints
                           ++ map (\(ds,f,newNom) -> PrFormula newPr ds (Dis [f, nom newNom])) diffBoxConstraints)
                          []
    where newPr = lastPref br + 1
          newBr = br{lastPref = newPr}
          univConstraints = univCons br
          diffBoxConstraints = dBoxCons br
+         newBrWithRefl = addReflexiveLinks newPr newBr
+
+addReflexiveLinks :: Prefix -> Branch -> Branch
+addReflexiveLinks pr br
+ = foldr (\rel_ br_-> addAccFormulaRaw br_ (AccFormula dsEmpty rel_ pr pr)) br reflRels
+   where reflRels = map fst $ filter (\(_,props) -> Reflexive `elem` props) (relInfo br)
 
 
 --
@@ -901,6 +925,15 @@ reduceDisjunctionAgainstBranch br pr fs =
 prefixes :: Branch -> [Prefix]
 prefixes br = [0..(lastPref br)]
 
+isReflexive :: RelInfo -> RelSymbol -> Bool
+isReflexive relI r = case List.lookup r relI of
+                      Nothing         -> False
+                      Just properties -> Reflexive `elem` properties
+
+isTransitive :: RelInfo -> RelSymbol -> Bool
+isTransitive relI r = case List.lookup r relI of
+                       Nothing         -> False
+                       Just properties -> Transitive `elem` properties
 
 {-      Monad related stuff      -}
 

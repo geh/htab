@@ -11,10 +11,10 @@ import HTab.Rules(Rule,applyRule,
                   applicableRules,ruleToId)
 import HTab.Statistics(Statistics)
 import HTab.Formula(Prefix,DependencySet,Formula,dsEmpty,dsMember,dsUnion)
-import HTab.ModelGen ( HerbrandModel, buildHerbrandModel )
+import HTab.ModelGen ( Model, buildModel )
 import HTab.Timeout( isTimeout )
 
-data OpenFlag = OPEN HerbrandModel | CLOSED DependencySet | TIMEOUT
+data OpenFlag = OPEN Model | CLOSED DependencySet | TIMEOUT
 
 tableau :: BranchMonad OpenFlag
 tableau =
@@ -45,7 +45,7 @@ tableau =
                               chooseBranch possibleBranches
                           []   ->
                            do debugMsg_BranchOK_saturated
-                              return $ OPEN (buildHerbrandModel br)
+                              return $ OPEN (buildModel br)
 
 -- depth-first branch-choosing strategy
 chooseBranch :: [BranchInfo] ->  BranchMonad OpenFlag

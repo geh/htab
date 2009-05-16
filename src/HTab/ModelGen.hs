@@ -1,24 +1,27 @@
-module HTab.ModelGen (HerbrandModel, buildHerbrandModel, inducedModel )
+module HTab.ModelGen (Model, buildModel )
 
 where
 
 import qualified Data.Set as Set
+import Data.Set (Set)
 import qualified Data.Map as Map
 import HyLo.Model.Herbrand ( inducedModel )
 import qualified HyLo.Model.Herbrand as H
+import qualified HyLo.Model as M
 
 import HTab.Formula( Prefix, Atom (..), Rel, LanguageInfo(..),
-                     NomSymbol(..), RelSymbol(..), PropSymbol(..) )
+                     NomSymbol(..), RelSymbol(..), PropSymbol(..), RelInfo )
 import HTab.Branch( Branch(..), prefixes, getUrfather,
-                    isInTheModel, getModelRepresentative )
+                    isInTheModel, getModelRepresentative,
+                    isTransitive )
 import qualified HTab.DisjSet as DS
 import HTab.DMap (flattenDMap)
 
-type HerbrandModel = H.HerbrandModel NomSymbol PropSymbol RelSymbol
+type Model = M.Model NomSymbol NomSymbol PropSymbol RelSymbol
 
-buildHerbrandModel :: Branch -> HerbrandModel
-buildHerbrandModel branch =
-  H.herbrand es ps rs
+buildModel :: Branch -> Model
+buildModel branch =
+  completeModel (relInfo branch) $ inducedModel $ H.herbrand es ps rs
  where
        bias = if null $ languageNoms $ inputLanguage branch
                then 0
@@ -52,4 +55,21 @@ prefixAndProps br =
        prPosLitProp          = filter (isPosLitProp . snd) $ map fst $ filter (fst . snd) $ flattenDMap clashableRelevant
        isPosLitProp   (P _)  = True
        isPosLitProp     _    = False
+
+completeModel :: RelInfo -> Model -> Model
+completeModel relI m = completeTransitivity relI m
+
+completeTransitivity :: RelInfo -> Model -> Model
+completeTransitivity relI m = m{M.succs = \r w -> if isTransitive relI r
+                                                   then getTransClos (M.succs m) r w
+                                                   else M.succs m r w}
+
+getTransClos :: (Ord w) => (r -> w -> Set w) -> r -> w -> Set w
+getTransClos succs_ r_ w_
+ = go Set.empty Set.empty succs_ r_ w_
+ where go seen todo succs r w
+        = case Set.minView todo1 of
+           Nothing                -> seen
+           Just (nextWorld,todo2) -> go (Set.insert nextWorld seen) todo2 succs r nextWorld
+          where todo1  = (Set.union (succs r w) todo) `Set.difference` seen
 
