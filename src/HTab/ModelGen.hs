@@ -12,16 +12,17 @@ import qualified HyLo.Model as M
 import HTab.Formula( Prefix, Atom (..), Rel, LanguageInfo(..),
                      NomSymbol(..), RelSymbol(..), PropSymbol(..), RelInfo )
 import HTab.Branch( Branch(..), prefixes, getUrfather,
-                    isInTheModel, getModelRepresentative )
+                    isInTheModel, relationIsInTheModel, getModelRepresentative,
+                    isTransitive )
 import qualified HTab.DisjSet as DS
 import HTab.DMap (flattenDMap, DMap(..), toMap )
 import HTab.Relations ( getAllRels )
 
 type Model = M.Model NomSymbol NomSymbol PropSymbol RelSymbol
 
-buildHerbrandModel :: Branch -> HerbrandModel
-buildHerbrandModel branch =
-  H.herbrand es ps rs
+buildModel :: Branch -> Model
+buildModel branch =
+  completeModel (relInfo branch) $ inducedModel $ H.herbrand es ps rs
  where
        bias = if null $ languageNoms $ inputLanguage branch
                then 0
@@ -58,7 +59,7 @@ prefixAndProps br =
 completeModel :: RelInfo -> Model -> Model
 completeModel relI m = completeTransitivity relI m
 
-completeTransitivity :: RelInfo -> Model -> Model
+completeTransitivity :: RelInfo -> Model -> Model -- TODO transitivity + past
 completeTransitivity relI m = m{M.succs = \r w -> if isTransitive relI r
                                                    then getTransClos (M.succs m) r w
                                                    else M.succs m r w}

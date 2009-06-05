@@ -1,6 +1,8 @@
 module HTab.Tableau where
 
 import Control.Monad.State(StateT,lift,modify, put, get)
+import qualified Data.Map as Map
+import qualified HTab.DMap as DMap
 import HTab.Base(vPutStrLn)
 import HTab.Statistics(updateStep,printOutInspectionMetrics,
                        recordClosedBranch,recordFiredRule)
@@ -15,7 +17,7 @@ import HTab.Formula(Prefix,DependencySet,Formula,dsEmpty,dsMember,dsUnion,langua
 import HTab.ModelGen ( Model, buildModel )
 import HTab.Timeout( isTimeout )
 
-data OpenFlag = OPEN HerbrandModel | CLOSED DependencySet | TIMEOUT
+data OpenFlag = OPEN Model | CLOSED DependencySet | TIMEOUT
 
 tableau :: BranchMonad OpenFlag
 tableau =
@@ -46,7 +48,9 @@ tableau =
                               chooseBranch possibleBranches
                           []   ->
                            do debugMsg_BranchOK_saturated
-                              return $ OPEN (buildHerbrandModel br)
+                              return $ if (Map.null $ DMap.toMap $ prefToUevFwd br) && (Map.null $ DMap.toMap $ prefToUevBwd br)
+                                         then OPEN (buildModel br)        -- no unsatisfied eventuality
+                                         else CLOSED $ collectUevBprs br  -- which bprs ? union those of the unsatisfied eventualities
 
 -- depth-first branch-choosing strategy
 chooseBranch :: [BranchInfo] ->  BranchMonad OpenFlag
@@ -58,13 +62,20 @@ chooseBranch_ currentDepSet (hd:tl) =
     put bd{branch_info=hd}
     res <- tableau
     let currentBranchingDepth = branch_depth bd
+    let backjump = (not $ languageTrans $ inputLanguage $ getBranch $ branch_info bd) && (backJumping $ branch_clp bd) -- disable backjumping in presence of transitive closure
     case res of
      TIMEOUT       -> return TIMEOUT
      o@(OPEN _)    -> return o
-     CLOSED depSet -> if dsMember currentBranchingDepth depSet  -- was the clash because of this branching ?
-                         then do put $ incPathHead bd
-                                 chooseBranch_ (dsUnion currentDepSet depSet) tl
-                         else return $ CLOSED depSet
+     CLOSED depSet ->
+      if backjump
+       then
+          if dsMember currentBranchingDepth depSet  -- was the clash because of this branching ?
+             then do put $ incPathHead bd
+                     chooseBranch_ (dsUnion currentDepSet depSet) tl
+             else return $ CLOSED depSet
+       else
+        do put $ incPathHead bd
+           chooseBranch_ (dsUnion currentDepSet depSet) tl
 
 chooseBranch_ currentDepSet [] = return $ CLOSED currentDepSet
 

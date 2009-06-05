@@ -21,7 +21,8 @@ getUrfather, getUrfatherAndDeps, isInTheModel, relationIsInTheModel,
 getModelRepresentative, isNotBlocked,
 calculateStepInfo, BlockingMode(..), diaAlreadyDone, diaXAlreadyDone,
 downAlreadyDone, incPropSymbol, incNomSymbol,
-ReducedDisjunct(..), newNomBaseName, newPropBaseName
+collectUevBprs, ReducedDisjunct(..), newNomBaseName, newPropBaseName,
+isReflexive, isTransitive
 ) where
 
 import Control.Monad.State(StateT, MonadState)
@@ -117,8 +118,8 @@ data Branch = Branch {clashStr :: Clashable_info,
                       dBoxCons :: Diff_Box_constraints, -- constraints of the (B) modality
                  -- saturation of rules
                        diaRlCh :: Dia_rule_chart,       -- saturation of the diamond rule
-                      diaXRlCh :: DiaX_rule_chart,   -- saturation of the diamondX rule
-                      boxXRlCh :: BoxX_rule_chart,   -- saturation of the boxX rule
+                      diaXRlCh :: DiaX_rule_chart,      -- saturation of the diamondX rule
+                      boxXRlCh :: BoxX_rule_chart,      -- saturation of the boxX rule
                       downRlCh :: Down_rule_chart,      -- saturatino of the down-arrow rule
                         atRlCh :: At_rule_chart,        -- saturation of the @ rule
                      existRlCh :: Exist_rule_chart,     -- saturation of the exist rule
@@ -397,7 +398,7 @@ addFormula3 clp br_ (PrFormula pr ds (Box r f))
              addBoxConstraint clp br pr r f ds
 
 addFormula3 clp br (PrFormula pr ds (BoxX r f))
-           = addBoxXConstraint clp (block br) pr r f ds
+           = addBoxXConstraint clp br pr r f ds
 
 addFormula3 _ br_ pf@(PrFormula pr _ f2@(Dia r _))
            = let br = case r of { InvRelSymbol _ -> blockChain br_ ; _ -> br_ } in
@@ -548,9 +549,45 @@ newFormulasToSend deps (mapBox, mapAcc)
 
 addBoxConstraint :: CmdLineParams -> Branch -> Prefix -> RelSymbol -> Formula -> DependencySet -> BranchInfo
 addBoxConstraint clp br pr_ (RelSymbol r) f ds
- = addFormulas clp newBr
-               ( map (\(ds2,p) -> PrFormula p (dsUnion ds ds2) f) accessibleDsPrs )
-               []
+ = addFormulas clp newBr toAdd []
+   where pr = getUrfather br (DS.Prefix pr_)
+         newBr = br{boxConstrFwd = updateBoxConstr pr r f ds (boxConstrFwd br)}
+         accessiblePrDs = getSuccessors (accStr br) pr r
+         toAdd = transApplications ++ boxApplications
+         transApplications = if isTransitive (relInfo br) (RelSymbol r)
+                             then map (\(p,ds2) -> PrFormula p (dsUnion ds ds2) (Box (RelSymbol r) f)) accessiblePrDs
+                             else []
+         boxApplications = map (\(p,ds2) -> PrFormula p (dsUnion ds ds2) f) accessiblePrDs
+
+addBoxConstraint clp br pr_ (InvRelSymbol r) f ds
+ = addFormulas clp newBr toAdd []
+   where pr = getUrfather br (DS.Prefix pr_)
+         newBr = br{boxConstrBwd = updateBoxConstr pr r f ds (boxConstrBwd br)}
+         accessiblePrDs = getPredecessors (accStr br) pr r
+         toAdd = transApplications ++ boxApplications
+         transApplications = if isTransitive (relInfo br) (RelSymbol r)
+                             then map (\(p,ds2) -> PrFormula p (dsUnion ds ds2) (Box (InvRelSymbol r) f)) accessiblePrDs
+                             else []
+         boxApplications = map (\(p,ds2) -> PrFormula p (dsUnion ds ds2) f) accessiblePrDs
+
+updateBoxConstr :: Prefix -> Rel -> Formula -> DependencySet -> Box_constraints -> Box_constraints
+updateBoxConstr p1_ r_ f_ ds_ (DMap boxConstr_) =
+  case Map.lookup p1_ boxConstr_ of
+    Nothing       -> DMap $ Map.insert p1_ (Map.singleton r_ [(ds_,f_)]) boxConstr_
+    Just innerMap -> case Map.lookup r_ innerMap of
+                       Nothing             -> DMap $ Map.insert p1_ (Map.insert r_ [(ds_,f_)] innerMap)                boxConstr_
+                       Just innerInnerList -> DMap $ Map.insert p1_ (Map.insert r_ ((ds_,f_):innerInnerList) innerMap) boxConstr_
+
+
+-- [*]phi --> phi & [][*]phi
+-- need not to do all that addBoxConstraint does
+addBoxXConstraint :: CmdLineParams -> Branch -> Prefix -> RelSymbol -> Formula -> DependencySet -> BranchInfo
+addBoxXConstraint clp br nonRepresentativePr r f ds
+ = if boxXAlreadyDone br pr (BoxX r f)
+    then BranchOK br
+    else addFormulas clp br2 [PrFormula pr ds f,
+                     PrFormula pr ds (Box r (BoxX r f))]
+                     []
    where pr = getUrfather br (DS.Prefix nonRepresentativePr)
          br2 = addBoxXRuleCheck br pr (BoxX r f)
 
@@ -570,31 +607,37 @@ boxXAlreadyDone _ _ _ = error "boxX already done : wrong formula kind"
 
 addAccFormula :: CmdLineParams -> Branch -> AccFormula -> BranchInfo
 addAccFormula clp br (AccFormula ds (RelSymbol r) p1_ p2_)
- = addFormulas clp newBr
-               ( map (\(ds2,f) -> PrFormula p2 (dsUnion ds ds2) f) formulasToSend )
-               []
-   where p1 = getUrfather br (DS.Prefix nonRepresentativeP1)
-         newBr    =      br{accStr=updateAccStr p1 r ds p2 (accStr br)}
-         updateAccStr p1_ r_ ds_ p2_ accStr_ =
-          case Map.lookup p1_ accStr_ of
-            Nothing       -> Map.insert p1_ (Map.singleton r_ [(ds_,p2_)]) accStr_
-            Just innerMap -> case Map.lookup r_ innerMap of
-                               Nothing             -> Map.insert p1_ (Map.insert r_ [(ds_,p2_)] innerMap)                accStr_
-                               Just innerInnerList -> Map.insert p1_ (Map.insert r_ ((ds_,p2_):innerInnerList) innerMap) accStr_
-         formulasToSend = Map.findWithDefault [] r $ Map.findWithDefault Map.empty p1 (boxConstr br) -- [(DependencySet,Prefix)]
+ = addFormulas clp newBr toAdd []
+   where toAdd = transApplications ++ boxApplications
+         transApplications = if isTransitive (relInfo br) (RelSymbol r)
+                              then
+                               (  ( map (\(ds2,f) -> PrFormula p2 (dsUnion ds ds2) (Box (RelSymbol r) f)) formulasToSendFwd )
+                               ++ ( map (\(ds2,f) -> PrFormula p1 (dsUnion ds ds2) (Box (RelSymbol r) f)) formulasToSendBwd )  )
+                              else []
+         boxApplications =  (  ( map (\(ds2,f) -> PrFormula p2 (dsUnion ds ds2) f) formulasToSendFwd )
+                            ++ ( map (\(ds2,f) -> PrFormula p1 (dsUnion ds ds2) f) formulasToSendBwd )  )
+         p1 = getUrfather br (DS.Prefix p1_)
+         p2 = getUrfather br (DS.Prefix p2_)
+         newBr    = insertRelationBranch br p1 r p2 ds
+         formulasToSendFwd = Map.findWithDefault [] r $ Map.findWithDefault Map.empty p1 (DMap.toMap $ boxConstrFwd br) -- [(DependencySet,Prefix)]
+         formulasToSendBwd = Map.findWithDefault [] r $ Map.findWithDefault Map.empty p2 (DMap.toMap $ boxConstrBwd br) -- [(DependencySet,Prefix)]
 
+addAccFormula clp br (AccFormula ds (InvRelSymbol r) p1_ p2_ ) -- so, create p2<>p1
+ = addAccFormula clp br (AccFormula ds (RelSymbol r) p2_ p1_)
 
-addAccFormula _ _ (AccFormula _ (InvRelSymbol _) _ _ ) = error "inverse modality not handled"
+insertRelationBranch :: Branch -> Prefix -> Rel -> Prefix -> DependencySet -> Branch
+insertRelationBranch br p1 r p2 ds
+ = br{accStr = insertRelation (accStr br) p1 r p2 ds}
 
 {-  functions related to blocking conditions and model building -}
 
 isNotBlocked :: Branch -> Prefix -> Bool
 isNotBlocked br pr =
  case blockMode br of
-   Nothing                      -> True
-   Just InclusionBlockingGlobal -> let ur =  getUrfather br (DS.Prefix pr) in
-                                   getModelRepresentative br ur == ur  -- i'm not happy to call this model related function
-   Just InclusionBlockingChain  -> not $ isChainInclusionBlocked br pr
+   InclusionBlockingGlobal -> let ur =  getUrfather br (DS.Prefix pr) in
+                              getModelRepresentative br ur == ur  -- i'm not happy to call this model related function
+   InclusionBlockingChain  -> not $ isChainInclusionBlocked br pr
+   ChainBlocking           -> not $ isChainBlocked br pr
 
 isChainInclusionBlocked :: Branch -> Prefix -> Bool
 isChainInclusionBlocked  br pr =
@@ -633,45 +676,62 @@ isInTheModel br pr
  = if isNominalUrfather br pr
     then
      case blockMode br of
-       Nothing                      ->  True
-       Just InclusionBlockingGlobal ->  (getModelRepresentative br pr) == pr
-       Just InclusionBlockingChain  ->  (getModelRepresentative br pr) == pr
-       Just ChainBlocking           ->  case findModelRepresentativeChainBlocking br pr of
-                                         Nothing   -> False
-                                         Just repr -> repr == pr
+       InclusionBlockingGlobal ->  (getModelRepresentative br pr) == pr
+       InclusionBlockingChain  ->  (getModelRepresentative br pr) == pr
+       ChainBlocking           ->  case findModelRepresentativeChainBlocking br pr of
+                                    Nothing   -> False
+                                    Just repr -> repr == pr
    else False
 
 relationIsInTheModel :: Branch -> (Prefix,Rel,Prefix) -> Bool
 relationIsInTheModel br (p1,_,p2)
  = case blockMode br of
-    Nothing                      -> isNominalUrfather br pr -- could be just pr as well, but here we have a smaller model
-    Just InclusionBlockingGlobal -> isNominalUrfather br pr && getModelRepresentative br pr == pr
-    Just InclusionBlockingChain  -> isNominalUrfather br pr && getModelRepresentative br pr == pr
+     ChainBlocking            -> hasIdentityUrfather br p1 && hasIdentityUrfather br p2
+     _                        -> isInTheModel br p1
+   where hasIdentityUrfather br_ pr_
+          = case findModelRepresentativeChainBlocking br_ pr_ of {Nothing -> False ; _ -> True }
 
 getModelRepresentative :: Branch -> Prefix -> Prefix  -- which is also an inclusion representative
 getModelRepresentative br pr
  = case blockMode br of
-    Nothing                      -> getUrfather br (DS.Prefix pr)
-    Just InclusionBlockingGlobal -> giu_get_oldest (fromJust $ inclUrMap br) nomUrfather
-                                     where nomUrfather = getUrfather br (DS.Prefix pr)
-                                           giu_get_oldest :: InclusionUrfathersMap -> Prefix -> Prefix
-                                            -- request "includer" prefix until fixpoint reached
-                                           giu_get_oldest ium pr_
-                                            = if parent == pr_ then pr_ else giu_get_oldest ium parent
-                                               where parent = ium Map.! pr_
-    Just InclusionBlockingChain  -> -- find the *oldest* inclusion urfather on the chain
-                                      go br nomUrfather nomUrfather Nothing
-                                     where nomUrfather = getUrfather br (DS.Prefix pr)
-                                           go :: Branch -> Prefix -> Prefix -> Maybe Prefix -> Prefix
-                                           go br_ initial current mBlocker =
-                                              case fatherOf current of
-                                                Nothing       -> fromMaybe initial mBlocker
-                                                Just ancestor -> let urAncestor = getUrfather br (DS.Prefix ancestor) in
-                                                                 if formulasIncluded br_ initial urAncestor
-                                                                  then go br_ initial ancestor (Just urAncestor)
-                                                                  else go br_ initial ancestor mBlocker
-                                           parentMap    = prefParent br
-                                           fatherOf pr_ = Map.lookup pr_ parentMap
+    InclusionBlockingGlobal -> giu_get_oldest (fromJust $ inclUrMap br) nomUrfather
+                                where nomUrfather = getUrfather br (DS.Prefix pr)
+                                      giu_get_oldest :: InclusionUrfathersMap -> Prefix -> Prefix
+                                       -- request "includer" prefix until fixpoint reached
+                                      giu_get_oldest ium pr_
+                                       = if parent == pr_ then pr_ else giu_get_oldest ium parent
+                                          where parent = ium Map.! pr_
+    InclusionBlockingChain  -> -- find the *oldest* inclusion urfather on the chain
+                                 go br nomUrfather nomUrfather Nothing
+                                where nomUrfather = getUrfather br (DS.Prefix pr)
+                                      go :: Branch -> Prefix -> Prefix -> Maybe Prefix -> Prefix
+                                      go br_ initial current mBlocker =
+                                         case fatherOf current of
+                                           Nothing       -> fromMaybe initial mBlocker
+                                           Just ancestor -> let urAncestor = getUrfather br (DS.Prefix ancestor) in
+                                                            if formulasIncluded br_ initial urAncestor
+                                                             then go br_ initial ancestor (Just urAncestor)
+                                                             else go br_ initial ancestor mBlocker
+                                      parentMap    = prefParent br
+                                      fatherOf pr_ = Map.lookup pr_ parentMap
+    ChainBlocking -> case findModelRepresentativeChainBlocking br pr of
+                      Nothing -> error ("found an interesting counter example " ++ show pr)
+                      Just repr -> repr
+
+
+findModelRepresentativeChainBlocking :: Branch -> Prefix -> Maybe Prefix
+findModelRepresentativeChainBlocking br pr
+ =  go br pr 0
+     where
+       go :: Branch -> Prefix -> Prefix -> Maybe Prefix
+       go br_ initial current =
+          let urCurrent =  getUrfather br (DS.Prefix current) in
+           if urCurrent == initial
+            then if isChainBlocked br initial then Nothing else Just initial
+            else if (sameSetOfFormulas br_ initial urCurrent) && (not $ isChainBlocked br urCurrent)
+                   then Just urCurrent
+                   else go br_ initial (current+1)
+
 
 calculateInclusionUrfathers :: Branch -> Branch
 -- calculates the prefix -> inclusion urfather map incrementally, by
@@ -683,9 +743,8 @@ calculateInclusionUrfathers :: Branch -> Branch
 calculateInclusionUrfathers br =
     br{inclUrMap = newInclUrMap}
      where newInclUrMap =  case blockMode br of
-                            Nothing        -> Nothing
-                            Just InclusionBlockingGlobal -> Just $ calculateInclusionUrfathersMap br
-                            Just InclusionBlockingChain -> Nothing
+                            InclusionBlockingGlobal -> Just $ calculateInclusionUrfathersMap br
+                            _                       -> Nothing
 
 calculateInclusionUrfathersMap :: Branch -> InclusionUrfathersMap
 calculateInclusionUrfathersMap br = 
@@ -903,8 +962,8 @@ createNewPref clp br
 
 addReflexiveLinks :: Prefix -> Branch -> Branch
 addReflexiveLinks pr br
- = foldr (\rel_ br_-> addAccFormulaRaw br_ (AccFormula dsEmpty rel_ pr pr)) br reflRels
-   where reflRels = map fst $ filter (\(_,props) -> Reflexive `elem` props) (relInfo br)
+ = foldr (\rel_ br_ -> insertRelationBranch br_ pr rel_ pr dsEmpty) br reflRels
+   where reflRels = map ((\(RelSymbol r) -> r) . fst) $ filter (\(_,props) -> Reflexive `elem` props) (relInfo br)
 
 
 --
@@ -1110,20 +1169,11 @@ reduceDisjunctionAgainstBranch br pr fs =
 
 
 {-     other functions     -}
-block :: Branch -> Branch
-block br = br{blockMode = Just $ defaultBlockMode br }
+blockChain :: Branch -> Branch
+blockChain br = br{blockMode = ChainBlocking}
 
-hasUnivMod :: Branch -> Bool
-hasUnivMod = languageUniv . inputLanguage
-
-hasDiffMod :: Branch -> Bool
-hasDiffMod = languageDiff . inputLanguage
-
-hasDownArrow :: Branch -> Bool
-hasDownArrow = languageDown . inputLanguage
-
-requireLocalFormulasTracking :: Branch -> Bool
-requireLocalFormulasTracking br = hasUnivMod br || hasDiffMod br || hasDownArrow br || blockMode br /= Nothing
+hasTransClos :: Branch -> Bool
+hasTransClos br = languageTrans $ inputLanguage br
 
 prefixes :: Branch -> [Prefix]
 prefixes br = [0..(lastPref br)]

@@ -110,6 +110,7 @@ options =
           "  a = and",
           "  o = or",
           "  d = diamond",
+          "  t = transitive closure diamond",
           "  s = satisfaction operator",
           "  e = existential modality",
           "  D = difference modality",
@@ -180,7 +181,7 @@ setStrategy = permutationOf strategyStrVal ?->
                    \s c -> return c{strategyStr = s}
 
 strategyStrVal :: String
-strategyStrVal = "asedDbo"
+strategyStrVal = "asedtDbo"
 
 setStats :: String -> CLPModifier
 setStats = (isJust . parseStats) ?->
@@ -192,7 +193,7 @@ defaultParams = CLP {showHelp = False,
                      logState = False,
                      maxtimeout  = 0,
                      statsStr    = ":0:c",
-                     strategyStr = "asedDbo",
+                     strategyStr = "asedtDbo",
                      semBranch   = True,
                      unitProp    = True,
                      backJumping = True,
