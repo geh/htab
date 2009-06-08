@@ -288,7 +288,7 @@ showLess :: PrFormula -> String
 showLess (PrFormula pr _ f) = show pr ++ ":" ++ show f
 
 prefixList :: Prefix -> DependencySet -> [Formula] -> [PrFormula]
-prefixList p bps fl = [PrFormula p bps formula|formula <-fl]
+prefixList p bps fl = [PrFormula p bps formula|formula <- fl]
 
 firstPrefixedFormula :: Formula -> PrFormula
 firstPrefixedFormula = PrFormula 0 dsEmpty

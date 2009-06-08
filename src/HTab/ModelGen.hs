@@ -13,7 +13,7 @@ import HTab.Formula( Prefix, Atom (..), Rel, LanguageInfo(..),
                      NomSymbol(..), RelSymbol(..), PropSymbol(..), RelInfo )
 import HTab.Branch( Branch(..), prefixes, getUrfather,
                     isInTheModel, relationIsInTheModel, getModelRepresentative,
-                    isTransitive )
+                    isTransitive, isSymmetric )
 import qualified HTab.DisjSet as DS
 import HTab.DMap (flattenDMap, DMap(..), toMap )
 import HTab.Relations ( getAllRels )
@@ -57,12 +57,17 @@ prefixAndProps br =
        isPosLitProp     _    = False
 
 completeModel :: RelInfo -> Model -> Model
-completeModel relI m = completeTransitivity relI m
+completeModel relI m = completeTransitivity relI $ completeSymmetry relI m
 
-completeTransitivity :: RelInfo -> Model -> Model -- TODO transitivity + past
+completeTransitivity :: RelInfo -> Model -> Model -- TODO transitivity + past (quoi?)
 completeTransitivity relI m = m{M.succs = \r w -> if isTransitive relI r
                                                    then getTransClos (M.succs m) r w
                                                    else M.succs m r w}
+
+completeSymmetry :: RelInfo -> Model -> Model -- TODO transitivity + past
+completeSymmetry relI m = m{M.succs = \r w -> if isSymmetric relI r
+                                               then getSymClos (M.worlds m) (M.succs m) r w
+                                               else M.succs m r w}
 
 getTransClos :: (Ord w) => (r -> w -> Set w) -> r -> w -> Set w
 getTransClos succs_ r_ w_
@@ -73,3 +78,8 @@ getTransClos succs_ r_ w_
            Just (nextWorld,todo2) -> go (Set.insert nextWorld seen) todo2 succs r nextWorld
           where todo1  = (Set.union (succs r w) todo) `Set.difference` seen
 
+getSymClos :: (Ord w) => (Set w) -> (r -> w -> Set w) -> r -> w -> Set w
+getSymClos worlds succs_ r_ w_
+ = Set.union (succs_ r_ w_) syms
+    where syms = Set.filter (hasAsSuccessor r_ w_) worlds
+          hasAsSuccessor rel world2 world1 = Set.member world2 $ succs_ rel world1

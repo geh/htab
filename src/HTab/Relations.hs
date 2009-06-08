@@ -75,7 +75,6 @@ insertRelation rels p1 r p2 ds =
 
 mergePrefixWith :: Relations -> Prefix -> Prefix -> DependencySet ->Relations
 mergePrefixWith rels pr ur newDs =
--- ur = getUrfather p (stop if ur=p)
 -- outrel + inrels -> get all ids  through all relations
 -- for a given id, remov the rel  (  1) 2) 3) 4) ) , add the new rel ( 1) 2) 3) 4) )
  if ur == pr then rels

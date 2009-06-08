@@ -22,7 +22,7 @@ getModelRepresentative, isNotBlocked,
 calculateStepInfo, BlockingMode(..), diaAlreadyDone, diaXAlreadyDone,
 downAlreadyDone, incPropSymbol, incNomSymbol,
 collectUevBprs, ReducedDisjunct(..), newNomBaseName, newPropBaseName,
-isReflexive, isTransitive
+isReflexive, isSymmetric, isTransitive
 ) where
 
 import Control.Monad.State(StateT, MonadState)
@@ -552,22 +552,28 @@ addBoxConstraint clp br pr_ (RelSymbol r) f ds
  = addFormulas clp newBr toAdd []
    where pr = getUrfather br (DS.Prefix pr_)
          newBr = br{boxConstrFwd = updateBoxConstr pr r f ds (boxConstrFwd br)}
-         accessiblePrDs = getSuccessors (accStr br) pr r
-         toAdd = transApplications ++ boxApplications
+         accessiblePrDs   = getSuccessors (accStr br) pr r
+         accessible_predecessors = getPredecessors (accStr br) pr r
+         toAdd = symApplications ++ transApplications ++ boxApplications
          transApplications = if isTransitive (relInfo br) (RelSymbol r)
                              then map (\(p,ds2) -> PrFormula p (dsUnion ds ds2) (Box (RelSymbol r) f)) accessiblePrDs
                              else []
+         symApplications = if isSymmetric (relInfo br) (RelSymbol r)
+                            then map (\(p,ds2) -> PrFormula p (dsUnion ds ds2) f) accessible_predecessors else []
          boxApplications = map (\(p,ds2) -> PrFormula p (dsUnion ds ds2) f) accessiblePrDs
 
 addBoxConstraint clp br pr_ (InvRelSymbol r) f ds
  = addFormulas clp newBr toAdd []
    where pr = getUrfather br (DS.Prefix pr_)
          newBr = br{boxConstrBwd = updateBoxConstr pr r f ds (boxConstrBwd br)}
-         accessiblePrDs = getPredecessors (accStr br) pr r
-         toAdd = transApplications ++ boxApplications
+         accessiblePrDs        = getPredecessors (accStr br) pr r
+         accessible_successors = getSuccessors (accStr br) pr r
+         toAdd = symApplications ++ transApplications ++ boxApplications
          transApplications = if isTransitive (relInfo br) (RelSymbol r)
                              then map (\(p,ds2) -> PrFormula p (dsUnion ds ds2) (Box (InvRelSymbol r) f)) accessiblePrDs
                              else []
+         symApplications = if isSymmetric (relInfo br) (RelSymbol r)
+                            then map (\(p,ds2) -> PrFormula p (dsUnion ds ds2) f) accessible_successors else []
          boxApplications = map (\(p,ds2) -> PrFormula p (dsUnion ds ds2) f) accessiblePrDs
 
 updateBoxConstr :: Prefix -> Rel -> Formula -> DependencySet -> Box_constraints -> Box_constraints
@@ -608,19 +614,24 @@ boxXAlreadyDone _ _ _ = error "boxX already done : wrong formula kind"
 addAccFormula :: CmdLineParams -> Branch -> AccFormula -> BranchInfo
 addAccFormula clp br (AccFormula ds (RelSymbol r) p1_ p2_)
  = addFormulas clp newBr toAdd []
-   where toAdd = transApplications ++ boxApplications
+   where toAdd = {- symApplications ++ -} transApplications ++ boxApplications
          transApplications = if isTransitive (relInfo br) (RelSymbol r)
                               then
-                               (  ( map (\(ds2,f) -> PrFormula p2 (dsUnion ds ds2) (Box (RelSymbol r) f)) formulasToSendFwd )
-                               ++ ( map (\(ds2,f) -> PrFormula p1 (dsUnion ds ds2) (Box (RelSymbol r) f)) formulasToSendBwd )  )
+                               (  ( map (\(ds2,f) -> PrFormula p2 (dsUnion ds ds2) (Box (RelSymbol r) f)) toSendFwd )
+                               ++ ( map (\(ds2,f) -> PrFormula p1 (dsUnion ds ds2) (Box (RelSymbol r) f)) toSendBwd )  )
                               else []
-         boxApplications =  (  ( map (\(ds2,f) -> PrFormula p2 (dsUnion ds ds2) f) formulasToSendFwd )
-                            ++ ( map (\(ds2,f) -> PrFormula p1 (dsUnion ds ds2) f) formulasToSendBwd )  )
+         {- symApplications = [] -}
+         boxApplications =  (  ( map (\(ds2,f) -> PrFormula p2 (dsUnion ds ds2) f) toSendFwd )
+                            ++ ( map (\(ds2,f) -> PrFormula p1 (dsUnion ds ds2) f) toSendBwd )  )
          p1 = getUrfather br (DS.Prefix p1_)
          p2 = getUrfather br (DS.Prefix p2_)
          newBr    = insertRelationBranch br p1 r p2 ds
-         formulasToSendFwd = Map.findWithDefault [] r $ Map.findWithDefault Map.empty p1 (DMap.toMap $ boxConstrFwd br) -- [(DependencySet,Prefix)]
-         formulasToSendBwd = Map.findWithDefault [] r $ Map.findWithDefault Map.empty p2 (DMap.toMap $ boxConstrBwd br) -- [(DependencySet,Prefix)]
+         toSendFwd = (++) symFwd $ Map.findWithDefault [] r $ Map.findWithDefault Map.empty p1 (DMap.toMap $ boxConstrFwd br) -- [(DependencySet,Prefix)]
+         toSendBwd = (++) symBwd $ Map.findWithDefault [] r $ Map.findWithDefault Map.empty p2 (DMap.toMap $ boxConstrBwd br) -- [(DependencySet,Prefix)]
+         (symFwd,symBwd) = if isSymmetric (relInfo br) (RelSymbol r)
+                         then ( Map.findWithDefault [] r $ Map.findWithDefault Map.empty p1 (DMap.toMap $ boxConstrBwd br)
+                              , Map.findWithDefault [] r $ Map.findWithDefault Map.empty p2 (DMap.toMap $ boxConstrFwd br) )
+                         else ([],[])
 
 addAccFormula clp br (AccFormula ds (InvRelSymbol r) p1_ p2_ ) -- so, create p2<>p1
  = addAccFormula clp br (AccFormula ds (RelSymbol r) p2_ p1_)
@@ -1182,6 +1193,11 @@ isReflexive :: RelInfo -> RelSymbol -> Bool
 isReflexive relI r = case List.lookup r relI of
                       Nothing         -> False
                       Just properties -> Reflexive `elem` properties
+
+isSymmetric :: RelInfo -> RelSymbol -> Bool
+isSymmetric relI r = case List.lookup r relI of
+                      Nothing         -> False
+                      Just properties -> Symmetric `elem` properties
 
 isTransitive :: RelInfo -> RelSymbol -> Bool
 isTransitive relI r = case List.lookup r relI of
