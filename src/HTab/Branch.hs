@@ -1048,7 +1048,8 @@ addFirstFormulas clp br_ f fLang
  = addFormulas clp br ( pf : ( map (\(p,n) ->  PrFormula p dsEmpty (nom n)) $ zip [1..] ns)) []
     where ns = languageNoms fLang
           nbNs = length ns
-          br = br_{lastPref = lastPref br_ + nbNs}
+          noms = [1..nbNs]
+          br =  foldr addReflexiveLinks (  br_{lastPref = nbNs} ) noms
           pf = firstPrefixedFormula f
 
 {-     functions to handle the "clashable information", ie literals associated to prefixes     -}
