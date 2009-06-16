@@ -160,7 +160,7 @@ specialise r relI (relational, rtclosure, difference, global)
       interesting (P.InverseOf _)   = True
       interesting (P.TRClosureOf _) = True
       interesting _                 = False
-      propsOf relI__ rs__           = let Just props__ = lookup rs__ relI__ in props__
+      propsOf relI__ rs__           = maybe [] id (lookup rs__ relI__)
 
 data ModType = Just_ RelSymbol | Inverse RelSymbol | RTClosure RelSymbol | RTClosureInv RelSymbol
 
@@ -194,7 +194,7 @@ specialise2 rs_ relI_
      interesting (P.InverseOf _)   = True
      interesting (P.TRClosureOf _) = True
      interesting _                 = False
-     propsOf relI__ rs__           = let Just props__ = lookup rs__ relI__ in props__
+     propsOf relI__ rs__           = maybe [] id (lookup rs__ relI__)
 
 invertRel :: String -> RelInfo -> RelSymbol
 invertRel s relI
