@@ -21,13 +21,15 @@ getUrfather, getUrfatherAndDeps, isInTheModel, relationIsInTheModel,
 getModelRepresentative, isNotBlocked,
 calculateStepInfo, BlockingMode(..), diaAlreadyDone, diaXAlreadyDone,
 downAlreadyDone, incPropSymbol, incNomSymbol,
-collectUevBprs, ReducedDisjunct(..), newNomBaseName, newPropBaseName,
-isReflexive, isSymmetric, isTransitive
+ReducedDisjunct(..), newNomBaseName, newPropBaseName
 ) where
 
 import Control.Monad.State(StateT, MonadState)
 import Data.List(delete, minimumBy)
 import Data.Char ( isNumber )
+
+import HTab.UCMatrix
+import HTab.UCList
 
 import qualified Data.Map as Map
 import qualified Data.List as List
@@ -95,11 +97,13 @@ type InclusionUrfathersMap = Map.Map Prefix Prefix
 
 type AugmentedPrefixes = [Prefix] -- list of prefixes whose label is modified during the current step of the algorithm
 
+type NotPrevPrefixes = [Prefix] --To keep the prefixes true at b-b1, where b is the current branch, and b1 is prev(b)
+
+
 type PrefixParent = Map.Map Prefix Prefix
 
 data BlockingMode = InclusionBlockingGlobal | InclusionBlockingChain | ChainBlocking
  deriving (Eq,Show)
-
 
 data Branch = Branch {clashStr :: Clashable_info,
                  -- pending formulas / todo lists
@@ -126,6 +130,10 @@ data Branch = Branch {clashStr :: Clashable_info,
                       dDiaRlCh :: Diff_Dia_rule_chart,  -- saturation of the diff diamond rule chart (D)
                  -- formulas true in an equivalence class
                    prefToForms :: PrefToFormulas,
+             --all formulas true in the branch, by prefixes
+               branchTrueForms :: BranchTrueForms,
+        --To keep the prefixes true at b-b1, where b is the current branch, and b1 is prev(b)
+                   notPrevPref :: NotPrevPrefixes, 
                  -- backjumping data attached to equivalence classes
                     prToDepSet :: PrefToDepSet,
                  -- other data
@@ -186,6 +194,7 @@ emptyBranch clp fLang relInfo_ =
                   lastNom  = Nothing,
                   lastProp = Nothing,
                   prefToForms= Map.empty::PrefToFormulas,
+                  branchTrueForms=Map.empty :: BranchTrueForms, 
                   prToDepSet= Map.empty::PrefToDepSet,
                   prefToUevFwd= DMap.empty::PrefToUev,
                   prefToUevBwd= DMap.empty::PrefToUev,
@@ -193,6 +202,7 @@ emptyBranch clp fLang relInfo_ =
                   inputLanguage = fLang,
                   inclUrMap = Nothing,
                   incrPrs = [],
+                     notPrevPref =[], 
                   blockMode = blockingMode,
                   prefParent = Map.empty::PrefixParent,
                   relevantNominals = set $ languageNoms fLang,
@@ -224,13 +234,12 @@ instance Show Branch where
               "\nDown var relevant chart: " ++ prettyShowMap_ (downVarRelevantCh br) show ", " ++
               "\nUniv constraints: "++ show (univCons br) ++
               "\nDiff box constraints: "++ show (dBoxCons br) ++
-              "\nPrefix to dependency set:\n " ++ prettyShowMap_ (prToDepSet br) dsShow "\n " ++
-              "\nPrefix to formulas:\n" ++ prettyShowMap_ (prefToForms br) (show . list) "\n " ++
-              "\nPrefix to unfulfilled <*>: " ++ show (DMap.flattenDMap $ prefToUevFwd br) ++
-              "\nPrefix to unfulfilled <-*>: " ++ show (DMap.flattenDMap $ prefToUevBwd br) ++
+              "\nPrefix to dependency set: " ++ "\n " ++ prettyShowMap_ (prToDepSet br) dsShow "\n " ++
+              "\nPrefix to formulas: " ++ "\n " ++ prettyShowMap_ (prefToForms br) (show . Set.toList) "\n " ++
               "\nParent: " ++ prettyShowMap (prefParent br) ", " ++
               "\nInclusion urfather map: "  ++ show (inclUrMap br) ++
               "\nIncreased prefixes: " ++ show (incrPrs br) ++
+              "\nPrefixes in (current branch - prev(current branch): " ++ show (notPrevPref br) ++ 
               "\nBlocking mode: " ++ show (blockMode br) ++
               "\nPrefix-Nominal classes : " ++ prettyShowMap (nomPrefClasses br) ", " ++
               "\nModel-relevant nominals : " ++ show (relevantNominals br)
@@ -305,7 +314,8 @@ addFormula clp br f@(PrFormula pr fDs f2@(Lit (PosLit (N (NomSymbol n))))) histo
               in
                  case newClashableSlotUrfather of
                   Slot_UpdateFailure clashingDeps ->
-                      BranchClash br pr (dsUnion clashingDeps currentDependencies) f2
+                      let newBr = br{nomPrefClasses = classes3} in
+                      BranchClash newBr pr (dsUnion clashingDeps currentDependencies) f2
 
                   Slot_UpdateSuccess urfatherSlot ->
                       let newClashStr    = DMap $ Map.delete oldUr $ Map.insert newUr urfatherSlot (DMap.toMap $ clashStr br)
@@ -380,11 +390,11 @@ addFormula2 :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
 addFormula2 clp br pf@(PrFormula pr _ f) =
    addFormula3 clp updatedBr pf
  where
+     br'' = addToBranchTrueForms br pf
      br' = if forInclusion br f
              then addToPrefToForms br pf
              else br
-     br'' =  updatePrefToUev br' pr f
-     updatedBr  = addToAugmentedPrefixes pr br''
+     updatedBr  = addToAugmentedPrefixes pr br'
 
 addFormula3 :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
 addFormula3 _ br pf@(PrFormula _ _ (Con _))
@@ -456,7 +466,16 @@ namd ((PrFormula p ds f):prfs) theMap =
 
 namd [] theMap = map (\((p,f),ds) -> PrFormula p ds f) (Map.assocs theMap)
 
-{-     handling nominal urfathers, equivalence classes and dependencies     -}
+
+{-
+   Functions related to vId, nom, prefixes and nominals ...
+-}
+
+addToPrefToForms :: Branch -> PrFormula -> Branch
+addToPrefToForms br (PrFormula pre _ f) =
+  br{prefToForms = newMap}
+ where currentPtf = prefToForms br
+       newMap = Map.insertWith Set.union pre (Set.singleton f) currentPtf
 
 isNominalUrfather :: Branch -> Prefix -> Bool
 isNominalUrfather b p = DS.isRoot (DS.Prefix p) classes
@@ -821,6 +840,14 @@ wipeAugmentedPrefixes br = br{incrPrs=[]}
 addToAugmentedPrefixes :: Prefix -> Branch -> Branch
 addToAugmentedPrefixes pr br = br{incrPrs = (pr:incrPrs br)}
 
+--To keep the prefixes true at b-b1, where b is the current branch, and b1 is prev(b)
+wipeNotPrevPref :: Prefix -> Branch -> Branch
+wipeNotPrevPref p br = br{notPrevPref =[p]}
+
+addToNotPrevPref :: Prefix -> Branch -> Branch
+addToNotPrevPref pr br = br{notPrevPref = (pr:notPrevPref  br)}
+
+
 {-     modifications done by rule application     -}
 
 addDiaRuleCheck :: Branch -> Prefix -> Formula -> Branch
@@ -1042,6 +1069,30 @@ addFirstFormulas clp br_ f fLang
           br =  foldr addReflexiveLinks (  br_{lastPref = nbNs} ) noms
           pf = firstPrefixedFormula f
 
+gen_unsat_cache :: CmdLineParams -> Formula -> UCache
+gen_unsat_cache clp f = case caching clp of
+                          1 -> let c = ((get_max_subterms f)+(get_num_nominals f)) * 2
+                                   in UCache{matrix = gen_matrix c c::UCMatrix,
+                                         listsList = []::UCList,--not used in this approach
+                                               current_index =(-1):: Int,
+                                               descrip_matrix = Map.empty::UCMap,
+                                               current_row = (-1) :: Int,
+                                               max_row=(c-1) :: Int}
+                          2 -> UCache{matrix = gen_matrix 0 0::UCMatrix,--not used in this approach
+                                      listsList = []::UCList,
+                                            current_index =(-1):: Int,
+                                            descrip_matrix = Map.empty::UCMap,
+                                            current_row = (-1) :: Int,
+                                            max_row=0 :: Int}  --not used in this approach
+                          _ -> UCache{matrix = gen_matrix 0 0::UCMatrix,--not used in this approach
+                                              listsList = []::UCList,
+                                              current_index =(-1):: Int,
+                                              descrip_matrix = Map.empty::UCMap,
+                                              current_row = (-1) :: Int,
+                                              max_row=0 :: Int}  --not used in this approach
+
+
+
 {-     functions to handle the "clashable information", ie literals associated to prefixes     -}
 
 data UpdateResult = UpdateSuccess Clashable_info | UpdateFailure DependencySet
@@ -1200,7 +1251,9 @@ isTransitive relI r = case List.lookup r relI of
 data BranchData = BranchData { branch_info :: BranchInfo,
                                branch_clp :: CmdLineParams,
                                branch_path :: [Int],
-                               timeout_signal :: TimeoutSignal}
+                               timeout_signal :: TimeoutSignal,
+                               ------unsat cache info-------
+                               unsat_cache :: UCache}
 
 type BranchMonad a = StateT BranchData (StateT Statistics IO) a
 

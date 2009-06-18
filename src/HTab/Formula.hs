@@ -6,11 +6,13 @@
 --                                                --
 ----------------------------------------------------
 
+
 module HTab.Formula
 
 (PropSymbol(..), NomSymbol(..), RelSymbol(..),
 Rel, Prefix,
 Formula(..), Literal(..), Atom(..),
+UCFormula(..),get_max_subterms,
 DependencySet, Dependency,
 dsUnion, dsUnions, dsInsert, dsMember,
 dsEmpty, dsMin, dsShow,
@@ -23,7 +25,7 @@ checkIfVariableNegatedOnce, replaceVar,
 firstPrefixedFormula,
 parse, Theory, RelInfo, Task,
 encodeValidityTest, encodeSatTest,
-HyLoFormula, RelProperties(..)
+HyLoFormula
 )
 
  where
@@ -44,6 +46,11 @@ import qualified HyLo.Formula as F
 
 type Prefix = Int
 type Rel = String
+
+--the formulas stored in the unsat cache
+data UCFormula = NonUniversal Formula | Universal Formula | Nominal NomSymbol Formula
+                 deriving (Eq, Ord, Show)
+
 data Atom = Taut
           | N NomSymbol
           | P PropSymbol
@@ -530,3 +537,26 @@ dsMin deps = maybe 0 fst $ IntSet.minView deps
 dsShow :: DependencySet -> String
 dsShow = show . IntSet.toList
 
+-- to get the max number of colums of the bit matrix for storing the unsat cache 
+get_max_subterms :: Formula -> Int
+get_max_subterms (Lit (PosLit _)) = 1
+get_max_subterms (Lit(NegLit _)) = 2
+get_max_subterms (Con fs) = 1 + get_max_subterms_ fs
+get_max_subterms (Dis fs) = 1 + get_max_subterms_ fs
+get_max_subterms (At _ f) = 2 + get_max_subterms f
+get_max_subterms (Down _ f) = 2 + get_max_subterms f
+get_max_subterms (Box _ f) = 1 + get_max_subterms f
+get_max_subterms (Dia _ f) = 1 + get_max_subterms f
+get_max_subterms (A f) = 1 + get_max_subterms f
+get_max_subterms (E f) = 1 + get_max_subterms f
+get_max_subterms (D f) = 1 + get_max_subterms f
+get_max_subterms (B f) = 1 + get_max_subterms f
+
+get_max_subterms_ :: [Formula] -> Int
+--get_max_subterms_ l = sum . map get_max_subterms l
+get_max_subterms_ (f:fs) = get_max_subterms f + get_max_subterms_ fs
+get_max_subterms_ [] = 0
+
+get_num_nominals :: Formula -> Int
+get_num_nominals f = Set.size noms
+        where (noms,_) = extractNominals f

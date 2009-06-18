@@ -43,7 +43,8 @@ data CmdLineParams = CLP {
            genModel        :: Maybe FilePath,
            quietMode       :: Bool,
            inclBlockGlobal :: Bool,
-           inclBlockChain  :: Bool
+           inclBlockChain  :: Bool,
+	   caching         :: Int 
          } deriving (Show)
 
 type CLPModifier   = CmdLineParams -> Either ParsingErrMsg CmdLineParams
@@ -100,6 +101,14 @@ options =
           ["backjumping"]
           (ReqArg setBackJumping "[0|1]")
           "disable/enable backjumping optimisation",
+   Option ['c'] 
+          ["caching"]
+          (ReqArg setCaching "[0|1|2]")
+          (unlines [
+	  "0 disable caching optimisation, ",
+          "1 enable caching optimisation with bit matrices approach,",
+          "2 enable caching optimisation with lists approach.",
+	  ""]),
    Option ['o']
           ["strategy"]
           (ReqArg setStrategy "PAT")
@@ -172,9 +181,15 @@ setUnitProp = is0or1 ?->  \s c -> return c{unitProp = intToBool $ read s}
 setBackJumping :: String -> CLPModifier
 setBackJumping = is0or1 ?->  \s c -> return c{backJumping = intToBool $ read s}
 
+
+setCaching :: String -> CLPModifier
+setCaching = is0or1or2 ?->  \s c -> return c{caching = read s}
+
+is0or1or2 :: String -> Bool
+is0or1or2 s = (s == "2") || (s == "1") || (s == "0") 
+
 is0or1 :: String -> Bool
 is0or1 s = (s == "1") || (s == "0")
-
 
 setStrategy :: String -> CLPModifier
 setStrategy = permutationOf strategyStrVal ?->
@@ -200,7 +215,8 @@ defaultParams = CLP {showHelp = False,
                      genModel    = Nothing,
                      quietMode   = False,
                      inclBlockGlobal = False,
-                     inclBlockChain  = True
+                     inclBlockChain  = True,
+		     caching     = 0 
 }
 
 getCmdLineParams :: IO (Either ParsingErrMsg CmdLineParams)

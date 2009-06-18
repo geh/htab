@@ -2,7 +2,8 @@ module HTab.Rules
 (
 Rule(..),BranchModification(..),
 applicableRules, applyRule, ruleToId,
-applyMod
+applyMod,
+get_pr_disjunt_rule, 
 ) where
 
 import qualified Data.Set as Set
@@ -367,4 +368,10 @@ downRule df@(PrFormula pr ds f1@(Down v f)) br
     else DownRule df (PrFormula pr ds (replaceVar v newNom f)) (PrFormula pr ds $ nom newNom)
     where newNom = getNewNom br
 downRule _ _ = error "downRule error"
+
+--if the input rule is a disjunction, returns the prefix of the rule
+get_pr_disjunt_rule :: Rule -> Maybe Prefix
+get_pr_disjunt_rule (DisjRule (PrFormula pr _ _) _) = Just pr
+get_pr_disjunt_rule (SemBrRule (PrFormula pr _ _) _)=Just pr
+get_pr_disjunt_rule _  = Nothing
 

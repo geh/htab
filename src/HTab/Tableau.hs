@@ -6,16 +6,21 @@ import qualified HTab.DMap as DMap
 import HTab.Base(vPutStrLn)
 import HTab.Statistics(updateStep,printOutInspectionMetrics,
                        recordClosedBranch,recordFiredRule)
-import HTab.Branch(BranchInfo(..),Branch(..),BranchMonad, BranchData(..),branch_depth,
-                   addZeroInPath, incPathHead, calculateStepInfo, collectUevBprs,
-                   getBranch )
+import HTab.Branch(BranchInfo(..),Branch,BranchMonad, BranchData(..),branch_depth,
+                   addZeroInPath, incPathHead, calculateStepInfo )
 import HTab.CommandLine(logState,backJumping,CmdLineParams)
 import HTab.Rules(Rule,applyRule,
-                  applicableRules,ruleToId)
+                  applicableRules,ruleToId,
+                  get_pr_disjunt_rule)
 import HTab.Statistics(Statistics)
-import HTab.Formula(Prefix,DependencySet,Formula,dsEmpty,dsMember,dsUnion,languageTrans)
+import HTab.Formula(Prefix,DependencySet,Formula,dsEmpty,dsMember,dsUnion)
 import HTab.ModelGen ( Model, buildModel )
 import HTab.Timeout( isTimeout )
+import HTab.UnsatCache
+
+--import Debug.Trace
+
+import qualified HTab.DisjSet as DS
 
 data OpenFlag = OPEN Model | CLOSED DependencySet | TIMEOUT
 
@@ -24,6 +29,8 @@ tableau =
       do logMe
          bd <- get
          let clp = branch_clp bd
+         let caching_approach =  caching $ clp
+         let activate_caching = (caching_approach /= 0) 
 
          let signal = timeout_signal bd
          timeout <- isTimeout signal
@@ -34,7 +41,14 @@ tableau =
                      BranchClash br pr bprs f ->
                       do debugMsg_BranchClash br pr bprs f
                          liftStats $ recordClosedBranch
-                         return (CLOSED bprs)
+                         -- update the cache
+                         if activate_caching 
+                             then do let ds_pr =  (DS.Prefix pr)
+                                     let u_pr = (getUrfather br ds_pr )
+                                     _ <- update_cache caching_approach u_pr br False
+                                     debugMsg_BranchClash1 br u_pr 1
+                                     return (CLOSED bprs)
+                             else return (CLOSED bprs)
                      BranchOK br_ ->
                       do debugMsg_BranchOK br_
                          let currentBranchingDepth = (branch_depth bd) + 1
@@ -48,9 +62,7 @@ tableau =
                               chooseBranch possibleBranches
                           []   ->
                            do debugMsg_BranchOK_saturated
-                              return $ if (Map.null $ DMap.toMap $ prefToUevFwd br) && (Map.null $ DMap.toMap $ prefToUevBwd br)
-                                         then OPEN (buildModel br)        -- no unsatisfied eventuality
-                                         else CLOSED $ collectUevBprs br  -- which bprs ? union those of the unsatisfied eventualities
+                              return $ OPEN (buildHerbrandModel br)
 
 -- depth-first branch-choosing strategy
 chooseBranch :: [BranchInfo] ->  BranchMonad OpenFlag
@@ -58,9 +70,12 @@ chooseBranch = chooseBranch_ dsEmpty
 
 chooseBranch_ :: DependencySet -> [BranchInfo] -> BranchMonad OpenFlag
 chooseBranch_ currentDepSet (hd:tl) =
- do bd <- get
-    put bd{branch_info=hd}
+ do bd' <- get
+    put bd'{branch_info=hd}
     res <- tableau
+    let activate_caching = (caching $ branch_clp bd') /= 0
+    bd <- if activate_caching then get 
+                              else return bd'
     let currentBranchingDepth = branch_depth bd
     let backjump = (not $ languageTrans $ inputLanguage $ getBranch $ branch_info bd) && (backJumping $ branch_clp bd) -- disable backjumping in presence of transitive closure
     case res of
@@ -109,6 +124,15 @@ debugMsg_BranchClash br pr bprs f =
     let showState = logState $ branch_clp bd
     liftIO $ vPutStrLn (show br ++ "\nClasher : " ++ show (pr,bprs,f)) showState
 
+debugMsg_BranchClash1 :: Branch -> Prefix -> Int-> BranchMonad ()
+debugMsg_BranchClash1 br pr n =
+ do bd <- get
+    let showState = logState $ branch_clp bd
+    let ucache = (unsat_cache bd)
+    let path = (branch_path bd)
+    liftIO $ vPutStrLn (show br ++ "\nUC Clasher : " ++ show (pr,n,path,ucache)) showState
+
+
 debugMsg_BranchOK :: Branch -> BranchMonad ()
 debugMsg_BranchOK br =
  do bd <- get
@@ -129,3 +153,15 @@ debugMsg_BranchOK_saturated =
     liftIO $ vPutStrLn ("\n>> " ++ traceMsg) showState
 
 
+
+wipeNotPrevPrefInPossBranches :: Prefix -> [BranchInfo] -> [BranchInfo]
+wipeNotPrevPrefInPossBranches p (hd:tl) = (new_hd:new_tl)
+                                          where new_hd = case hd of
+                                                            BranchOK br -> BranchOK (wipeNotPrevPref p br )
+                                                            BranchClash br pr dp f -> 
+                                                                      BranchClash (wipeNotPrevPref p br) pr dp f  
+                                                new_tl = wipeNotPrevPrefInPossBranches p tl
+wipeNotPrevPrefInPossBranches _ [] = []
+
+--debug :: Show a => a -> a
+--debug x = trace (show x) x
