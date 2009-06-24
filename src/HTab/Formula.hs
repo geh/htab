@@ -18,7 +18,7 @@ PrFormula(..),showLess, AccFormula(..),
 LanguageInfo(..), neg,
 box, diamond, at, conj, disj, univMod, existMod,
 dUnivMod, dExistMod, taut, dimp, imp,
-prop, nom, formulaLanguageInfo, prefixList,
+prop, nom, formulaLanguageInfo, prefix,
 checkIfVariableNegatedOnce, replaceVar,
 firstPrefixedFormula,
 parse, Theory, RelInfo, Task,
@@ -29,8 +29,8 @@ HyLoFormula, RelProperties(..)
  where
 
 import qualified Data.Set as Set
+import Data.Set ( Set )
 import qualified Data.IntSet as IntSet
-import Data.Function ( on )
 
 import HyLo.Signature.String( PropSymbol(..),
                               NomSymbol(..),
@@ -39,6 +39,7 @@ import HyLo.Signature.String( PropSymbol(..),
 import qualified HyLo.InputFile as InputFile
 import qualified HyLo.InputFile.Parser as P
 import HyLo.InputFile.Parser ( RelProperties(..) )
+import HTab.Base (set, list)
 import qualified HyLo.Formula as F
 
 type Prefix = Int
@@ -69,8 +70,8 @@ instance Show Literal where
 
 data Formula
      = Lit Literal
-     | Con   [Formula]
-     | Dis   [Formula]
+     | Con   (Set Formula)
+     | Dis   (Set Formula)
      | At     NomSymbol Formula
      | Box    RelSymbol     Formula
      | Dia    RelSymbol     Formula
@@ -85,8 +86,8 @@ data Formula
 
 instance Show Formula where
  show (Lit a)    = show a
- show (Con fs)   = "^" ++ show fs
- show (Dis fs)   = "v" ++ show fs
+ show (Con fs)   = "^" ++ show (list fs)
+ show (Dis fs)   = "v" ++ show (list fs)
  show (At n f)   = showNom n  ++ ":(" ++ show f ++ ")"
  show (Box r f)  = "[" ++ showRel r ++ "]" ++ show f
  show (Dia r f)  = "<" ++ showRel r ++ ">" ++ show f
@@ -209,13 +210,13 @@ type HyLoFormula = F.Formula NomSymbol PropSymbol RelSymbol
 saturate :: RelInfo -> RelInfo
 saturate relI = map saturateOne relI
    where saturateOne (rs,props) = let ancestorProps = concatMap (getProperties relI) $ getAncestors rs relI
-                                      newProps = Set.toList $ Set.union (Set.fromList ancestorProps) (Set.fromList props)
+                                      newProps = list $ Set.union (set ancestorProps) (set props)
                                   in
                                    (rs, newProps )
 
 getAncestors :: RelSymbol -> RelInfo -> [RelSymbol]
 getAncestors rs_ ri_ =
- Set.toList $ go rs_ ri_ (Set.singleton rs_)
+ list $ go rs_ ri_ (Set.singleton rs_)
  where
   go rs ri seen =
    let Just props = lookup rs ri
@@ -225,8 +226,8 @@ getAncestors rs_ ri_ =
        extractParent (TClosureOf  rp) = [rp]
        extractParent (TRClosureOf rp) = [rp]
        extractParent _                = [  ]
-       todo = Set.toList ( (Set.fromList parents) Set.\\ seen )
-       newSeen = Set.union seen $ Set.fromList parents
+       todo = list ( (set parents) Set.\\ seen )
+       newSeen = Set.union seen $ set parents
    in
      case todo of
       [] -> Set.singleton rs
@@ -288,32 +289,31 @@ at = At
 
 conj, disj :: Formula -> Formula -> Formula
 
-{- conjunctions and disjunctions are sorted to obtain a normal representation -}
-conj    (Con xs) (Con ys) = Con (mergeAndNub xs ys)
+conj    (Con xs) (Con ys) = Con (Set.union xs ys)
 conj     f     c@(Con  _) = conj c f
 conj c@(Con xs)   f
     | isTrue f            = c
     | isFalse f           = neg taut
-    | otherwise           = Con (insertAndNub f xs)
+    | otherwise           = Con (Set.insert f xs)
 conj     f        f'
     | isTrue f            = f'
     | isFalse f           = neg taut
     | isTrue f'           = f
     | isFalse f'          = neg taut
-    | otherwise           = skipSingleton Con (sortAndNub2 f f')
+    | otherwise           = skipSingleton Con (set [f,f'])
 
-disj   (Dis xs)   (Dis ys) = Dis (mergeAndNub xs ys)
+disj   (Dis xs)   (Dis ys) = Dis (Set.union xs ys)
 disj    f       c@(Dis  _) = disj c f
 disj c@(Dis xs)    f
     | isTrue f             = taut
     | isFalse f            = c
-    | otherwise            = Dis (insertAndNub f xs)
+    | otherwise            = Dis (Set.insert f xs)
 disj    f          f'
     | isTrue f             = taut
     | isFalse f            = f'
     | isTrue f'            = taut
     | isFalse f'           = f
-    | otherwise            = skipSingleton Dis (sortAndNub2 f f')
+    | otherwise            = skipSingleton Dis (set [f,f'])
 
 dimp :: Formula -> Formula -> Formula
 dimp f1 f2 = (f1 `conj` f2) `disj` (neg f1 `conj` neg f2)
@@ -321,18 +321,10 @@ dimp f1 f2 = (f1 `conj` f2) `disj` (neg f1 `conj` neg f2)
 imp :: Formula -> Formula -> Formula
 imp f1 f2 = neg f1 `disj` f2
 
-skipSingleton :: ([Formula] -> Formula) -> [Formula] -> Formula
-skipSingleton _ [x] = x
-skipSingleton c xs  = c xs
-
-mergeAndNub :: [Formula] -> [Formula] -> [Formula]
-mergeAndNub xs ys = Set.toAscList $ on Set.union Set.fromList xs ys
-
-insertAndNub :: Formula -> [Formula] -> [Formula]
-insertAndNub f fs = Set.toAscList $ Set.insert f $ Set.fromList fs
-
-sortAndNub2 :: Formula -> Formula -> [Formula]
-sortAndNub2  x y = mergeAndNub [x,y] []
+skipSingleton :: (Set Formula -> Formula) -> Set Formula -> Formula
+skipSingleton c xs
+ | Set.size xs == 1 = Set.findMin xs
+ | otherwise       = c xs
 
 isTrue, isFalse :: Formula -> Bool
 isTrue (Lit (PosLit Taut))  = True
@@ -341,8 +333,8 @@ isFalse (Lit (NegLit Taut)) = True
 isFalse  _                  = False
 
 neg :: Formula -> Formula
-neg (Con l)          = Dis (map neg l)
-neg (Dis l)          = Con (map neg l)
+neg (Con l)          = Dis (Set.map neg l)
+neg (Dis l)          = Con (Set.map neg l)
 neg (At n f)         = At   n (neg f)
 neg (Down v f)       = Down v (neg f)
 neg (Box r f)        = Dia  r (neg f)
@@ -367,8 +359,8 @@ instance Show PrFormula where
 showLess :: PrFormula -> String
 showLess (PrFormula pr _ f) = show pr ++ ":" ++ show f
 
-prefixList :: Prefix -> DependencySet -> [Formula] -> [PrFormula]
-prefixList p bps fl = [PrFormula p bps formula|formula <- fl]
+prefix :: Prefix -> DependencySet -> Set Formula -> [PrFormula]
+prefix p bps fs = [PrFormula p bps formula|formula <- Set.toList fs]
 
 firstPrefixedFormula :: Formula -> PrFormula
 firstPrefixedFormula = PrFormula 0 dsEmpty
@@ -416,12 +408,12 @@ composeFold :: b
             -> (Formula -> b)
             -> (Formula -> b)
 composeFold zero combine g e = case e of
-    Con fs     -> foldr1 combine $ map g fs
-    Dis fs     -> foldr1 combine $ map g fs
+    Con fs     -> foldr1 combine $ map g $ list fs
+    Dis fs     -> foldr1 combine $ map g $ list fs
     Dia _ f    -> g f
     Box _ f    -> g f
-    DiaX _ f    -> g f
-    BoxX _ f    -> g f
+    DiaX _ f   -> g f
+    BoxX _ f   -> g f
     At  _ f    -> g f
     Down _ f   -> g f
     A f        -> g f
@@ -434,8 +426,8 @@ composeMap :: (Formula -> Formula)
            -> (Formula -> Formula)
            -> (Formula -> Formula)
 composeMap baseCase g e = case e of
-    Con fs     -> Con $ map g fs
-    Dis fs     -> Dis $ map g fs
+    Con fs     -> Con $ Set.map g fs
+    Dis fs     -> Dis $ Set.map g fs
     Dia r f    -> Dia r (g f)
     Box r f    -> Box r (g f)
     DiaX r f   -> DiaX r (g f)
@@ -533,7 +525,7 @@ dsEmpty :: DependencySet
 dsEmpty  = IntSet.empty
 
 dsMin :: DependencySet -> Int
-dsMin deps = case IntSet.toAscList deps of { []-> 0 ; (hd:_)-> hd }
+dsMin deps = maybe 0 fst $ IntSet.minView deps
 
 dsShow :: DependencySet -> String
 dsShow = show . IntSet.toList

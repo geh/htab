@@ -46,7 +46,7 @@ import HTab.Formula
 
 import HTab.DMap ( DMap(..) )
 import qualified HTab.DMap as DMap
-import HTab.Base(moveInMap, almostCartesianProduct, doMemoize)
+import HTab.Base(moveInMap, almostCartesianProduct, doMemoize, set, list)
 
 import HTab.Relations ( Relations, emptyRels, insertRelation, mergePrefixWith,
                         getSuccessors, getPredecessors, getIncomingLinks, getOutgoingLinks,
@@ -195,7 +195,7 @@ emptyBranch clp fLang relInfo_ =
                   incrPrs = [],
                   blockMode = blockingMode,
                   prefParent = Map.empty::PrefixParent,
-                  relevantNominals = Set.fromList $ languageNoms fLang,
+                  relevantNominals = set $ languageNoms fLang,
                   relInfo = relInfo_
                 }
  where blockingMode = if inclBlockChain clp && (not $ inclBlockGlobal clp)
@@ -205,27 +205,27 @@ emptyBranch clp fLang relInfo_ =
 instance Show Branch where
     show br = "Input language: " ++ show (inputLanguage br) ++
               "\nClashable formulas:\n" ++ prettyShowMap_ (DMap.toMap $ clashStr br) (\v -> "(" ++ prettyShowMap_clashable v ++ ")") "\n " ++
-              "\nConjunctions: "   ++ show (Set.toList $ conjStr br)  ++
-              "\nDisjunctions: "   ++ show (Set.toList $ disjStr br)  ++
-              "\nDiamonds: "       ++ show (Set.toList $ diaStr br)   ++
-              "\nDiamondXs: "      ++ show (Set.toList $ diaXStr br)  ++
-              "\nExists: "         ++ show (Set.toList $ existStr br) ++
-              "\nAts: "            ++ show (Set.toList $ atStr br)    ++
-              "\nDowns: "          ++ show (Set.toList $ downStr br)  ++
-              "\nDiff exists: "    ++ show (Set.toList $ diffStr br)  ++
+              "\nConjunctions: "   ++ show (list $ conjStr br)  ++
+              "\nDisjunctions: "   ++ show (list $ disjStr br)  ++
+              "\nDiamonds: "       ++ show (list $ diaStr br)   ++
+              "\nDiamondXs: "      ++ show (list $ diaXStr br)  ++
+              "\nExists: "         ++ show (list $ existStr br) ++
+              "\nAts: "            ++ show (list $ atStr br)    ++
+              "\nDowns: "          ++ show (list $ downStr br)  ++
+              "\nDiff exists: "    ++ show (list $ diffStr br)  ++
               "\nAccesibility: "        ++ showPretty (accStr br) ++
               "\nBox constraints fwd: " ++ prettyShowMap_ (DMap.toMap $ boxConstrFwd br) (\v -> "(" ++ prettyShowMap_rel_ds_x v ++ ")") "\n " ++
               "\nBox constraints bwd: " ++ prettyShowMap_ (DMap.toMap $ boxConstrBwd br) (\v -> "(" ++ prettyShowMap_rel_ds_x v ++ ")") "\n " ++
-              "\nDia rule chart: "  ++ prettyShowMap_ (diaRlCh br) (show . Set.toList) "\n " ++
-              "\nDown rule chart: " ++ prettyShowMap_ (downRlCh br) (show . Set.toList) "\n " ++
-              "\n@ rule chart: "   ++ show (Set.toList $ atRlCh br) ++
-              "\nExist rule chart:" ++ show (Set.toList $ existRlCh br) ++
+              "\nDia rule chart: "  ++ prettyShowMap_ (diaRlCh br) (show . list) "\n " ++
+              "\nDown rule chart: " ++ prettyShowMap_ (downRlCh br) (show . list) "\n " ++
+              "\n@ rule chart: "   ++ show (list $ atRlCh br) ++
+              "\nExist rule chart:" ++ show (list $ existRlCh br) ++
               "\nDiff dia rule chart: "  ++ prettyShowMap_ (dDiaRlCh br) show "\n " ++
               "\nDown var relevant chart: " ++ prettyShowMap_ (downVarRelevantCh br) show ", " ++
               "\nUniv constraints: "++ show (univCons br) ++
               "\nDiff box constraints: "++ show (dBoxCons br) ++
               "\nPrefix to dependency set:\n " ++ prettyShowMap_ (prToDepSet br) dsShow "\n " ++
-              "\nPrefix to formulas:\n" ++ prettyShowMap_ (prefToForms br) (show . Set.toList) "\n " ++
+              "\nPrefix to formulas:\n" ++ prettyShowMap_ (prefToForms br) (show . list) "\n " ++
               "\nPrefix to unfulfilled <*>: " ++ show (DMap.flattenDMap $ prefToUevFwd br) ++
               "\nPrefix to unfulfilled <-*>: " ++ show (DMap.flattenDMap $ prefToUevBwd br) ++
               "\nParent: " ++ prettyShowMap (prefParent br) ", " ++
@@ -668,7 +668,7 @@ getAllParents br pr = (getUrfather br (DS.Prefix pr)):rest
 
 
 test2equal :: (Ord a) => [Set a] -> Bool -- inefficient
-test2equal (set:sets) = any ((==) set) sets || test2equal sets
+test2equal (s:sets) = any ((==) s) sets || test2equal sets
 test2equal [] = False
 
 
@@ -932,7 +932,7 @@ addDiffUnivConstraint :: CmdLineParams -> Branch -> DependencySet -> Formula -> 
 addDiffUnivConstraint clp br ds f pr
  = addFormulas clp newBr
                ( (PrFormula pr ds $ nom newNom)
-                 :(map (\somePrefix -> PrFormula somePrefix ds (Dis [f, nom newNom])) otherUrfathers)
+                 :(map (\somePrefix -> PrFormula somePrefix ds (Dis $ set [f, nom newNom])) otherUrfathers)
                )
                []
    where currentUrfather = getUrfather br (DS.Prefix pr)
@@ -953,7 +953,7 @@ createNewPref :: CmdLineParams -> Branch -> BranchInfo
 createNewPref clp br
  = addFormulas clp newBrWithRefl
                          (   map (\(ds,f) -> PrFormula newPr ds f) univConstraints
-                          ++ map (\(ds,f,newNom) -> PrFormula newPr ds (Dis [f, nom newNom])) diffBoxConstraints)
+                          ++ map (\(ds,f,newNom) -> PrFormula newPr ds (Dis $ set [f, nom newNom])) diffBoxConstraints)
                          []
    where newPr = lastPref br + 1
          newBr = br{lastPref = newPr}
@@ -1147,27 +1147,27 @@ queryClashableSlot br pr (PosLit a)
 
 {-     function used for unit propagation     -}
 
-data ReducedDisjunct = Triviality | Contradiction DependencySet | Reduced DependencySet [Formula]
+data ReducedDisjunct = Triviality | Contradiction DependencySet | Reduced DependencySet (Set Formula)
 
-reduceDisjunctionAgainstBranch :: Branch -> Prefix -> [Formula] -> ReducedDisjunct
+reduceDisjunctionAgainstBranch :: Branch -> Prefix -> Set Formula -> ReducedDisjunct
 reduceDisjunctionAgainstBranch br pr fs =
-         case foldr scanDisjunctAndTest (Just ( [] , dsEmpty )) fs of
+         case foldr scanDisjunctAndTest (Just ( Set.empty , dsEmpty )) (list fs) of
           Nothing                      ->  Triviality
-          Just  (  []        , ds )    ->  Contradiction ds
-          Just  (  disjuncts , ds )    ->  Reduced       ds disjuncts
+          Just  (  disjuncts , ds ) | Set.null disjuncts -> Contradiction ds
+                                    | otherwise          -> Reduced       ds disjuncts
 
          where -- for each removed literal of the disjunction, we have to add the dependencies of the literal that got it removed to the re-created formula
                -- and if the recreated formula is empty, then there is a clash, with all the branching dependencies
                -- if the formula is "trivial" (= one disjunct is already there) we just remove the formula, i guess...
            ur = getUrfather br (DS.Prefix pr)
-           scanDisjunctAndTest :: Formula -> Maybe ([Formula],DependencySet) -> Maybe ([Formula],DependencySet)
+           scanDisjunctAndTest :: Formula -> Maybe (Set Formula,DependencySet) -> Maybe (Set Formula,DependencySet)
            scanDisjunctAndTest       _                Nothing               =    Nothing
            scanDisjunctAndTest  l@(Lit current) (Just (disjuncts,ds_))    =
              case queryClashableSlot br ur current of
-                Nothing          -> Just ((l:disjuncts),ds_)
+                Nothing          -> Just (Set.insert l disjuncts,ds_)
                 Just (True,_)    -> Nothing
                 Just (False,ds2) -> Just (disjuncts,dsUnion ds_ ds2)
-           scanDisjunctAndTest       f          (Just (disjuncts,ds_))    =    Just ((f:disjuncts),ds_)
+           scanDisjunctAndTest       f          (Just (disjuncts,ds_))    =    Just (Set.insert f disjuncts,ds_)
 
 
 {-     other functions     -}

@@ -11,7 +11,7 @@ import qualified HTab.DMap as DMap
 
 import HTab.Formula( Formula(..), PrFormula(..), showLess, neg, Atom(..),
                      Dependency, DependencySet, dsUnion, dsInsert,
-                     prefixList, AccFormula(..),
+                     prefix, AccFormula(..),
                      Prefix, NomSymbol(..), PropSymbol(..),
                      nom, prop, replaceVar )
 import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewNomTestRelevance,
@@ -25,6 +25,7 @@ import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewNomTestRe
                     ReducedDisjunct(..), newPropBaseName, newNomBaseName )
 import HTab.CommandLine(CmdLineParams, semBranch, unitProp, strategyStr)
 import HTab.RuleMetadata(RuleId(..))
+import HTab.Base ( set )
 import qualified HTab.DisjSet as DS
 
 -- a "rule" is basically a list of modifications of the structures
@@ -116,7 +117,7 @@ getMods br (DiffRule (pr, ds , f2)) =
           -> -- the "different place" for this D-formula has already been created
                    case DMap.lookup pr (P diffProp) (clashStr br) of -- are we already at the "different place" ?
                     Nothing -> [[BM_RemFormula  (PrFormula pr ds (D f2)),
-                                 BM_AddFormulas [PrFormula pr ds (Dis [neg $ prop diffProp, D f2])]
+                                 BM_AddFormulas [PrFormula pr ds (Dis $ set [neg $ prop diffProp, D f2])]
                                  -- no, so mark oneself as different from the "different place"; and when it is no longer true,
                                  -- we will generate another different world
                                ]]
@@ -255,7 +256,7 @@ conjRule :: PrFormula -> Branch -> Rule
 conjRule f _ = ConjRule f (breakConj f)
 
 breakConj :: PrFormula -> [PrFormula]
-breakConj (PrFormula pr ds (Con formulaList)) = prefixList pr ds formulaList
+breakConj (PrFormula pr ds (Con fs)) = prefix pr ds fs
 breakConj _ = error $ "breakConj error"
 
 -- dia (may create a discard rule)
@@ -273,7 +274,7 @@ diaXRule :: PrFormula -> Branch -> Rule
 diaXRule f@(PrFormula pr bprs f1@(DiaX r f2)) br
   = if (diaXAlreadyDone br pr f1)
      then DiscardRule f
-     else DiaXRule f (PrFormula pr bprs (Dis [f2,  Con [neg f2, Dia r f1]]))
+     else DiaXRule f (PrFormula pr bprs (Dis $ set [f2,  Con $ set [neg f2, Dia r f1]]))
 
 diaXRule _ _ = error $ "diaXRule"
 
@@ -316,7 +317,7 @@ disjRule clp df@(PrFormula pr ds (Dis fs)) br d
      else case reduceDisjunctionAgainstBranch br pr fs of
              Triviality               -> DiscardRule df
              Contradiction ds_clash   -> ClashRule (dsUnion ds ds_clash) df
-             Reduced new_ds disjuncts -> DisjRule df (prefixList pr (dsInsert d $ dsUnion ds new_ds) disjuncts)
+             Reduced new_ds disjuncts -> DisjRule df (prefix pr (dsInsert d $ dsUnion ds new_ds) disjuncts)
 -- todo: if only one conjunct remaining, do not add d , but still create a DisjRule
 disjRule _ _ _ _ = error "disjRule"
 
@@ -329,7 +330,7 @@ semBrRule clp df@(PrFormula pr ds (Dis fs)) br d
     else case reduceDisjunctionAgainstBranch br pr fs of
             Triviality               -> DiscardRule df
             Contradiction ds_clash   -> ClashRule (dsUnion ds ds_clash) df
-            Reduced new_ds disjuncts -> SemBrRule df (sbModList $ prefixList pr (dsInsert d $ dsUnion ds new_ds) disjuncts)
+            Reduced new_ds disjuncts -> SemBrRule df (sbModList $ prefix pr (dsInsert d $ dsUnion ds new_ds) disjuncts)
 -- todo same remark as above
 semBrRule _ _ _ _ = error "sembrRule"
 
@@ -347,7 +348,7 @@ sbModList fs = go fs []
 -- helper function for disjunction and semantic branching
 -- updates the branching pointers of each formula
 breakDisj :: PrFormula -> Dependency -> [PrFormula]
-breakDisj (PrFormula pr ds (Dis formulaList)) d = prefixList pr (dsInsert d ds) formulaList
+breakDisj (PrFormula pr ds (Dis fs)) d = prefix pr (dsInsert d ds) fs
 breakDisj _ _ = error $ "breakDisj error"
 
 -- @

@@ -33,6 +33,7 @@ where
 import Control.Monad ( when )
 import qualified Data.Map as Map
 import Data.List ( sort )
+import Data.Set
 
 vPutStrLn :: String -> Bool -> IO ()
 vPutStrLn s b = when b $ putStrLn s
@@ -69,4 +70,10 @@ doMemoize f e m = case Map.lookup e m of
 
 permutationOf :: Ord a => [a] -> [a] -> Bool
 permutationOf l1 l2 = sort l1 == sort l2
+
+set :: Ord a => [a] -> Set a
+set = fromList
+
+list :: Ord a => Set a -> [a]
+list = toList
 
