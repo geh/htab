@@ -59,12 +59,12 @@ prefixAndProps br =
 completeModel :: RelInfo -> Model -> Model
 completeModel relI m = completeTransitivity relI $ completeSymmetry relI m
 
-completeTransitivity :: RelInfo -> Model -> Model -- TODO transitivity + past (quoi?)
+completeTransitivity :: RelInfo -> Model -> Model
 completeTransitivity relI m = m{M.succs = \r w -> if isTransitive relI r
                                                    then getTransClos (M.succs m) r w
                                                    else M.succs m r w}
 
-completeSymmetry :: RelInfo -> Model -> Model -- TODO transitivity + past
+completeSymmetry :: RelInfo -> Model -> Model
 completeSymmetry relI m = m{M.succs = \r w -> if isSymmetric relI r
                                                then getSymClos (M.worlds m) (M.succs m) r w
                                                else M.succs m r w}
