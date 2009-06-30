@@ -541,8 +541,8 @@ dsShow = show . IntSet.toList
 get_max_subterms :: Formula -> Int
 get_max_subterms (Lit (PosLit _)) = 1
 get_max_subterms (Lit(NegLit _)) = 2
-get_max_subterms (Con fs) = 1 + get_max_subterms_ fs
-get_max_subterms (Dis fs) = 1 + get_max_subterms_ fs
+get_max_subterms (Con fs) = 1 + (get_max_subterms_ $ list fs)
+get_max_subterms (Dis fs) = 1 + (get_max_subterms_ $ list fs)
 get_max_subterms (At _ f) = 2 + get_max_subterms f
 get_max_subterms (Down _ f) = 2 + get_max_subterms f
 get_max_subterms (Box _ f) = 1 + get_max_subterms f

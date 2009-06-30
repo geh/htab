@@ -250,8 +250,11 @@ instance Show Branch where
               "\nDown var relevant chart: " ++ prettyShowMap_ (downVarRelevantCh br) show ", " ++
               "\nUniv constraints: "++ show (univCons br) ++
               "\nDiff box constraints: "++ show (dBoxCons br) ++
-              "\nPrefix to dependency set: " ++ "\n " ++ prettyShowMap_ (prToDepSet br) dsShow "\n " ++
-              "\nPrefix to formulas: " ++ "\n " ++ prettyShowMap_ (prefToForms br) (show . Set.toList) "\n " ++
+              "\nPrefix to dependency set:\n " ++ prettyShowMap_ (prToDepSet br) dsShow "\n " ++
+              "\nPrefix to formulas:\n" ++ prettyShowMap_ (prefToForms br) (show . Set.toList) "\n " ++
+              "\nPrefix to unfulfilled <*>: " ++ show (DMap.flattenDMap $ prefToUevFwd br) ++
+              "\nPrefix to unfulfilled <-*>: " ++ show (DMap.flattenDMap $ prefToUevBwd br) ++
+              "\nTrue formulas: " ++ "\n " ++ prettyShowMap_ (branchTrueForms br) (show . Set.toList) "\n " ++
               "\nParent: " ++ prettyShowMap (prefParent br) ", " ++
               "\nInclusion urfather map: "  ++ show (inclUrMap br) ++
               "\nIncreased prefixes: " ++ show (incrPrs br) ++
