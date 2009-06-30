@@ -44,7 +44,7 @@ import Data.Maybe( fromJust, fromMaybe, catMaybes)
 
 import HTab.Timeout( TimeoutSignal )
 import HTab.Statistics(Statistics)
-import HTab.CommandLine(CmdLineParams(..))
+import HTab.CommandLine(CmdLineParams(..), Caching(..))
 
 import HTab.Formula
 
@@ -1095,20 +1095,23 @@ addFirstFormulas clp br_ f fLang
 
 gen_unsat_cache :: CmdLineParams -> Formula -> UCache
 gen_unsat_cache clp f = case caching clp of
-                          1 -> let c = ((get_max_subterms f)+(get_num_nominals f)) * 2
+                          Just MatrixCaching
+                                -> let c = ((get_max_subterms f)+(get_num_nominals f)) * 2
                                    in UCache{matrix = gen_matrix c c::UCMatrix,
                                          listsList = []::UCList,--not used in this approach
                                                current_index =(-1):: Int,
                                                descrip_matrix = Map.empty::UCMap,
                                                current_row = (-1) :: Int,
                                                max_row=(c-1) :: Int}
-                          2 -> UCache{matrix = gen_matrix 0 0::UCMatrix,--not used in this approach
+                          Just ListCaching
+                                   -> UCache{matrix = gen_matrix 0 0::UCMatrix,--not used in this approach
                                       listsList = []::UCList,
                                             current_index =(-1):: Int,
                                             descrip_matrix = Map.empty::UCMap,
                                             current_row = (-1) :: Int,
                                             max_row=0 :: Int}  --not used in this approach
-                          _ -> UCache{matrix = gen_matrix 0 0::UCMatrix,--not used in this approach
+                          Nothing
+                           -> UCache{matrix = gen_matrix 0 0::UCMatrix,--not used in this approach
                                               listsList = []::UCList,
                                               current_index =(-1):: Int,
                                               descrip_matrix = Map.empty::UCMap,

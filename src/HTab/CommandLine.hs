@@ -10,7 +10,7 @@
 
 module HTab.CommandLine (
     CmdLineParams(..), getCmdLineParams, defaultParams,
-    usage, configureMetrics
+    usage, configureMetrics, Caching(..)
 ) where
 
 import Data.Char(isDigit)
@@ -44,11 +44,12 @@ data CmdLineParams = CLP {
            quietMode       :: Bool,
            inclBlockGlobal :: Bool,
            inclBlockChain  :: Bool,
-	   caching         :: Int 
+	   caching         :: Maybe Caching
          } deriving (Show)
 
 type CLPModifier   = CmdLineParams -> Either ParsingErrMsg CmdLineParams
 type ParsingErrMsg = String
+data Caching = MatrixCaching | ListCaching deriving Show
 
 parseCmds :: [String] -> CmdLineParams -> Either ParsingErrMsg CmdLineParams
 parseCmds argv clp = case getOpt RequireOrder options argv of
@@ -183,10 +184,16 @@ setBackJumping = is0or1 ?->  \s c -> return c{backJumping = intToBool $ read s}
 
 
 setCaching :: String -> CLPModifier
-setCaching = is0or1or2 ?->  \s c -> return c{caching = read s}
+setCaching = is0or1or2 ?->  \s c -> return c{caching = strToCaching s}
 
 is0or1or2 :: String -> Bool
 is0or1or2 s = (s == "2") || (s == "1") || (s == "0") 
+
+strToCaching :: String -> Maybe Caching
+strToCaching s = case (read s )::Int of
+                  1 -> Just MatrixCaching
+                  2 -> Just ListCaching
+                  _ -> Nothing
 
 is0or1 :: String -> Bool
 is0or1 s = (s == "1") || (s == "0")
@@ -216,7 +223,7 @@ defaultParams = CLP {showHelp = False,
                      quietMode   = False,
                      inclBlockGlobal = False,
                      inclBlockChain  = True,
-		     caching     = 0 
+		     caching     = Nothing
 }
 
 getCmdLineParams :: IO (Either ParsingErrMsg CmdLineParams)

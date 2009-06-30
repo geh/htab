@@ -30,8 +30,6 @@ tableau =
       do logMe
          bd <- get
          let clp = branch_clp bd
-         let caching_approach =  caching $ clp
-         let activate_caching = (caching_approach /= 0) 
 
          let signal = timeout_signal bd
          timeout <- isTimeout signal
@@ -43,17 +41,19 @@ tableau =
                       do debugMsg_BranchClash br pr bprs f
                          liftStats $ recordClosedBranch
                          -- update the cache
-                         if activate_caching 
-                             then do let ds_pr =  (DS.Prefix pr)
-                                     let u_pr = (getUrfather br ds_pr )
-                                     _ <- update_cache caching_approach u_pr br False
-                                     debugMsg_BranchClash1 br u_pr 1
-                                     return (CLOSED bprs)
-                             else return (CLOSED bprs)
+                         case caching $ clp of
+                             Just caching_approach
+                                    -> do let ds_pr =  (DS.Prefix pr)
+                                          let u_pr = (getUrfather br ds_pr )
+                                          _ <- update_cache caching_approach u_pr br False
+                                          debugMsg_BranchClash1 br u_pr 1
+                                          return (CLOSED bprs)
+                             Nothing -> return (CLOSED bprs)
                      BranchOK br_ ->
                       do 
-                         if (not activate_caching)
-                          then do debugMsg_BranchOK br_
+                         case caching $ clp of
+                          Nothing
+                            -> do debugMsg_BranchOK br_
                                   let currentBranchingDepth = (branch_depth bd) + 1
                                   let br = calculateStepInfo br_
                                   case applicableRules br clp currentBranchingDepth of
@@ -68,7 +68,8 @@ tableau =
                                            return $ if (Map.null $ DMap.toMap $ prefToUevFwd br) && (Map.null $ DMap.toMap $ prefToUevBwd br)
                                                      then OPEN (buildModel br)        -- no unsatisfied eventuality
                                                      else CLOSED $ collectUevBprs br  -- which bprs ? union those of the unsatisfied eventualities
-                          else do let new_bi = search_cache caching_approach br_ bd 
+                          Just caching_approach
+                            -> do let new_bi = search_cache caching_approach br_ bd
                                   case (new_bi) of
                                      BranchClash br1 pr1 bprs1 _ ->
                                          do --we found a hit: update branch data to reflect the closed branch... 
@@ -123,9 +124,7 @@ chooseBranch_ currentDepSet (hd:tl) =
  do bd' <- get
     put bd'{branch_info=hd}
     res <- tableau
-    let activate_caching = (caching $ branch_clp bd') /= 0
-    bd <- if activate_caching then get 
-                              else return bd'
+    bd <- case ( caching $ branch_clp bd' ) of { Nothing -> return bd' ; _ -> get }
     let currentBranchingDepth = branch_depth bd
     let backjump = (not $ languageTrans $ inputLanguage $ getBranch $ branch_info bd) && (backJumping $ branch_clp bd) -- disable backjumping in presence of transitive closure
     case res of

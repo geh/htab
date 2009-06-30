@@ -13,6 +13,7 @@ import HTab.UCMatrix
 import HTab.UCList
 import Data.Array.Diff
 import HTab.Formula
+import HTab.CommandLine ( Caching(..) )
 import HTab.Branch(BranchInfo(..),Branch(..),BranchMonad, BranchData(..),
                    UCache(..),Univ_constraints,AugmentedPrefixes,UCMap,
                    getUrfather)
@@ -27,7 +28,7 @@ import qualified HTab.DisjSet as DS
 
 ------------update--------------------------------
 --given the input prefix, get the parents and call to update cache 
-update_cache :: Int -> Prefix -> Branch -> Bool -> BranchMonad BranchData
+update_cache :: Caching -> Prefix -> Branch -> Bool -> BranchMonad BranchData
 --when calling from a clash, don't add into the cache the info from the clashing prefix
 update_cache approach pr br False = 
                         do bd <- get
@@ -63,7 +64,7 @@ update_cache approach pr  br True =
                                                      return bd{unsat_cache = n_uc}
 
 
-update_cache_prefixes :: Int -> Prefix -> Branch -> UCache-> [Prefix] -> UCache
+update_cache_prefixes :: Caching -> Prefix -> Branch -> UCache-> [Prefix] -> UCache
 update_cache_prefixes approach pr br uc vps= 
                                     let ds_pr = DS.Prefix pr
                                         u_pr = (getUrfather br ds_pr )
@@ -75,9 +76,8 @@ update_cache_prefixes approach pr br uc vps=
                                                         then update_cache_prefixes approach p br new_uc vps
                                                         else new_uc
 
---using matrix
-update_cache_ :: Int -> Prefix -> Branch -> UCache-> UCache
-update_cache_ 1 pr br uc = 
+update_cache_ :: Caching -> Prefix -> Branch -> UCache-> UCache
+update_cache_ MatrixCaching pr br uc =
                          let btf1 = Map.lookup pr (branchTrueForms br)
                              branchTrueForms1 = case btf1 of
                                                      Nothing -> []
@@ -107,8 +107,7 @@ update_cache_ 1 pr br uc =
                                 matrix = new_matrix}
 
 
---using lists approach
-update_cache_ 2 pr br uc = 
+update_cache_ ListCaching pr br uc =
                          let btf1 = Map.lookup pr (branchTrueForms br)
                              branchTrueForms1 = case btf1 of
                                                      Nothing -> []
@@ -193,25 +192,25 @@ is_universal _ [] = False
 --        if it is -> we have a cache hit, and the branch is unsat
 --        if not -> go on working with the branch
 
-search_cache :: Int -> Branch -> BranchData -> BranchInfo
-search_cache approach br bd  = 
+search_cache :: Caching -> Branch -> BranchData -> BranchInfo
+search_cache caching br bd  =
                       let not_repeted_incrPrs = nub (incrPrs br)
-                      in search_cache_ approach not_repeted_incrPrs br bd
+                      in search_cache_ caching not_repeted_incrPrs br bd
 
 --to iterate over the list of prefixes
-search_cache_ :: Int -> AugmentedPrefixes -> Branch -> BranchData -> BranchInfo
-search_cache_ approach (pr:tail_pr) br bd = 
-                                   let res = search_cache_pr approach pr br bd 
+search_cache_ :: Caching -> AugmentedPrefixes -> Branch -> BranchData -> BranchInfo
+search_cache_ caching (pr:tail_pr) br bd =
+                                   let res = search_cache_pr caching pr br bd 
                                    in case res  of
                                         b@(BranchClash _ _ _ _) -> b
-                                        BranchOK _ ->search_cache_ approach tail_pr br bd
+                                        BranchOK _ ->search_cache_ caching tail_pr br bd
                                                         
 search_cache_ _ [] _ bd = (branch_info bd)
 
 --to detect a cache hit for a prefix and a branch
---using a bit matrix
-search_cache_pr :: Int -> Prefix -> Branch -> BranchData -> BranchInfo
-search_cache_pr 1 pr br bd =let btf1 = Map.lookup pr (branchTrueForms br)
+search_cache_pr :: Caching -> Prefix -> Branch -> BranchData -> BranchInfo
+search_cache_pr MatrixCaching pr br bd
+                          = let btf1 = Map.lookup pr (branchTrueForms br)
                                 branchTrueForms1 = case btf1 of
                                                         Nothing -> []
                                                         Just btfSet -> Set.toList btfSet
@@ -238,8 +237,9 @@ search_cache_pr 1 pr br bd =let btf1 = Map.lookup pr (branchTrueForms br)
                                                Nothing -> (branch_info bd)
                                                Just _  -> (BranchClash br pr dsEmpty (neg taut)) 
                                   else (branch_info bd)
---using lists approach
-search_cache_pr 2 pr br bd =let btf1 = Map.lookup pr (branchTrueForms br)
+
+search_cache_pr ListCaching pr br bd
+                          = let btf1 = Map.lookup pr (branchTrueForms br)
                                 branchTrueForms1 = case btf1 of
                                                         Nothing -> []
                                                         Just btfSet -> Set.toList btfSet
