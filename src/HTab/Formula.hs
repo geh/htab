@@ -25,7 +25,7 @@ checkIfVariableNegatedOnce, replaceVar,
 firstPrefixedFormula,
 parse, Theory, RelInfo, Task,
 encodeValidityTest, encodeSatTest,
-HyLoFormula
+HyLoFormula, extractNominals,showNom,get_num_nominals, RelProperties(..)
 )
 
  where
@@ -48,7 +48,7 @@ type Prefix = Int
 type Rel = String
 
 --the formulas stored in the unsat cache
-data UCFormula = NonUniversal Formula | Universal Formula | Nominal NomSymbol Formula
+data UCFormula = NonUniversalC Formula | UniversalC Formula | NominalC NomSymbol Formula
                  deriving (Eq, Ord, Show)
 
 data Atom = Taut
@@ -551,6 +551,9 @@ get_max_subterms (A f) = 1 + get_max_subterms f
 get_max_subterms (E f) = 1 + get_max_subterms f
 get_max_subterms (D f) = 1 + get_max_subterms f
 get_max_subterms (B f) = 1 + get_max_subterms f
+get_max_subterms (BoxX _ f) = 1 + get_max_subterms f
+get_max_subterms (DiaX _ f) = 1 + get_max_subterms f
+
 
 get_max_subterms_ :: [Formula] -> Int
 --get_max_subterms_ l = sum . map get_max_subterms l

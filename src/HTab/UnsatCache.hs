@@ -83,15 +83,15 @@ update_cache_ 1 pr br uc =
                                                      Nothing -> []
                                                      Just btfSet -> Set.toList btfSet
                              univForms1 = get_univ_forms (univCons br)
-                             univForms = map Universal univForms1
-                             nonUnivForms = map NonUniversal (remove_univ branchTrueForms1 univForms1)
+                             univForms = map UniversalC univForms1
+                             nonUnivForms = map NonUniversalC (remove_univ branchTrueForms1 univForms1)
                              --nominal formulas
                              nomsF = getNoms branchTrueForms1
                              nomsU = getNoms univForms1
                              nomsFU = Set.union nomsF nomsU
                              noms = sort(Set.toList nomsFU)
                              nominalForms = get_nominal_forms noms br
-                             --concatenat NonUniversal, Universal and Nominal formulas
+                             --concatenat NonUniversalC, UniversalC and Nominal formulas
                              cacheForms = nonUnivForms ++ univForms ++ nominalForms
                              descMat = (descrip_matrix uc)
                              curr_i = (current_index uc)
@@ -113,17 +113,17 @@ update_cache_ 2 pr br uc =
                              branchTrueForms1 = case btf1 of
                                                      Nothing -> []
                                                      Just btfSet -> Set.toList btfSet
-                             nonUnivForms = map NonUniversal (remove_univ branchTrueForms1 univForms1)
-                             --universal formulas
+                             nonUnivForms = map NonUniversalC (remove_univ branchTrueForms1 univForms1)
+                             --UniversalC formulas
                              univForms1 = get_univ_forms (univCons br)
-                             univForms = map Universal univForms1
+                             univForms = map UniversalC univForms1
                              --nominal formulas
                              nomsF = getNoms branchTrueForms1
                              nomsU = getNoms univForms1
                              nomsFU = Set.union nomsF nomsU
                              noms = sort(Set.toList nomsFU)
                              nominalForms = get_nominal_forms noms br
-                             --concatenat NonUniversal, Universal and Nominal formulas
+                             --concatenat NonUniversalC, UniversalC and Nominal formulas
                              cacheForms = nonUnivForms ++ univForms ++ nominalForms
                              descMat = (descrip_matrix uc)
                              curr_i = (current_index uc)
@@ -151,7 +151,7 @@ get_nominal_forms (n:rest) br =
                     btf_list = case btf of
                                  Nothing -> []
                                  Just btfSet -> Set.toList btfSet
-                    btf_listNom = map (Nominal n) btf_list
+                    btf_listNom = map (NominalC n) btf_list
                 in concat[btf_listNom,restBtf]
                 where restBtf = get_nominal_forms rest br
 get_nominal_forms [] _ = []
@@ -216,15 +216,15 @@ search_cache_pr 1 pr br bd =let btf1 = Map.lookup pr (branchTrueForms br)
                                                         Nothing -> []
                                                         Just btfSet -> Set.toList btfSet
                                 univForms1 = get_univ_forms (univCons br)
-                                univForms = map Universal univForms1
-                                nonUnivForms = map NonUniversal (remove_univ branchTrueForms1 univForms1)
+                                univForms = map UniversalC univForms1
+                                nonUnivForms = map NonUniversalC (remove_univ branchTrueForms1 univForms1)
                                 --nominal formulas
                                 nomsF = getNoms branchTrueForms1
                                 nomsU = getNoms univForms1
                                 nomsFU = Set.union nomsF nomsU
                                 noms = sort(Set.toList nomsFU)
                                 nominalForms = get_nominal_forms noms br
-                                --concatenat NonUniversal, Universal and Nominal formulas
+                                --concatenat NonUniversalC, UniversalC and Nominal formulas
                                 cacheForms = nonUnivForms ++ univForms ++ nominalForms
                                 us = (unsat_cache bd)
                                 c_i = (current_index us)
@@ -243,10 +243,10 @@ search_cache_pr 2 pr br bd =let btf1 = Map.lookup pr (branchTrueForms br)
                                 branchTrueForms1 = case btf1 of
                                                         Nothing -> []
                                                         Just btfSet -> Set.toList btfSet
-                                --universal formulas
+                                --UniversalC formulas
                                 univForms1 = get_univ_forms (univCons br)
-                                univForms = map Universal univForms1
-                                nonUnivForms = map NonUniversal (remove_univ branchTrueForms1 univForms1)
+                                univForms = map UniversalC univForms1
+                                nonUnivForms = map NonUniversalC (remove_univ branchTrueForms1 univForms1)
                                 --nominal formulas
                                 nomsF = getNoms branchTrueForms1
                                 nomsU = getNoms univForms1

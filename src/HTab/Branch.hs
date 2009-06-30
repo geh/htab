@@ -21,7 +21,9 @@ getUrfather, getUrfatherAndDeps, isInTheModel, relationIsInTheModel,
 getModelRepresentative, isNotBlocked,
 calculateStepInfo, BlockingMode(..), diaAlreadyDone, diaXAlreadyDone,
 downAlreadyDone, incPropSymbol, incNomSymbol,
-ReducedDisjunct(..), newNomBaseName, newPropBaseName
+UCache(..),Univ_constraints,AugmentedPrefixes,UCMap,BranchTrueForms,gen_unsat_cache,wipeNotPrevPref,
+collectUevBprs, ReducedDisjunct(..), newNomBaseName, newPropBaseName,
+isReflexive, isSymmetric, isTransitive
 ) where
 
 import Control.Monad.State(StateT, MonadState)
@@ -104,6 +106,20 @@ type PrefixParent = Map.Map Prefix Prefix
 
 data BlockingMode = InclusionBlockingGlobal | InclusionBlockingChain | ChainBlocking
  deriving (Eq,Show)
+
+
+type BranchTrueForms = Map.Map Prefix (Set.Set Formula) 
+type UCMap = Map.Map UCFormula Int 
+--The unsat cache, includes two data structure to allow us to choose any of them.
+--once chosen a data structure, the other is kept emptied
+data UCache = UCache { matrix :: UCMatrix, --the bit matrix 
+                       listsList :: UCList, --list apporach
+                       current_index :: Int,  
+                       descrip_matrix :: UCMap,
+                       current_row :: Int,
+                       max_row :: Int}
+              deriving (Show)
+
 
 data Branch = Branch {clashStr :: Clashable_info,
                  -- pending formulas / todo lists
@@ -388,13 +404,15 @@ addFormulaBaseCase clp br f@(PrFormula pr ds f2)
 
 addFormula2 :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
 addFormula2 clp br pf@(PrFormula pr _ f) =
-   addFormula3 clp updatedBr pf
+   addFormula3 clp br6 pf
  where
-     br'' = addToBranchTrueForms br pf
-     br' = if forInclusion br f
-             then addToPrefToForms br pf
-             else br
-     updatedBr  = addToAugmentedPrefixes pr br'
+     br2 = addToBranchTrueForms br pf -- TODO if cache ...
+     br3 = if forInclusion br f
+             then addToPrefToForms br2 pf
+             else br2
+     br4 = updatePrefToUev br3 pr f
+     br5 = addToNotPrevPref pr br4 -- TODO if cache ...
+     br6 = addToAugmentedPrefixes pr br5
 
 addFormula3 :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
 addFormula3 _ br pf@(PrFormula _ _ (Con _))
@@ -466,16 +484,26 @@ namd ((PrFormula p ds f):prfs) theMap =
 
 namd [] theMap = map (\((p,f),ds) -> PrFormula p ds f) (Map.assocs theMap)
 
-
 {-
    Functions related to vId, nom, prefixes and nominals ...
 -}
+
+
+--to fill the new field
+addToBranchTrueForms :: Branch -> PrFormula -> Branch
+addToBranchTrueForms br (PrFormula pre _ f) =
+  br{branchTrueForms = newMap}
+ where currentBtf = branchTrueForms br
+       newMap = Map.insertWith Set.union pre (Set.singleton f) currentBtf
+
 
 addToPrefToForms :: Branch -> PrFormula -> Branch
 addToPrefToForms br (PrFormula pre _ f) =
   br{prefToForms = newMap}
  where currentPtf = prefToForms br
        newMap = Map.insertWith Set.union pre (Set.singleton f) currentPtf
+
+{-     handling nominal urfathers, equivalence classes and dependencies     -}
 
 isNominalUrfather :: Branch -> Prefix -> Bool
 isNominalUrfather b p = DS.isRoot (DS.Prefix p) classes
@@ -502,13 +530,6 @@ findDeps br pr = Map.findWithDefault dsEmpty pr (prToDepSet br)
 addClassDeps :: Prefix -> DependencySet -> Branch -> Branch
 addClassDeps pr ds br = br { prToDepSet = Map.insert pr ds (prToDepSet br) }
 
-{-     keeping some structures up-to-date when adding formulas     -}
-
-addToPrefToForms :: Branch -> PrFormula -> Branch
-addToPrefToForms br (PrFormula pre _ f) =
-  br{prefToForms = newMap}
- where currentPtf = prefToForms br
-       newMap = Map.insertWith (Set.union) pre (Set.singleton f) currentPtf
 
 -- check if the added formula removes an unfulfilled eventuality
 -- if yes, propagate to the previous prefixes

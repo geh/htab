@@ -6,14 +6,15 @@ import qualified HTab.DMap as DMap
 import HTab.Base(vPutStrLn)
 import HTab.Statistics(updateStep,printOutInspectionMetrics,
                        recordClosedBranch,recordFiredRule)
-import HTab.Branch(BranchInfo(..),Branch,BranchMonad, BranchData(..),branch_depth,
-                   addZeroInPath, incPathHead, calculateStepInfo )
-import HTab.CommandLine(logState,backJumping,CmdLineParams)
+import HTab.Branch(BranchInfo(..),Branch(..),BranchMonad, BranchData(..),branch_depth,
+                   addZeroInPath, incPathHead, calculateStepInfo, collectUevBprs,
+                   getBranch,getUrfather,wipeNotPrevPref )
+import HTab.CommandLine(logState,backJumping,caching,CmdLineParams)
 import HTab.Rules(Rule,applyRule,
                   applicableRules,ruleToId,
                   get_pr_disjunt_rule)
 import HTab.Statistics(Statistics)
-import HTab.Formula(Prefix,DependencySet,Formula,dsEmpty,dsMember,dsUnion)
+import HTab.Formula(Prefix,DependencySet,Formula,dsEmpty,dsMember,dsUnion,languageTrans)
 import HTab.ModelGen ( Model, buildModel )
 import HTab.Timeout( isTimeout )
 import HTab.UnsatCache
@@ -50,19 +51,68 @@ tableau =
                                      return (CLOSED bprs)
                              else return (CLOSED bprs)
                      BranchOK br_ ->
-                      do debugMsg_BranchOK br_
-                         let currentBranchingDepth = (branch_depth bd) + 1
-                         let br = calculateStepInfo br_
-                         case applicableRules br clp currentBranchingDepth of
-                          (rule:_) ->
-                           do debugMsg_BranchOK_applicableRule rule
-                              liftStats $ recordFiredRule $ ruleToId rule
-                              let possibleBranches = applyRule clp rule br
-                              modify addZeroInPath
-                              chooseBranch possibleBranches
-                          []   ->
-                           do debugMsg_BranchOK_saturated
-                              return $ OPEN (buildHerbrandModel br)
+                      do 
+                         if (not activate_caching)
+                          then do debugMsg_BranchOK br_
+                                  let currentBranchingDepth = (branch_depth bd) + 1
+                                  let br = calculateStepInfo br_
+                                  case applicableRules br clp currentBranchingDepth of
+                                    (rule:_) ->
+                                        do debugMsg_BranchOK_applicableRule rule
+                                           liftStats $ recordFiredRule $ ruleToId rule
+                                           let possibleBranches = applyRule clp rule br
+                                           modify addZeroInPath
+                                           chooseBranch possibleBranches
+                                    []   ->
+                                        do debugMsg_BranchOK_saturated
+                                           return $ if (Map.null $ DMap.toMap $ prefToUevFwd br) && (Map.null $ DMap.toMap $ prefToUevBwd br)
+                                                     then OPEN (buildModel br)        -- no unsatisfied eventuality
+                                                     else CLOSED $ collectUevBprs br  -- which bprs ? union those of the unsatisfied eventualities
+                          else do let new_bi = search_cache caching_approach br_ bd 
+                                  case (new_bi) of
+                                     BranchClash br1 pr1 bprs1 _ ->
+                                         do --we found a hit: update branch data to reflect the closed branch... 
+                                            debugMsg_BranchClash1 br1 pr1 0--TODO see should I add this line?
+                                            put bd{branch_info = new_bi}
+                                            liftStats $ recordClosedBranch
+                                            return (CLOSED bprs1)
+                                     BranchOK br1_ ->
+                                        do --we didn't find a hit: go on working with the branch
+                                           debugMsg_BranchOK br1_
+                                           let currentBranchingDepth = (branch_depth bd) + 1
+                                           let br = calculateStepInfo br1_
+                                           case applicableRules br clp currentBranchingDepth of
+                                                (rule:_) ->
+                                                        do debugMsg_BranchOK_applicableRule rule
+                                                           liftStats $ recordFiredRule $ ruleToId rule
+                                                           let possibleBranches' = applyRule clp rule br
+                                                           --to avoid entering in the rules.hs code, clean the
+                                                           --notPrevPref here...
+                                                           let pref_dis_rule = get_pr_disjunt_rule rule
+                                                           let possibleBranches = 
+                                                                case pref_dis_rule of
+                                                                  Nothing -> possibleBranches'
+                                                                  Just p_d -> wipeNotPrevPrefInPossBranches p_d possibleBranches'
+                                                           modify addZeroInPath
+                                                           result_branching <- chooseBranch possibleBranches
+                                                           --if rule is a disjunction rule and if the result 
+                                                           --of chooseBranch is closed, then update the cache 
+                                                           case pref_dis_rule of 
+                                                             Nothing -> return result_branching
+                                                             Just p -> 
+                                                                case result_branching of 
+                                                                  c@(CLOSED _) ->
+                                                                     do let ds_pr =  (DS.Prefix p)
+                                                                        let u_p = (getUrfather br ds_pr )
+                                                                        _ <- update_cache caching_approach u_p br True
+                                                                        debugMsg_BranchClash1 br u_p 2
+                                                                        return c
+                                                                  TIMEOUT -> return TIMEOUT
+                                                                  o@(OPEN _)  -> return o
+                                                [] ->   do debugMsg_BranchOK_saturated
+                                                           return $ if (Map.null $ DMap.toMap $ prefToUevFwd br) && (Map.null $ DMap.toMap $ prefToUevBwd br)
+                                                                      then OPEN (buildModel br)        -- no unsatisfied eventuality
+                                                                      else CLOSED $ collectUevBprs br  -- which bprs ? union those of the unsatisfied eventualities
 
 -- depth-first branch-choosing strategy
 chooseBranch :: [BranchInfo] ->  BranchMonad OpenFlag
