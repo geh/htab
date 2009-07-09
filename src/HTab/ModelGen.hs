@@ -41,7 +41,7 @@ buildModel branch =
              [(NomSymbol $ show (pre + bias), pro)
              | (pre,pro) <- prefixAndPropCouples]
        rs = Set.fromList $ map toSimpSig
-              $ map (\(p1,r,p2) -> (p1 + bias, r, (getModelRepresentative branch p2) + bias))
+              $ map (\(p1,r,p2) -> ((getModelRepresentative branch p1) + bias, r, (getModelRepresentative branch p2) + bias))
                     $ filter (relationIsInTheModel branch) $ getAllRels $ accStr branch
 
 toSimpSig :: (Prefix,Rel,Prefix) -> (NomSymbol,RelSymbol,NomSymbol)
