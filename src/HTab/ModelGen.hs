@@ -27,7 +27,6 @@ buildModel branch =
        bias = if null $ languageNoms $ inputLanguage branch
                then 0
                else 1 + (length $ languageNoms $ inputLanguage branch)
-       prefixAndPropCouples = prefixAndProps branch
        es = Set.union
              (Set.fromList
                [(NomSymbol $ show (getUrfather branch (DS.Nominal nString) + bias), n)
@@ -39,7 +38,7 @@ buildModel branch =
              )
        ps = Set.fromList
              [(NomSymbol $ show (pre + bias), pro)
-             | (pre,pro) <- prefixAndPropCouples]
+             | (pre,pro) <- prefixAndProps branch]
        rs = Set.fromList $ map toSimpSig
               $ map (\(p1,r,p2) -> ((getModelRepresentative branch p1) + bias, r, (getModelRepresentative branch p2) + bias))
                     $ filter (relationIsInTheModel branch) $ getAllRels $ accStr branch
