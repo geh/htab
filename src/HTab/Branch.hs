@@ -239,7 +239,7 @@ instance Show Branch where
               "\nAts: "            ++ show (list $ atStr br)    ++
               "\nDowns: "          ++ show (list $ downStr br)  ++
               "\nDiff exists: "    ++ show (list $ diffStr br)  ++
-              "\nAccesibility: "        ++ showPretty (accStr br) ++
+              "\nAccessibility: "        ++ showPretty (accStr br) ++
               "\nBox constraints fwd: " ++ prettyShowMap_ (DMap.toMap $ boxConstrFwd br) (\v -> "(" ++ prettyShowMap_rel_ds_x v ++ ")") "\n " ++
               "\nBox constraints bwd: " ++ prettyShowMap_ (DMap.toMap $ boxConstrBwd br) (\v -> "(" ++ prettyShowMap_rel_ds_x v ++ ")") "\n " ++
               "\nDia rule chart: "  ++ prettyShowMap_ (diaRlCh br) (show . list) "\n " ++
