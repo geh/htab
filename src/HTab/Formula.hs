@@ -23,7 +23,7 @@ dUnivMod, dExistMod, taut, dimp, imp,
 prop, nom, formulaLanguageInfo, prefix,
 checkIfVariableNegatedOnce, replaceVar,
 firstPrefixedFormula,
-parse, Theory, RelInfo, Task,
+parse, simpleParse, Theory, RelInfo, Task,
 encodeValidityTest, encodeSatTest,
 HyLoFormula, extractNominals,showNom,get_num_nominals, RelProperties(..)
 )
@@ -33,6 +33,7 @@ HyLoFormula, extractNominals,showNom,get_num_nominals, RelProperties(..)
 import qualified Data.Set as Set
 import Data.Set ( Set )
 import qualified Data.IntSet as IntSet
+import Data.List ( delete )
 
 import HyLo.Signature.String( PropSymbol(..),
                               NomSymbol(..),
@@ -119,6 +120,10 @@ parse s
           relInfo     = saturate $ P.relations parseOutput
           theory      = convert relInfo $ P.theory parseOutput
           tasks       = P.tasks parseOutput
+
+simpleParse :: String -> (Theory,RelInfo,[Task])
+simpleParse s = parse $ "signature { automatic } theory { " ++ removeBeginEnd s ++ "}"
+ where removeBeginEnd = unwords . delete "begin" . delete "end" . words
 
 convert :: RelInfo -> [F.Formula NomSymbol PropSymbol RelSymbol] -> Formula
 convert relI = conv_ relI . foldr (\f1 f2 -> f1 F.:&: f2) F.Top

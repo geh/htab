@@ -44,7 +44,8 @@ data CmdLineParams = CLP {
            quietMode       :: Bool,
            inclBlockGlobal :: Bool,
            inclBlockChain  :: Bool,
-	   caching         :: Maybe Caching
+           caching         :: Maybe Caching,
+           simpleInput     :: Bool
          } deriving (Show)
 
 type CLPModifier   = CmdLineParams -> Either ParsingErrMsg CmdLineParams
@@ -159,7 +160,11 @@ options =
   Option []
          ["inclusion-blocking-chain"]
          (NoArg $ \c -> return c{inclBlockChain = True})
-         "enable inclusion blocking among all nodes of a chain"
+         "enable inclusion blocking among all nodes of a chain",
+  Option []
+         ["simple"]
+          (NoArg $ \c -> return c{simpleInput = True})
+         "read formula in the simple input format"
   ]
 
 
@@ -223,7 +228,8 @@ defaultParams = CLP {showHelp = False,
                      quietMode   = False,
                      inclBlockGlobal = False,
                      inclBlockChain  = True,
-		     caching     = Nothing
+                     caching     = Nothing,
+                     simpleInput = False
 }
 
 getCmdLineParams :: IO (Either ParsingErrMsg CmdLineParams)

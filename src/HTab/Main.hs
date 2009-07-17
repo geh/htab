@@ -13,14 +13,15 @@ import System.CPUTime( getCPUTime )
 import HyLo.InputFile.Parser ( QueryType(..) )
 
 import HTab.CommandLine( filename, maxtimeout, CmdLineParams, logState, genModel,
-                         configureMetrics, quietMode )
+                         configureMetrics, quietMode, simpleInput )
 import HTab.Branch( BranchInfo(..),initialBranchStateFor,BranchMonad, BranchData(..),
                     emptyBranch, addFirstFormulas,gen_unsat_cache,UCache )
 import HTab.Statistics( Statistics, initialStatisticsStateFor, printOutAllMetrics' )
 import HTab.Base( vPutStrLn )
 import HTab.Tableau( liftStats, tableau, OpenFlag(..) )
-import HTab.Formula( formulaLanguageInfo, parse, Theory, RelInfo, Task,
+import HTab.Formula( formulaLanguageInfo, Theory, RelInfo, Task,
                      Formula, encodeValidityTest, encodeSatTest )
+import qualified HTab.Formula as F
 import HTab.ModelGen ( Model )
 
 import HTab.Timeout ( withNoTimeout, notifyOnTimeout, TimeoutSignal )
@@ -39,6 +40,7 @@ runWithParams clp =
                         hSetBuffering stdin LineBuffering
                         getContents
 
+     let parse = if simpleInput clp then F.simpleParse else F.parse
      allTasks <- parse <$> maybe fromStdIn readFile (filename clp)
      --
      let handleTimeout
