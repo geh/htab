@@ -22,7 +22,7 @@ getUrfather, getUrfatherAndDeps, isInTheModel, relationIsInTheModel,
 getModelRepresentative, isNotBlocked,
 calculateStepInfo, BlockingMode(..), diaAlreadyDone, diaXAlreadyDone,
 downAlreadyDone, incPropSymbol, incNomSymbol,
-UCache(..),Univ_constraints,AugmentedPrefixes,UCMap,BranchTrueForms,gen_unsat_cache,wipeNotPrevPref,
+UCache(..),Univ_constraints,AugmentedPrefixes,UCMap,BranchTrueForms,gen_unsat_cache,setPrevPref,
 collectUevBprs, ReducedDisjunct(..), newNomBaseName, newPropBaseName, getUnappliedUBPairs,
 isReflexive, isSymmetric, isTransitive
 ) where
@@ -55,8 +55,8 @@ import qualified HTab.DMap as DMap
 import HTab.Base(moveInMap, almostCartesianProduct, doMemoize, set, list)
 
 import HTab.Relations ( Relations, emptyRels, insertRelation, mergePrefixWith,
-                        getSuccessors, getPredecessors, getIncomingLinks, getOutgoingLinks)
-import qualified HTab.Relations as Relations
+                        getSuccessors, getPredecessors, getIncomingLinks, getOutgoingLinks,
+                        showPretty )
 
 data BranchInfo = BranchOK Branch |
                   BranchClash Branch Prefix DependencySet Formula
@@ -101,7 +101,7 @@ type InclusionUrfathersMap = Map.Map Prefix Prefix
 
 type AugmentedPrefixes = [Prefix] -- list of prefixes whose label is modified during the current step of the algorithm
 
-type NotPrevPrefixes = [Prefix] --To keep the prefixes true at b-b1, where b is the current branch, and b1 is prev(b)
+type PrevPrefixes = [Prefix] --To keep the prefixes true at b-b1, where b is the current branch, and b1 is prev(b)
 
 
 type PrefixParent = Map.Map Prefix Prefix
@@ -110,8 +110,8 @@ data BlockingMode = InclusionBlockingGlobal | InclusionBlockingChain | ChainBloc
  deriving (Eq,Show)
 
 
-type BranchTrueForms = Map.Map Prefix (Set.Set Formula) 
-type UCMap = Map.Map UCFormula Int 
+type BranchTrueForms = DMap Prefix Formula DependencySet 
+type UCMap = Bimap.Bimap UCFormula Int 
 --The unsat cache, includes two data structure to allow us to choose any of them.
 --once chosen a data structure, the other is kept emptied
 data UCache = UCache { matrix :: UCMatrix, --the bit matrix 
@@ -144,7 +144,7 @@ data Branch = Branch {clashStr :: Clashable_info,
              --all formulas true in the branch, by prefixes
                branchTrueForms :: BranchTrueForms,
         --To keep the prefixes true at b-b1, where b is the current branch, and b1 is prev(b)
-                   notPrevPref :: NotPrevPrefixes, 
+                   prevPref :: PrevPrefixes, 
                  -- backjumping data attached to equivalence classes
                     prToDepSet :: PrefToDepSet,
                  -- other data
@@ -199,7 +199,7 @@ emptyBranch clp fLang relInfo_ =
                   lastNom  = Nothing,
                   lastProp = Nothing,
                   prefToForms= Map.empty::PrefToFormulas,
-                  branchTrueForms=Map.empty :: BranchTrueForms, 
+                  branchTrueForms=DMap.empty :: BranchTrueForms, 
                   prToDepSet= Map.empty::PrefToDepSet,
                   prefToUevFwd= DMap.empty::PrefToUev,
                   prefToUevBwd= DMap.empty::PrefToUev,
@@ -208,7 +208,7 @@ emptyBranch clp fLang relInfo_ =
                   inputLanguage = fLang,
                   inclUrMap = Nothing,
                   incrPrs = [],
-                     notPrevPref =[], 
+                  prevPref =[], 
                   blockMode = blockingMode,
                   prefParent = Map.empty::PrefixParent,
                   relevantNominals = set $ languageNoms fLang,
@@ -219,50 +219,33 @@ emptyBranch clp fLang relInfo_ =
                        else InclusionBlockingGlobal
 
 instance Show Branch where
- show br
-  = concat [  "Input language: ", show (inputLanguage br),
-              "\nClashable formulas:", showMap (\v -> "(" ++ showMap_lits v ++ ")") "\n " (toMap $ clashStr br),
-              "\n", show (todoList br),
-              showl "\nRelations: "       (accStr br),
-              ifNotEmpty (boxConstrFwd br) (\c -> "\nBox fwd: " ++ showMap (\v -> "(" ++ showMap_rel v ++ ")") "\n " (toMap c)),
-              ifNotEmpty (boxConstrBwd br) (\c -> "\nBox bwd: " ++ showMap (\v -> "(" ++ showMap_rel v ++ ")") "\n " (toMap c)),
-              showl "\nDia rule chart: "  (diaRlCh br),
-              showl "\nDown rule chart: " (downRlCh br),
-              showl "\n@ rule chart: "     (list $ atRlCh br),
-              showl "\nExist rule chart: " (list $ existRlCh br),
-              showl "\nDiff dia rule chart: "   (dDiaRlCh br),
-              showl "\nDown var relevant chart: " (downVarRelevantCh br),
-              "\nUnrestricted blocking book-keep:", show (bookKeepUB br), ", ",
-              showl "\nUniv constraints: " (univCons br),
-              showl "\nDiff box constraints: " (dBoxCons br),
-              ifNotEmpty (prToDepSet br) (\m -> "\nPrefix to dependency set:" ++ showMap  dsShow "\n " m),
-              ifNotEmpty (prefToForms br) (\m -> "\nPrefix to formulas:"       ++ showMap  (show . Set.toList) "\n " m),
-              showl "\nPrefix to unfulfilled <*>: "  (DMap.flatten $ prefToUevFwd br),
-              showl "\nPrefix to unfulfilled <-*>: " (DMap.flatten $ prefToUevBwd br),
-              ifNotEmpty (branchTrueForms br) (\m -> "\nTrue formulas: " ++ showMap (show . Set.toList) "\n " m),
-              showl "\nParent: " (prefParent br),
-              "\nInclusion urfather map: ", show (inclUrMap br),
-              "\nIncreased prefixes: ", show (incrPrs br),
-              "\nPrefixes in (current branch - prev(current branch): ", show (notPrevPref br),
-              "\nBlocking mode: ", show (blockMode br),
-              "\nPrefix-Nominal classes : ", showMap show ", " (nomPrefClasses br),
-              showl "\nModel-relevant nominals : " (list $ relevantNominals br)
-           ]
-              where
-                  ifNotEmpty b f = if empty b then "" else f b
-                  showl intro b  = if empty b then "" else intro ++ show b
-                  str True = "" ; str False = "!"
-
-                  showMap vShow sep = foldWithKey (\k v -> (++ sep ++ show k ++ " -> " ++ vShow v )) ""
-                  showMap_lits = foldWithKey (\a (b,d) -> (++ str b ++ show a ++ " " ++ dsShow d  ++ ", ")) ""
-                  showMap_rel = foldWithKey (\r dxs -> (++ "-" ++ r ++ "-> " ++ show dxs ++ ", ")) ""
-
-class Emptyable a where
- empty :: a -> Bool
-
-instance Emptyable [a] where
- empty [] = True
- empty _  = False
+    show br = "Input language: " ++ show (inputLanguage br) ++
+              "\nClashable formulas:\n" ++ prettyShowMap_ (DMap.toMap $ clashStr br) (\v -> "(" ++ prettyShowMap_clashable v ++ ")") "\n " ++
+              "\nTodo list(s): "   ++ show (todoList br)  ++
+              "\nAccessibility: "        ++ showPretty (accStr br) ++
+              "\nBox constraints fwd: " ++ prettyShowMap_ (DMap.toMap $ boxConstrFwd br) (\v -> "(" ++ prettyShowMap_rel_ds_x v ++ ")") "\n " ++
+              "\nBox constraints bwd: " ++ prettyShowMap_ (DMap.toMap $ boxConstrBwd br) (\v -> "(" ++ prettyShowMap_rel_ds_x v ++ ")") "\n " ++
+              "\nDia rule chart: "  ++ prettyShowMap_ (diaRlCh br) (show . list) "\n " ++
+              "\nDown rule chart: " ++ prettyShowMap_ (downRlCh br) (show . list) "\n " ++
+              "\n@ rule chart: "   ++ show (list $ atRlCh br) ++
+              "\nExist rule chart:" ++ show (list $ existRlCh br) ++
+              "\nDiff dia rule chart: "  ++ prettyShowMap_ (dDiaRlCh br) show "\n " ++
+              "\nDown var relevant chart: " ++ prettyShowMap_ (downVarRelevantCh br) show ", " ++
+              "\nUnrestricted blocking book-keep:" ++ show (bookKeepUB br) ++ ", " ++
+              "\nUniv constraints: "++ show (univCons br) ++
+              "\nDiff box constraints: "++ show (dBoxCons br) ++
+              "\nPrefix to dependency set:\n " ++ prettyShowMap_ (prToDepSet br) dsShow "\n " ++
+              "\nPrefix to formulas:\n" ++ prettyShowMap_ (prefToForms br) (show . Set.toList) "\n " ++
+              "\nPrefix to unfulfilled <*>: " ++ show (DMap.flattenDMap $ prefToUevFwd br) ++
+              "\nPrefix to unfulfilled <-*>: " ++ show (DMap.flattenDMap $ prefToUevBwd br) ++
+              "\nTrue formulas: " ++ "\n " ++ prettyShowMap_ (branchTrueForms br) (show . Set.toList) "\n " ++
+              "\nParent: " ++ prettyShowMap (prefParent br) ", " ++
+              "\nInclusion urfather map: "  ++ show (inclUrMap br) ++
+              "\nIncreased prefixes: " ++ show (incrPrs br) ++
+              "\nPrefixes in (current branch - prev(current branch): " ++ show (notPrevPref br) ++ 
+              "\nBlocking mode: " ++ show (blockMode br) ++
+              "\nPrefix-Nominal classes : " ++ prettyShowMap (nomPrefClasses br) ", " ++
+              "\nModel-relevant nominals : " ++ show (relevantNominals br)
 
 instance Emptyable (Map a b) where
  empty = Map.null
@@ -276,43 +259,6 @@ instance Emptyable Relations where
 instance Emptyable (Set a) where
  empty = Set.null
 
-
-data TodoList =  Unfair{conjStr :: Conj_structure,
-                        disjStr :: Disj_structure,
-                         diaStr :: Dia_structure,
-                        diaXStr :: DiaX_structure,
-                       existStr :: Exist_structure,
-                          atStr :: At_structure,
-                        downStr :: Down_structure,
-                        diffStr :: Diff_structure }
-               | Fair [ScheduledRule]
-
-instance Show TodoList where
- show (Fair srs) = "Todo list: " ++ show srs
- show (Unfair conjs disjs dias diaxs es ars downs diffs)
-   = "Todo lists:" ++ concatMap (\el -> "\n" ++ show (list el)) [conjs, disjs, dias, diaxs, es, ars, downs, diffs]
-
-data ScheduledRule =   SR_Formula PrFormula
-                     | SR_UBlocking Prefix Prefix
-
-instance Show ScheduledRule where
- show (SR_Formula pf)    = show pf
- show (SR_UBlocking i j) = "SR " ++ show (i,j)
-
-emptyTodoList :: CmdLineParams -> TodoList
-emptyTodoList clp =
- if fairStrategy clp
-   then Fair []
-   else Unfair {
-                  conjStr= Set.empty::Conj_structure,
-                  disjStr= Set.empty::Disj_structure,
-                  diaStr = Set.empty::Dia_structure,
-                  diaXStr = Set.empty::DiaX_structure,
-                  existStr = Set.empty::Exist_structure,
-                  atStr = Set.empty::At_structure,
-                  downStr = Set.empty::Down_structure,
-                  diffStr = Set.empty::Diff_structure
-               }
 
 {-
    "add formula(s)" functions, that handle all that is related
@@ -447,15 +393,15 @@ addFormulaBaseCase clp br f@(PrFormula pr ds f2)
 
 addFormula2 :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
 addFormula2 clp br pf@(PrFormula pr _ f) =
-   addFormula3 clp br6 pf
+   addFormula3 clp br5 pf
  where
      br2 = addToBranchTrueForms br pf -- TODO if cache ...
      br3 = if forInclusion br f
              then addToPrefToForms br2 pf
              else br2
      br4 = updatePrefToUev br3 pr f
-     br5 = addToNotPrevPref pr br4 -- TODO if cache ...
-     br6 = addToAugmentedPrefixes pr br5
+     --br5 = addToNotPrevPref pr br4 -- TODO if cache ...
+     br5 = addToAugmentedPrefixes pr br4
 
 addFormula3 :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
 addFormula3 _ br pf@(PrFormula _ _ (Con _))
@@ -554,10 +500,10 @@ namd [] theMap = map (\((p,f),ds) -> PrFormula p ds f) (Map.assocs theMap)
 
 --to fill the new field
 addToBranchTrueForms :: Branch -> PrFormula -> Branch
-addToBranchTrueForms br (PrFormula pre _ f) =
+addToBranchTrueForms br (PrFormula pre dps f) =
   br{branchTrueForms = newMap}
  where currentBtf = branchTrueForms br
-       newMap = Map.insertWith Set.union pre (Set.singleton f) currentBtf
+       newMap = DMap.insertWith dsUnion pre f dps currentBtf
 
 
 addToPrefToForms :: Branch -> PrFormula -> Branch
@@ -941,11 +887,11 @@ addToAugmentedPrefixes :: Prefix -> Branch -> Branch
 addToAugmentedPrefixes pr br = br{incrPrs = (pr:incrPrs br)}
 
 --To keep the prefixes true at b-b1, where b is the current branch, and b1 is prev(b)
-wipeNotPrevPref :: Prefix -> Branch -> Branch
-wipeNotPrevPref p br = br{notPrevPref =[p]}
+setPrevPref :: Branch -> Branch
+setPrevPref br = br{prevPref = prefixes br}
 
-addToNotPrevPref :: Prefix -> Branch -> Branch
-addToNotPrevPref pr br = br{notPrevPref = (pr:notPrevPref  br)}
+-- addToNotPrevPref :: Prefix -> Branch -> Branch
+-- addToNotPrevPref pr br = br{notPrevPref = (pr:notPrevPref  br)}
 
 
 {-     modifications done by rule application     -}
@@ -1226,21 +1172,21 @@ gen_unsat_cache clp f = case caching clp of
                                    in UCache{matrix = gen_matrix c c::UCMatrix,
                                          listsList = []::UCList,--not used in this approach
                                                current_index =(-1):: Int,
-                                               descrip_matrix = Map.empty::UCMap,
+                                               descrip_matrix = Bimap.empty::UCMap,
                                                current_row = (-1) :: Int,
                                                max_row=(c-1) :: Int}
                           Just ListCaching
                                    -> UCache{matrix = gen_matrix 0 0::UCMatrix,--not used in this approach
                                       listsList = []::UCList,
                                             current_index =(-1):: Int,
-                                            descrip_matrix = Map.empty::UCMap,
+                                            descrip_matrix = Bimap.empty::UCMap,
                                             current_row = (-1) :: Int,
                                             max_row=0 :: Int}  --not used in this approach
                           Nothing
                            -> UCache{matrix = gen_matrix 0 0::UCMatrix,--not used in this approach
                                               listsList = []::UCList,
                                               current_index =(-1):: Int,
-                                              descrip_matrix = Map.empty::UCMap,
+                                              descrip_matrix = Bimap.empty::UCMap,
                                               current_row = (-1) :: Int,
                                               max_row=0 :: Int}  --not used in this approach
 

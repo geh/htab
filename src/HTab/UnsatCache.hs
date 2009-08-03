@@ -3,15 +3,17 @@ module HTab.UnsatCache
 where
 
 import Control.Monad.State(put, get)
-
+import HTab.DMap ( DMap(..) )
+import qualified HTab.DMap as DMap
 import qualified Data.Map as Map
+import qualified Data.Bimap as Bimap
+import Data.Set ( Set )
 import qualified Data.Set as Set
 
 import Data.Maybe()
 import Data.List
 import HTab.UCMatrix
 import HTab.UCList
-import Data.Array.Diff
 import HTab.Formula
 import HTab.CommandLine ( Caching(..) )
 import HTab.Branch(BranchInfo(..),Branch(..),BranchMonad, BranchData(..),
@@ -33,14 +35,14 @@ update_cache :: Caching -> Prefix -> Branch -> Bool -> BranchMonad BranchData
 update_cache approach pr br False = 
                         do bd <- get
                            let uc = (unsat_cache bd)
-                           let valid_prefixes = nub (notPrevPref br) --to allow just one repetition of each element
+                           let invalid_prefixes = nub (prevPref br) --to allow just one repetition of each element
                            let ppr = Map.lookup pr (prefParent br) 
                            case ppr of
                                  Nothing -> return bd
-                                 Just p -> if elem p valid_prefixes 
+                                 Just p -> if not (elem p invalid_prefixes )
                                              then do let ds_pr = DS.Prefix p
                                                      let u_p = (getUrfather br ds_pr )
-                                                     let new_uc = update_cache_prefixes approach u_p br uc valid_prefixes
+                                                     let new_uc = update_cache_prefixes approach u_p br uc invalid_prefixes
                                                      put bd{unsat_cache = new_uc}
                                                      return bd{unsat_cache = new_uc}
                                              else return bd
@@ -49,15 +51,15 @@ update_cache approach pr br False =
 update_cache approach pr  br True = 
                         do bd <- get
                            let n_uc = update_cache_ approach pr br (unsat_cache bd)
-                           let valid_prefixes = nub (notPrevPref br) --to allow just one repetition of each element
+                           let invalid_prefixes = nub (prevPref br) --to allow just one repetition of each element
                            let ppr =  Map.lookup pr (prefParent br) 
                            case ppr of
                                  Nothing -> return bd{unsat_cache = n_uc}
-                                 Just p -> if (elem p valid_prefixes )
+                                 Just p -> if not (elem p invalid_prefixes )
                                              then do let ds_pr = DS.Prefix p
                                                      let u_p = (getUrfather br ds_pr )
                                                      let new_new_uc=
-                                                             update_cache_prefixes approach u_p br n_uc valid_prefixes
+                                                             update_cache_prefixes approach u_p br n_uc invalid_prefixes
                                                      put bd{unsat_cache = new_new_uc}
                                                      return bd{unsat_cache = new_new_uc}
                                              else do put bd{unsat_cache = n_uc}
@@ -65,24 +67,24 @@ update_cache approach pr  br True =
 
 
 update_cache_prefixes :: Caching -> Prefix -> Branch -> UCache-> [Prefix] -> UCache
-update_cache_prefixes approach pr br uc vps= 
+update_cache_prefixes approach pr br uc notvps= 
                                     let ds_pr = DS.Prefix pr
                                         u_pr = (getUrfather br ds_pr )
                                         new_uc = update_cache_ approach u_pr br uc
                                         ppr = Map.lookup u_pr (prefParent br) 
                                     in case ppr of
                                           Nothing -> new_uc
-                                          Just p -> if elem p vps
-                                                        then update_cache_prefixes approach p br new_uc vps
+                                          Just p -> if not (elem p notvps)
+                                                        then update_cache_prefixes approach p br new_uc notvps
                                                         else new_uc
 
 update_cache_ :: Caching -> Prefix -> Branch -> UCache-> UCache
 update_cache_ MatrixCaching pr br uc =
-                         let btf1 = Map.lookup pr (branchTrueForms br)
+                         let btf1 = Map.lookup pr (DMap.toMap (branchTrueForms br))
                              branchTrueForms1 = case btf1 of
                                                      Nothing -> []
-                                                     Just btfSet -> Set.toList btfSet
-                             univForms1 = get_univ_forms (univCons br)
+                                                     Just btfSet -> Map.keys btfSet
+                             (univForms1,_) = get_univ_forms (univCons br)
                              univForms = map UniversalC univForms1
                              nonUnivForms = map NonUniversalC (remove_univ branchTrueForms1 univForms1)
                              --nominal formulas
@@ -90,7 +92,7 @@ update_cache_ MatrixCaching pr br uc =
                              nomsU = getNoms univForms1
                              nomsFU = Set.union nomsF nomsU
                              noms = sort(Set.toList nomsFU)
-                             nominalForms = get_nominal_forms noms br
+                             (nominalForms,_) = get_nominal_forms noms br
                              --concatenat NonUniversalC, UniversalC and Nominal formulas
                              cacheForms = nonUnivForms ++ univForms ++ nominalForms
                              descMat = (descrip_matrix uc)
@@ -108,20 +110,20 @@ update_cache_ MatrixCaching pr br uc =
 
 
 update_cache_ ListCaching pr br uc =
-                         let btf1 = Map.lookup pr (branchTrueForms br)
+                         let btf1 = Map.lookup pr (DMap.toMap (branchTrueForms br))
                              branchTrueForms1 = case btf1 of
                                                      Nothing -> []
-                                                     Just btfSet -> Set.toList btfSet
+                                                     Just btfSet -> Map.keys btfSet
                              nonUnivForms = map NonUniversalC (remove_univ branchTrueForms1 univForms1)
                              --UniversalC formulas
-                             univForms1 = get_univ_forms (univCons br)
+                             (univForms1,_) = get_univ_forms (univCons br)
                              univForms = map UniversalC univForms1
                              --nominal formulas
                              nomsF = getNoms branchTrueForms1
                              nomsU = getNoms univForms1
                              nomsFU = Set.union nomsF nomsU
                              noms = sort(Set.toList nomsFU)
-                             nominalForms = get_nominal_forms noms br
+                             (nominalForms,_) = get_nominal_forms noms br
                              --concatenat NonUniversalC, UniversalC and Nominal formulas
                              cacheForms = nonUnivForms ++ univForms ++ nominalForms
                              descMat = (descrip_matrix uc)
@@ -142,25 +144,29 @@ getNoms (f:rest)=
         in Set.union allNomsU restNoms
 getNoms [] = Set.empty
 
-get_nominal_forms:: [NomSymbol] -> Branch -> [UCFormula]
+get_nominal_forms:: [NomSymbol] -> Branch -> ([UCFormula],DependencySet)
 get_nominal_forms (n:rest) br = 
                 let ds_n =  (DS.Nominal (showNom n))
                     uf_n = getUrfather br ds_n 
-                    btf = Map.lookup uf_n (branchTrueForms br)
+                    btf = Map.lookup uf_n (DMap.toMap (branchTrueForms br))
                     btf_list = case btf of
                                  Nothing -> []
-                                 Just btfSet -> Set.toList btfSet
+                                 Just btfSet -> Map.keys btfSet
+                    dps = case btf of
+                                Nothing -> dsEmpty
+                                Just btfSet -> dsUnions $ Map.elems btfSet
+                    
                     btf_listNom = map (NominalC n) btf_list
-                in concat[btf_listNom,restBtf]
-                where restBtf = get_nominal_forms rest br
-get_nominal_forms [] _ = []
+                in (concat[btf_listNom,restBtf],dsUnion dps rest_dps)
+                where (restBtf,rest_dps) = get_nominal_forms rest br
+get_nominal_forms [] _ = ([],dsEmpty)
 
 
 --to get the universally constrained formulas
-get_univ_forms :: Univ_constraints -> [Formula]
-get_univ_forms ((_,f):rest)= let tail_u = get_univ_forms rest
-                             in (f:tail_u)
-get_univ_forms []=[]
+get_univ_forms :: Univ_constraints -> ([Formula],DependencySet)
+get_univ_forms ((dps,f):rest)= let (tail_u,tail_dps) = get_univ_forms rest
+                               in ((f:tail_u),dsUnion dps tail_dps)
+get_univ_forms []=([],dsEmpty)
 
 remove_univ :: [Formula] -> [Formula] -> [Formula] 
 remove_univ (nuf:tail_nuf) univ_forms =
@@ -210,11 +216,11 @@ search_cache_ _ [] _ bd = (branch_info bd)
 --to detect a cache hit for a prefix and a branch
 search_cache_pr :: Caching -> Prefix -> Branch -> BranchData -> BranchInfo
 search_cache_pr MatrixCaching pr br bd
-                          = let btf1 = Map.lookup pr (branchTrueForms br)
+                          = let btf1 = Map.lookup pr (DMap.toMap (branchTrueForms br))
                                 branchTrueForms1 = case btf1 of
                                                         Nothing -> []
-                                                        Just btfSet -> Set.toList btfSet
-                                univForms1 = get_univ_forms (univCons br)
+                                                        Just btfSet -> Map.keys btfSet
+                                (univForms1,_) = get_univ_forms (univCons br)
                                 univForms = map UniversalC univForms1
                                 nonUnivForms = map NonUniversalC (remove_univ branchTrueForms1 univForms1)
                                 --nominal formulas
@@ -222,29 +228,32 @@ search_cache_pr MatrixCaching pr br bd
                                 nomsU = getNoms univForms1
                                 nomsFU = Set.union nomsF nomsU
                                 noms = sort(Set.toList nomsFU)
-                                nominalForms = get_nominal_forms noms br
+                                (nominalForms,_) = get_nominal_forms noms br
                                 --concatenat NonUniversalC, UniversalC and Nominal formulas
                                 cacheForms = nonUnivForms ++ univForms ++ nominalForms
                                 us = (unsat_cache bd)
                                 c_i = (current_index us)
                                 m_r = (max_row us)
                                 mat = (matrix us)
-                                (_, indexes,_) = get_indexes_list (descrip_matrix us) cacheForms c_i False
+                                de = (descrip_matrix us)
+                                (_, indexes,_) = get_indexes_list de cacheForms c_i False
                                 sort_indexes = (sort(nub indexes))
                             in if do_search sort_indexes
                                   then let r = (superset_matching 0 m_r c_i sort_indexes mat)
                                        in case r of
-                                               Nothing -> (branch_info bd)
-                                               Just _  -> (BranchClash br pr dsEmpty (neg taut)) 
+                                               Nothing      -> (branch_info bd)
+                                               Just new_ind -> let new_form_list = get_new_formula_list  new_ind de
+                                                                   dps = get_dps new_form_list br pr
+                                                               in (BranchClash br pr dps (neg taut))
                                   else (branch_info bd)
 
 search_cache_pr ListCaching pr br bd
-                          = let btf1 = Map.lookup pr (branchTrueForms br)
+                          = let btf1 = Map.lookup pr (DMap.toMap (branchTrueForms br))
                                 branchTrueForms1 = case btf1 of
                                                         Nothing -> []
-                                                        Just btfSet -> Set.toList btfSet
+                                                        Just btfSet -> Map.keys btfSet
                                 --UniversalC formulas
-                                univForms1 = get_univ_forms (univCons br)
+                                (univForms1,_) = get_univ_forms (univCons br)
                                 univForms = map UniversalC univForms1
                                 nonUnivForms = map NonUniversalC (remove_univ branchTrueForms1 univForms1)
                                 --nominal formulas
@@ -252,7 +261,7 @@ search_cache_pr ListCaching pr br bd
                                 nomsU = getNoms univForms1
                                 nomsFU = Set.union nomsF nomsU
                                 noms = sort(Set.toList nomsFU)
-                                nominalForms = get_nominal_forms noms br
+                                (nominalForms,_) = get_nominal_forms noms br
                                 cacheForms = nonUnivForms ++ univForms ++ nominalForms
                                 us = (unsat_cache bd)
                                 c_i = (current_index us)
@@ -263,9 +272,54 @@ search_cache_pr ListCaching pr br bd
                             in if do_search sort_indexes
                                   then let r = (superset_matching_list 0 sort_indexes li)
                                        in case r of
-                                               Nothing -> (branch_info bd)
-                                               Just _  -> (BranchClash br pr dsEmpty (neg taut)) 
+                                               Nothing      -> (branch_info bd)
+                                               Just new_ind -> let new_form_list = get_new_formula_list  new_ind de
+                                                                   dps = get_dps new_form_list br pr
+                                                               in (BranchClash br pr dps (neg taut))
                                   else (branch_info bd)
+
+
+
+--receives the list of indexes of formulas in the cache, and the bidireccional map,
+-- and returns the list of formulas corresponding to this list of indexes
+get_new_formula_list :: [Int] -> UCMap -> [UCFormula]
+get_new_formula_list (i:rest) inv_desc = 
+        (f:restF) 
+        where f' = Bimap.lookupR i inv_desc 
+              f = case f' of
+                    Nothing -> NonUniversalC (neg taut)
+                    Just x -> x
+              restF = get_new_formula_list rest inv_desc 
+get_new_formula_list [] _  = []
+
+--to get the dependency set corresponding to a list of UCFormulas
+get_dps::[UCFormula] -> Branch -> Prefix -> DependencySet
+get_dps (UniversalC form: restForms) br pr= 
+                                let dps= get_dps_fU (univCons br) form
+                                in dsUnion dps (get_dps restForms br pr)
+
+get_dps (NominalC n form: restForms) br pr= let ds_n =  (DS.Nominal (showNom n))
+                                                uf_n = getUrfather br ds_n 
+                                                dps1 = DMap.lookup uf_n form (branchTrueForms br)
+                                                dps = case dps1  of
+                                                         Nothing -> dsEmpty
+                                                         Just d -> d
+                                            in dsUnion dps (get_dps restForms br pr)
+
+get_dps (NonUniversalC form: restForms) br pr = let dps1 = DMap.lookup pr form (branchTrueForms br)
+                                                    dps = case dps1  of
+                                                             Nothing -> dsEmpty
+                                                             Just d -> d
+                                                in dsUnion dps (get_dps restForms br pr)
+
+get_dps [] _ _ = dsEmpty
+
+get_dps_fU :: Univ_constraints -> Formula -> DependencySet
+get_dps_fU ((dps,f):rest) fo= if f==fo 
+                                then dps
+                                else get_dps_fU rest fo
+get_dps_fU [] _ = dsEmpty
+
 
 -----------------------------------------------------------------------------------
 ---------------Mapping Structure functions------------------------------------------
@@ -274,19 +328,18 @@ search_cache_pr ListCaching pr br bd
 updateDesc :: UCMap -> UCFormula -> Int -> (Int,UCMap)
 updateDesc mapDes f cu_index = 
         let new_index = cu_index + 1
-            new_mapDes = (Map.insert f new_index mapDes)
+            new_mapDes = (Bimap.insert f new_index mapDes)
         in (new_index,new_mapDes)
 
 --if the method was called from update cache, then it updates the description map,
 --otherwise (invoqued from a search) it just returns -1
 get_index :: UCMap -> Bool -> UCFormula -> Int -> (Int,Int,UCMap)
 get_index mapDes upd f c_i= 
-             let find_index = Map.lookup f  mapDes
+             let find_index = Bimap.lookup f  mapDes
              in case find_index  of
                   Nothing -> if upd
                                 then let (n_i,new_mapDes) = updateDesc mapDes f c_i
                                      in (n_i, n_i, new_mapDes)
-                                        
                                 else (-1, c_i, mapDes)
                   Just i -> (i, c_i, mapDes)
 
@@ -298,80 +351,14 @@ get_indexes_list descMat (f:fs) c_i udp =
          (new_ci,is,new_mapDes) = get_indexes_list aux_mapDes fs aux_ci udp
 get_indexes_list descMat [] c_i _ = (c_i,[],descMat)
 
+
+
 do_search :: [Int] -> Bool
 do_search (i:is) = if i== (-1) 
                            then False
                            else do_search is
 
 do_search [] = True
-
-------------------------------------------------------------------------------------
-------------------------------MatrixFunctions---------------------------------------
-------------------------------------------------------------------------------------
-add_row :: Int -> Int -> Int
-add_row old_current_row mrow = 
-        if old_current_row <  mrow
-                then old_current_row + 1
-                else 0
-
-update_matrix :: Int -> Int -> Int -> [Int] -> UCMatrix -> (Int,UCMatrix)
-update_matrix cu_col cu_row ma_row indexes mat =
-        case (subset_matching cu_row 0 ma_row cu_col indexes mat) of
-             Nothing -> case (superset_matching 0 ma_row cu_col indexes mat) of
-                          Nothing -> let new_current_row = (add_row cu_row ma_row)
-                                         ma2 = update_row new_current_row 0 cu_col indexes  mat
-                                     in (new_current_row, ma2)
-                          Just _ -> (cu_row,mat)  --if it is a superset of an aready existing row, don't add it 
-             Just i -> let ma1 = (update_row i 0 cu_col indexes  mat)
-                       in (cu_row,ma1)
-
---update the row (entered in the first parameter) of the matrix 
---with the information in the indexes (the fourth paramter):
---for each column of the matrix: 
---if column in list of indexes then matrix(row,column)= True
---else matrix(row,column) = False
-update_row ::  Int -> Int -> Int -> [Int] -> UCMatrix-> UCMatrix
-update_row row col max_col (i:rest) m =
-        if col <= max_col
-        then if col == i 
-                then if m !(row,col) == False
-                     then let new_matrix = m //[((row,col),True)]
-                          in update_row row (col+1) max_col rest new_matrix
-                     else update_row row (col+1) max_col rest m
-                else if m !(row,col) == True 
-                     then let new_matrix = m //[((row,col),False)]
-                          in update_row row (col+1) max_col (i:rest) new_matrix
-                     else update_row row (col+1) max_col (i:rest) m
-        else m
-update_row row col max_col [] m =
-        if col <= max_col
-        then if m !(row,col) == True 
-                then let new_matrix = m //[((row,col),False)]
-                     in update_row row (col+1) max_col [] new_matrix
-                else update_row row (col+1) max_col [] m
-        else m
-
------------------------------------------------------------------------
---                        Lists Function                                    ---
------------------------------------------------------------------------
-
-update_list:: [Int] -> UCList -> UCList
-update_list indexes li = 
-        case (subset_matching_list 0 indexes li) of
-          Just i -> (update_row_list i indexes li)
-          Nothing -> case superset_matching_list 0 indexes li of
-                        Just _ -> li --if indexes is a superset of a row, don't update
-                        Nothing -> (add_row_list indexes li)
-
-update_row_list::Int -> [Int] -> UCList -> UCList
-update_row_list ind indexes li = 
-        let pre = take ind li
-            suf = drop (ind + 1) li
-            new_li = pre ++ suf
-        in (indexes:new_li)
-
-add_row_list :: [Int] -> UCList -> UCList
-add_row_list indexes li = (indexes:li)
 
 
 -----------------------------------------------------------------------
