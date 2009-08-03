@@ -42,6 +42,7 @@ data CmdLineParams = CLP {
            backJumping     :: Bool,
            genModel        :: Maybe FilePath,
            quietMode       :: Bool,
+           showFormula     :: Bool,
            inclBlockGlobal :: Bool,
            inclBlockChain  :: Bool,
            caching         :: Maybe Caching,
@@ -77,6 +78,10 @@ options =
           ["quiet", "silent"]
           (NoArg $ \c -> return c{quietMode = True})
           "suppress all normal output",
+   Option []
+         ["show-formula"]
+          (NoArg $ \c -> return c{showFormula = True})
+          "display the input formula(s)",
    Option ['t']
           ["timeout"]
           (ReqArg setTimeout "T")
@@ -226,6 +231,7 @@ defaultParams = CLP {showHelp = False,
                      backJumping = True,
                      genModel    = Nothing,
                      quietMode   = False,
+                     showFormula = False,
                      inclBlockGlobal = False,
                      inclBlockChain  = True,
                      caching     = Nothing,

@@ -4,7 +4,7 @@ module HTab.Main
 
 where
 import Control.Applicative ( (<$>) )
-import Control.Monad       ( unless )
+import Control.Monad       ( unless, when )
 import Control.Monad.State( runStateT )
 
 import System.IO           ( hSetBuffering, stdin, BufferMode(LineBuffering)) 
@@ -13,7 +13,7 @@ import System.CPUTime( getCPUTime )
 import HyLo.InputFile.Parser ( QueryType(..) )
 
 import HTab.CommandLine( filename, maxtimeout, CmdLineParams, logState, genModel,
-                         configureMetrics, quietMode, simpleInput )
+                         configureMetrics, quietMode, simpleInput, showFormula )
 import HTab.Branch( BranchInfo(..),initialBranchStateFor,BranchMonad, BranchData(..),
                     emptyBranch, addFirstFormulas,gen_unsat_cache,UCache )
 import HTab.Statistics( Statistics, initialStatisticsStateFor, printOutAllMetrics' )
@@ -95,7 +95,7 @@ runOneTask (query,mOutFile,fs) relInfo theory clp ts=
      --
      let f = case query of { Valid -> encodeValidityTest relInfo theory fs ; Satisfiable -> encodeSatTest relInfo theory fs}
      --
-     f `seq` myPutStrLn ("\nInput for SAT test:\n{ " ++ show f ++ " }\nEnd of input\n")
+     f `seq` when (showFormula clp) $ myPutStrLn ("\nInput for SAT test:\n{ " ++ show f ++ " }\nEnd of input\n")
      --
      let fLang         = formulaLanguageInfo f
      let initialBranch = emptyBranch clp fLang relInfo
