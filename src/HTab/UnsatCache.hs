@@ -3,7 +3,6 @@ module HTab.UnsatCache
 where
 
 import Control.Monad.State(put, get)
-import HTab.DMap ( DMap(..) )
 import qualified HTab.DMap as DMap
 import qualified Data.Map as Map
 import qualified Data.Bimap as Bimap
