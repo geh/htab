@@ -354,7 +354,19 @@ addFormula clp br f@(PrFormula pr fDs f2@(Lit (PosLit (N (NomSymbol n))))) histo
                           mapAccBwd = map (Map.fromList . (getIncomingLinks (accStr br))) [ur1,ur2]
                           formulasToSend1 = concatMap (newFormulasToSend fDs) $ almostCartesianProduct mapBoxFwd mapAccFwd
                           formulasToSend2 = concatMap (newFormulasToSend fDs) $ almostCartesianProduct mapBoxBwd mapAccBwd
-                          formulasToSend  = formulasToSend1 ++ formulasToSend2
+
+                          functionalityNominalToSend = addFNom $ filter ((isFunctional (relInfo br)) . fst) $ getOutgoingLinks (accStr br) oldUr
+                               where addFNom :: [(Rel, [(Prefix,DependencySet)])] -> [PrFormula]
+                                     addFNom = concatMap (\(r,pds) ->
+                                                            map (\(p,ds) -> PrFormula p (dsUnion ds fDs) (funcNominal r newUr)) pds
+                                                         )
+                          injectivityNominalsToSend  = addINom $ filter ((isInjective  (relInfo br)) . fst) $ getIncomingLinks (accStr br) oldUr
+                               where addINom :: [(Rel, [(Prefix,DependencySet)])] -> [PrFormula]
+                                     addINom = concatMap (\(r,pds) ->
+                                                            map (\(p,ds) -> PrFormula p (dsUnion ds fDs) (injNominal r newUr)) pds
+                                                         )
+
+                          formulasToSend  = formulasToSend1 ++ formulasToSend2 ++ functionalityNominalToSend ++ injectivityNominalsToSend
 
                           newPrefToUevFwd
                            = if hasTransClos br
@@ -652,12 +664,18 @@ boxXAlreadyDone _ _ _ = error "boxX already done : wrong formula kind"
 addAccFormula :: CmdLineParams -> Branch -> AccFormula -> BranchInfo
 addAccFormula clp br (AccFormula ds (RelSymbol r) p1_ p2_)
  = addFormulas clp newBr toAdd []
-   where toAdd = transApplications ++ boxApplications
+   where toAdd = transApplications ++ funcApplications ++ injApplications ++ boxApplications
          transApplications = if isTransitive (relInfo br) (RelSymbol r)
                               then
                                (  ( map (\(ds2,f) -> PrFormula p2 (dsUnion ds ds2) (Box (RelSymbol r) f)) toSendFwd )
                                ++ ( map (\(ds2,f) -> PrFormula p1 (dsUnion ds ds2) (Box (RelSymbol r) f)) toSendBwd )  )
                               else []
+         funcApplications = if isFunctional (relInfo br) r
+                             then [PrFormula p2 ds (funcNominal r p1)] -- add nominal to destination
+                             else []
+         injApplications = if isInjective (relInfo br) r
+                            then [PrFormula p1 ds (injNominal r p1)] -- add nominal to origin
+                            else []
          boxApplications =  (  ( map (\(ds2,f) -> PrFormula p2 (dsUnion ds ds2) f) toSendFwd )
                             ++ ( map (\(ds2,f) -> PrFormula p1 (dsUnion ds ds2) f) toSendBwd )  )
          p1 = getUrfather br (DS.Prefix p1_)
@@ -672,6 +690,16 @@ addAccFormula clp br (AccFormula ds (InvRelSymbol r) p1_ p2_ ) -- so, create p2<
 insertRelationBranch :: Branch -> Prefix -> Rel -> Prefix -> DependencySet -> Branch
 insertRelationBranch br p1 r p2 ds
  = br{accStr = insertRelation (accStr br) p1 r p2 ds}
+
+{-  functional relations  -}
+
+funcNominal :: Rel -> Prefix -> Formula
+funcNominal r p = nom $ NomSymbol $ "f_" ++ r ++ show p
+
+{-  injective relations  -}
+
+injNominal :: Rel -> Prefix -> Formula
+injNominal r p = nom $ NomSymbol $ "i_" ++ r ++ show p
 
 {-  functions related to blocking conditions and model building -}
 
@@ -1258,20 +1286,25 @@ hasTransClos br = languageTrans $ inputLanguage br
 prefixes :: Branch -> [Prefix]
 prefixes br = [0..(lastPref br)]
 
+hasProperty :: RelInfo -> RelSymbol -> RelProperties -> Bool
+hasProperty relI r p = case List.lookup r relI of
+                        Nothing         -> False
+                        Just properties -> p `elem` properties
+
 isReflexive :: RelInfo -> RelSymbol -> Bool
-isReflexive relI r = case List.lookup r relI of
-                      Nothing         -> False
-                      Just properties -> Reflexive `elem` properties
+isReflexive relI r = hasProperty relI r Reflexive
 
 isSymmetric :: RelInfo -> RelSymbol -> Bool
-isSymmetric relI r = case List.lookup r relI of
-                      Nothing         -> False
-                      Just properties -> Symmetric `elem` properties
+isSymmetric relI r = hasProperty relI r Symmetric
 
 isTransitive :: RelInfo -> RelSymbol -> Bool
-isTransitive relI r = case List.lookup r relI of
-                       Nothing         -> False
-                       Just properties -> Transitive `elem` properties
+isTransitive relI r = hasProperty relI r Transitive
+
+isFunctional :: RelInfo -> Rel -> Bool
+isFunctional relI r = hasProperty relI (RelSymbol r) Functional
+
+isInjective :: RelInfo -> Rel -> Bool
+isInjective relI r = hasProperty relI (RelSymbol r) Injective
 
 {-      Monad related stuff      -}
 
