@@ -1,5 +1,5 @@
 module HTab.UnsatCache 
-(update_cache,search_cache)
+(update_cache,search_cache,CachingInstance(..))
 where
 
 import Control.Monad.State(put, get)
@@ -17,60 +17,71 @@ import HTab.Formula
 import HTab.CommandLine ( Caching(..) )
 import HTab.Branch(BranchInfo(..),Branch(..),BranchMonad, BranchData(..),
                    UCache(..),Univ_constraints,AugmentedPrefixes,UCMap,
-                   getUrfather)
+                   getUrfather,
+                   del_pref_disjunctPrefixes, search_disjunctPrefixes)
 import qualified HTab.DisjSet as DS
 
 
 --import Debug.Trace
 
+data CachingInstance = Cclash | Cdisjunct deriving Show
 ---------------------------------------------------
 --cache
 --------------------------------------------------
 
 ------------update--------------------------------
 --given the input prefix, get the parents and call to update cache 
-update_cache :: Caching -> Prefix -> Branch -> Bool -> BranchMonad BranchData
+update_cache :: Caching -> Prefix -> Branch -> CachingInstance -> BranchMonad BranchData
 --when calling from a clash, don't add into the cache the info from the clashing prefix
-update_cache approach pr br False = 
+update_cache approach pr1 br Cclash = 
                         do bd <- get
                            let uc = (unsat_cache bd)
-                           let invalid_prefixes = nub (prevPref br) --to allow just one repetition of each element
-                           let ppr = Map.lookup pr (prefParent br) 
+                           let invalid_prefixes =  nub (prevPref br) --to allow just one repetition of each element
+                           let old_disPr = (disjunctPrefixes bd)
+                           let new_disPr = (del_pref_disjunctPrefixes  br pr1 old_disPr)
+                           let ppr = Map.lookup pr1 (prefParent br) 
                            case ppr of
-                                 Nothing -> return bd
+                                 Nothing -> do put bd{disjunctPrefixes = new_disPr}
+                                               return bd{disjunctPrefixes = new_disPr}
                                  Just p -> if not (elem p invalid_prefixes )
-                                             then do let ds_pr = DS.Prefix p
-                                                     let u_p = (getUrfather br ds_pr )
-                                                     let new_uc = update_cache_prefixes approach u_p br uc invalid_prefixes
-                                                     put bd{unsat_cache = new_uc}
-                                                     return bd{unsat_cache = new_uc}
-                                             else return bd
+                                             then do let new_uc = update_cache_prefixes approach p br uc invalid_prefixes
+                                                     put bd{unsat_cache = new_uc,                                                       disjunctPrefixes = new_disPr}
+                                                     return bd{unsat_cache = new_uc,                                                           disjunctPrefixes = new_disPr}
+                                             else do put bd{disjunctPrefixes = new_disPr}
+                                                     return bd{disjunctPrefixes = new_disPr}
 
 --when calling after backtracking from the application of a disjunct rule, add the info from the first prefix
-update_cache approach pr  br True = 
-                        do bd <- get
-                           let n_uc = update_cache_ approach pr br (unsat_cache bd)
+update_cache approach pr1  br Cdisjunct = 
+               do bd <- get
+                  let ds_pr =  (DS.Prefix pr1)
+                  let pr = (getUrfather br ds_pr )
+                  let d_p = (disjunctPrefixes bd)
+                  let add_cache = (search_disjunctPrefixes pr1 d_p)
+                  if add_cache 
+                   then do let n_uc = update_cache_ approach pr br (unsat_cache bd)
                            let invalid_prefixes = nub (prevPref br) --to allow just one repetition of each element
-                           let ppr =  Map.lookup pr (prefParent br) 
+                           let ppr =  Map.lookup pr1 (prefParent br) 
                            case ppr of
                                  Nothing -> return bd{unsat_cache = n_uc}
                                  Just p -> if not (elem p invalid_prefixes )
-                                             then do let ds_pr = DS.Prefix p
-                                                     let u_p = (getUrfather br ds_pr )
-                                                     let new_new_uc=
-                                                             update_cache_prefixes approach u_p br n_uc invalid_prefixes
+                                             then do let new_new_uc=
+                                                             update_cache_prefixes approach p br n_uc invalid_prefixes
                                                      put bd{unsat_cache = new_new_uc}
                                                      return bd{unsat_cache = new_new_uc}
                                              else do put bd{unsat_cache = n_uc}
                                                      return bd{unsat_cache = n_uc}
+                    else return bd
+                           
 
+
+                                                                        
 
 update_cache_prefixes :: Caching -> Prefix -> Branch -> UCache-> [Prefix] -> UCache
 update_cache_prefixes approach pr br uc notvps= 
                                     let ds_pr = DS.Prefix pr
                                         u_pr = (getUrfather br ds_pr )
                                         new_uc = update_cache_ approach u_pr br uc
-                                        ppr = Map.lookup u_pr (prefParent br) 
+                                        ppr = Map.lookup pr (prefParent br) 
                                     in case ppr of
                                           Nothing -> new_uc
                                           Just p -> if not (elem p notvps)
@@ -364,5 +375,5 @@ do_search [] = True
 ---------------------------debugging----------------------------------
 -----------------------------------------------------------------------
 
---debug :: Show a => a -> a
---debug x = trace (show x) x
+-- debug :: Show a => a -> a
+-- debug x = trace (show x) x

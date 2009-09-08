@@ -152,7 +152,8 @@ tableauInit bi clp ts uc=
                             branch_clp  = clp,
                             branch_path = [0],
                             timeout_signal = ts,
-			    unsat_cache = uc
+			    unsat_cache = uc,
+                            disjunctPrefixes = []
 			    }
 
 tableauStart :: CmdLineParams -> BranchMonad OpenFlag

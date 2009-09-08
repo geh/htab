@@ -24,8 +24,11 @@ calculateStepInfo, BlockingMode(..), diaAlreadyDone, diaXAlreadyDone,
 downAlreadyDone, incPropSymbol, incNomSymbol,
 UCache(..),Univ_constraints,AugmentedPrefixes,UCMap,BranchTrueForms,gen_unsat_cache,setPrevPref,
 collectUevBprs, ReducedDisjunct(..), newNomBaseName, newPropBaseName, getUnappliedUBPairs,
-isReflexive, isSymmetric, isTransitive
+isReflexive, isSymmetric, isTransitive,
+del_pref_disjunctPrefixes, del_level_disjunctPrefixes, search_disjunctPrefixes,DisjunctPrefixes
 ) where
+
+--import Debug.Trace
 
 import Control.Monad.State(StateT, MonadState)
 import Data.List(delete, minimumBy)
@@ -114,6 +117,8 @@ type BranchTrueForms = DMap Prefix Formula DependencySet
 type UCMap = Bimap.Bimap UCFormula Int 
 --The unsat cache, includes two data structure to allow us to choose any of them.
 --once chosen a data structure, the other is kept emptied
+type DisjunctPrefixes = [(Int,Prefix)]
+
 data UCache = UCache { matrix :: UCMatrix, --the bit matrix 
                        listsList :: UCList, --list apporach
                        current_index :: Int,  
@@ -1357,7 +1362,8 @@ data BranchData = BranchData { branch_info :: BranchInfo,
                                branch_path :: [Int],
                                timeout_signal :: TimeoutSignal,
                                ------unsat cache info-------
-                               unsat_cache :: UCache}
+                               unsat_cache :: UCache,
+                               disjunctPrefixes::DisjunctPrefixes}
 
 type BranchMonad a = StateT BranchData (StateT Statistics IO) a
 
@@ -1370,3 +1376,50 @@ addZeroInPath bd = bd{branch_path=(0:(branch_path bd))}
 incPathHead :: BranchData -> BranchData
 incPathHead bd = bd{branch_path=(( head (branch_path bd) + 1 ):(tail $ branch_path bd))}
 
+-- 
+
+getAllParents_without_urfather :: Branch -> Prefix -> [Prefix]
+getAllParents_without_urfather br pr = (pr:rest)
+       where rest = case Map.lookup pr (prefParent br) of
+                      Nothing     -> []
+                      Just parent -> getAllParents_without_urfather br parent
+                               
+
+
+search_disjunctPrefixes :: Prefix -> DisjunctPrefixes  -> Bool
+search_disjunctPrefixes  p plist = any (\(_,pd) -> p==pd) plist
+-- search_disjunctPrefixes br p ((_,pd):t) = if (p == pd)
+--                                               then True
+--                                               else search_disjunctPrefixes br p t
+
+
+test_level :: Int -> (Int,Prefix) -> Bool
+test_level cur_lev (lev, _) = cur_lev >= lev
+
+del_level_disjunctPrefixes :: Int -> DisjunctPrefixes  -> DisjunctPrefixes  
+del_level_disjunctPrefixes lev list_p = filter (test_level lev) list_p
+
+-- test_prefix_acc ::  [Prefix] -> (Int,Prefix) -> Bool
+-- test_prefix_acc all_parents (_,p) = 
+--             elem p all_parents -- check if the urfather of the ancestor is in the list of all parents.
+
+
+                       
+del_pref_disjunctPrefixes :: Branch -> Prefix -> DisjunctPrefixes -> DisjunctPrefixes 
+del_pref_disjunctPrefixes br pr_clash disjunctPrefixes_list = 
+                    let all_parents =  (getAllParents_without_urfather br pr_clash )
+                    in  filter (\(_,pd) -> (elem pd all_parents)) disjunctPrefixes_list
+                    
+--                     in  filter (test_prefix_acc all_parents) disjunctPrefixes_list
+
+
+
+
+
+
+-----------------------------------------------------------------------
+---------------------------debugging----------------------------------
+-----------------------------------------------------------------------
+
+-- debug :: Show a => a -> a
+-- debug x = trace (show x) x

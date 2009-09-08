@@ -8,7 +8,8 @@ import HTab.Statistics(updateStep,printOutInspectionMetrics,
                        recordClosedBranch, recordCacheHit, recordFiredRule)
 import HTab.Branch(BranchInfo(..),Branch(..),BranchMonad, BranchData(..),branch_depth,
                    addZeroInPath, incPathHead, calculateStepInfo, collectUevBprs,
-                   getBranch,getUrfather,setPrevPref )
+                   getBranch,setPrevPref,
+                   del_pref_disjunctPrefixes, del_level_disjunctPrefixes,DisjunctPrefixes)
 import HTab.CommandLine(logState,backJumping,caching,CmdLineParams)
 import HTab.Rules(Rule,applyRule,
                   applicableRules,ruleToId,
@@ -21,7 +22,7 @@ import HTab.UnsatCache
 
 --import Debug.Trace
 
-import qualified HTab.DisjSet as DS
+-- import qualified HTab.DisjSet as DS
 
 data OpenFlag = OPEN Model | CLOSED DependencySet | TIMEOUT
 
@@ -43,10 +44,8 @@ tableau =
                          -- update the cache
                          case caching $ clp of
                              Just caching_approach
-                                    -> do let ds_pr =  (DS.Prefix pr)
-                                          let u_pr = (getUrfather br ds_pr )
-                                          _ <- update_cache caching_approach u_pr br False
-                                          debugMsg_BranchClash1 br u_pr dsEmpty 1
+                                    -> do _ <- update_cache caching_approach pr br Cclash
+                                          debugMsg_BranchClash1 br pr dsEmpty 1
                                           return (CLOSED bprs)
                              Nothing -> return (CLOSED bprs)
                      BranchOK br_ ->
@@ -74,7 +73,10 @@ tableau =
                                      BranchClash br1 pr1 bprs1 _ ->
                                          do --we found a hit: update branch data to reflect the closed branch... 
                                             debugMsg_BranchClash1 br1 pr1 bprs1 0--TODO see should I add this line?
-                                            put bd{branch_info = new_bi}
+                                            let new_disjunctPrefixes = del_pref_disjunctPrefixes br1 pr1 (disjunctPrefixes bd)
+                                            modify (update_clash_hit new_disjunctPrefixes new_bi)
+                                            --put bd{branch_info = new_bi,
+                                              --     disjunctPrefixes = new_disjunctPrefixes}
                                             liftStats $ recordClosedBranch
                                             liftStats $ recordCacheHit
                                             return (CLOSED bprs1)
@@ -95,19 +97,21 @@ tableau =
                                                                 case pref_dis_rule of
                                                                   Nothing -> possibleBranches'
                                                                   Just _ -> setPrevPrefInBranch possibleBranches'
+                                                           set_disjointPrefixes currentBranchingDepth pref_dis_rule 
                                                            modify addZeroInPath
                                                            result_branching <- chooseBranch possibleBranches
                                                            --if rule is a disjunction rule and if the result 
                                                            --of chooseBranch is closed, then update the cache 
                                                            case pref_dis_rule of 
-                                                             Nothing -> return result_branching
-                                                             Just p -> 
+                                                            Nothing -> return result_branching
+                                                            Just p -> 
+                                                             do bd <- get --see try to avoid this get... ale
+                                                                let new_d = del_level_disjunctPrefixes currentBranchingDepth (disjunctPrefixes bd) 
+                                                                modify (delete_levels new_d)
                                                                 case result_branching of 
                                                                   c@(CLOSED bprs) ->
-                                                                     do let ds_pr =  (DS.Prefix p)
-                                                                        let u_p = (getUrfather br ds_pr )
-                                                                        _ <- update_cache caching_approach u_p br True
-                                                                        debugMsg_BranchClash1 br u_p bprs 2
+                                                                     do _ <- update_cache caching_approach p br Cdisjunct
+                                                                        debugMsg_BranchClash1 br p bprs 2
                                                                         return c
                                                                   TIMEOUT -> return TIMEOUT
                                                                   o@(OPEN _)  -> return o
@@ -130,7 +134,9 @@ chooseBranch_ currentDepSet (hd:tl) =
              Nothing -> return bd' 
              _ ->  do auxbd <-get
                       let unsatC = (unsat_cache auxbd)
-                      return bd'{unsat_cache= unsatC} 
+                      let old_disPr = (disjunctPrefixes auxbd)
+                      return bd'{unsat_cache= unsatC,
+                                 disjunctPrefixes = old_disPr} 
 
     let currentBranchingDepth = (branch_depth bd) 
     let backjump = (not $ languageTrans $ inputLanguage $ getBranch $ branch_info bd) && (backJumping $ branch_clp bd) -- disable backjumping in presence of transitive closure
@@ -187,8 +193,9 @@ debugMsg_BranchClash1 br pr dps n =
     let showState = logState $ branch_clp bd
     let ucache = (unsat_cache bd)
     let path = (branch_path bd)
+    let d_p = (disjunctPrefixes bd)
     let currentBranchingDepth = branch_depth bd
-    liftIO $ vPutStrLn (show br ++ "\nUC Clasher : " ++ show (pr,dps,currentBranchingDepth,n,path,ucache)) showState
+    liftIO $ vPutStrLn (show br ++ "\nUC Clasher : " ++ show (pr,dps,currentBranchingDepth,n,path,ucache,d_p)) showState
 
 
 debugMsg_BranchOK :: Branch -> BranchMonad ()
