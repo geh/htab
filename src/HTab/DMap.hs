@@ -63,6 +63,11 @@ lookup1 k1 (DMap m) = Map.lookup k1 m
 delete :: (Ord a) => a -> DMap a b c -> DMap a b c
 delete k1 (DMap m) = DMap $ Map.delete k1 m
 
+lookupInter :: (Ord a) => a -> DMap a b c -> [b]
+lookupInter k1 (DMap m) = case Map.lookup k1 m of
+                           Nothing -> []
+                           Just innerMap -> Map.keys innerMap 
+
 -- provided two keys of the DMap and a merge function, merge the inner maps of
 -- both keys using the merge function when needed for inner values
 -- and delete the first inner map

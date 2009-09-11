@@ -105,9 +105,7 @@ tableau =
                                                            case pref_dis_rule of 
                                                             Nothing -> return result_branching
                                                             Just p -> 
-                                                             do bd <- get --see try to avoid this get... ale
-                                                                let new_d = del_level_disjunctPrefixes currentBranchingDepth (disjunctPrefixes bd) 
-                                                                modify (delete_levels new_d)
+                                                             do modify (delete_levels currentBranchingDepth)
                                                                 case result_branching of 
                                                                   c@(CLOSED bprs) ->
                                                                      do _ <- update_cache caching_approach p br Cdisjunct

@@ -34,7 +34,8 @@ import Control.Monad.State(StateT, MonadState)
 import Data.List(delete, minimumBy)
 import Data.Char ( isNumber )
 
-import HTab.UCMatrix
+import HTab.UCMatrix ( UCMatrix )
+import qualified HTab.UCMatrix as UCMatrix
 import HTab.UCList
 
 import Data.Map ( Map, foldWithKey )
@@ -318,6 +319,7 @@ addFormula clp br f@(PrFormula pr fDs f2@(Lit (PosLit (N (NomSymbol n))))) histo
                   Slot_UpdateSuccess urfatherSlot ->
                       let newClashStr    = DMap $ Map.delete oldUr $ Map.insert newUr urfatherSlot (toMap $ clashStr br)
                           newPrefToForms = moveInMap (prefToForms br) oldUr newUr Set.union
+                          newbranchTrueForms = DMap.moveInnerDataDMap (branchTrueForms br) oldUr newUr dsUnion
                           newBoxConstrFwd = DMap.moveInnerDataDMapPlusDeps fDs (boxConstrFwd br) oldUr newUr
                           newBoxConstrBwd = DMap.moveInnerDataDMapPlusDeps fDs (boxConstrBwd br) oldUr newUr
                           newAccStr       = mergePrefixWith (accStr br) oldUr newUr fDs
@@ -364,6 +366,7 @@ addFormula clp br f@(PrFormula pr fDs f2@(Lit (PosLit (N (NomSymbol n))))) histo
                                                  accStr         = newAccStr,
                                                  prToDepSet     = newPrToDepSet,
                                                  prefToForms    = newPrefToForms,
+                                                 branchTrueForms= newbranchTrueForms,
                                                  prefToUevFwd   = newPrefToUevFwd,
                                                  prefToUevBwd   = newPrefToUevBwd,
                                                  diaRlCh        = newDiaRlCh,
@@ -1174,26 +1177,26 @@ gen_unsat_cache :: CmdLineParams -> Formula -> UCache
 gen_unsat_cache clp f = case caching clp of
                           Just MatrixCaching
                                 -> let c = ((get_max_subterms f)+(get_num_nominals f)) * 2
-                                   in UCache{matrix = gen_matrix c c::UCMatrix,
-                                         listsList = []::UCList,--not used in this approach
-                                               current_index =(-1):: Int,
-                                               descrip_matrix = Bimap.empty::UCMap,
-                                               current_row = (-1) :: Int,
-                                               max_row=(c-1) :: Int}
+                                   in UCache{matrix = UCMatrix.empty c c,
+                                         listsList = [],--not used in this approach
+                                               current_index =(-1),
+                                               descrip_matrix = Bimap.empty,
+                                               current_row = (-1),
+                                               max_row=(c-1)}
                           Just ListCaching
-                                   -> UCache{matrix = gen_matrix 0 0::UCMatrix,--not used in this approach
-                                      listsList = []::UCList,
-                                            current_index =(-1):: Int,
-                                            descrip_matrix = Bimap.empty::UCMap,
-                                            current_row = (-1) :: Int,
-                                            max_row=0 :: Int}  --not used in this approach
+                                   -> UCache{matrix = UCMatrix.empty 0 0,--not used in this approach
+                                      listsList = [],
+                                            current_index =(-1),
+                                            descrip_matrix = Bimap.empty,
+                                            current_row = (-1),
+                                            max_row=0}  --not used in this approach
                           Nothing
-                           -> UCache{matrix = gen_matrix 0 0::UCMatrix,--not used in this approach
-                                              listsList = []::UCList,
-                                              current_index =(-1):: Int,
-                                              descrip_matrix = Bimap.empty::UCMap,
-                                              current_row = (-1) :: Int,
-                                              max_row=0 :: Int}  --not used in this approach
+                           -> UCache{matrix = UCMatrix.empty 0 0,--not used in this approach
+                                              listsList = [],
+                                              current_index =(-1),
+                                              descrip_matrix = Bimap.empty,
+                                              current_row = (-1),
+                                              max_row=0}  --not used in this approach
 
 
 
