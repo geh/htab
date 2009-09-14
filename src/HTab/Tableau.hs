@@ -5,7 +5,7 @@ import qualified Data.Map as Map
 import qualified HTab.DMap as DMap
 import HTab.Base(vPutStrLn)
 import HTab.Statistics(updateStep,printOutInspectionMetrics,
-                       recordClosedBranch,recordFiredRule)
+                       recordClosedBranch, recordCacheHit, recordFiredRule)
 import HTab.Branch(BranchInfo(..),Branch(..),BranchMonad, BranchData(..),branch_depth,
                    addZeroInPath, incPathHead, calculateStepInfo, collectUevBprs,
                    getBranch,getUrfather,wipeNotPrevPref )
@@ -76,6 +76,7 @@ tableau =
                                             debugMsg_BranchClash1 br1 pr1 0--TODO see should I add this line?
                                             put bd{branch_info = new_bi}
                                             liftStats $ recordClosedBranch
+                                            liftStats $ recordCacheHit
                                             return (CLOSED bprs1)
                                      BranchOK br1_ ->
                                         do --we didn't find a hit: go on working with the branch

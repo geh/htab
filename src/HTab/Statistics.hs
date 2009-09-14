@@ -31,7 +31,7 @@ USA.
 
 module HTab.Statistics
 (   Statistics, StatisticsState, StatisticsStateIO,
-    recordFiredRule, recordClosedBranch,
+    recordFiredRule, recordClosedBranch, recordCacheHit,
 
     printOutAllMetrics, printOutAllMetrics', printOutInspectionMetrics,
 
@@ -39,7 +39,7 @@ module HTab.Statistics
     addMetric, addInspectionMetric, setPrintOutInterval,
 
     Metric,
-    ruleApplicationCount, closedBranches,
+    ruleApplicationCount, closedBranches, cacheHits,
     updateStep
 
 ) where
@@ -117,6 +117,10 @@ recordFiredRule rule = modify (updateMetrics $ recordFiredRuleM rule)
 recordClosedBranch :: StatisticsState ()
 recordClosedBranch = modify (updateMetrics recordClosedBranchM)
 
+recordCacheHit :: StatisticsState ()
+recordCacheHit = modify (updateMetrics recordCacheHitM)
+
+
 printOutAllMetrics :: StatisticsStateIO ()
 printOutAllMetrics = get >>= (liftIO . printOutAllMetrics')
 
@@ -152,11 +156,13 @@ printOutList ms = unless ( null ms ) $ do
 --------------------------------------------
 data Metric = RC  (Map RuleId Int) -- Rule application count
              |CB  !Int             -- Number of closed branched
+             |CH  !Int             -- Number of UNSAT cache hits
 
 type MetricModificator = Metric -> Metric
 
 instance Show Metric where
   show (CB  x)   = "Closed branches: " ++ show x
+  show (CH  x)   = "Cache hits: " ++ show x
   show (RC  x)   = "Rule applications:" ++ concatMap p (Map.toList x)
       where p (i,c) = "\n  " ++ show i ++ " rule: " ++ show c
 
@@ -170,11 +176,18 @@ recordClosedBranchM :: MetricModificator
 recordClosedBranchM (CB x) = CB (x+1)
 recordClosedBranchM m      = m
 
+recordCacheHitM :: MetricModificator
+recordCacheHitM (CH x) = CH (x+1)
+recordCacheHitM m      = m
+
 ruleApplicationCount :: Metric
 ruleApplicationCount = RC  Map.empty
 
 closedBranches :: Metric
 closedBranches = CB 0
+
+cacheHits :: Metric
+cacheHits = CH 0
 
 --
 

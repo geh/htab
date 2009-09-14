@@ -26,7 +26,7 @@ import Control.Monad.Error (MonadError(..))
 import Control.Applicative ( (<$>) )
 
 import HTab.Base(intToBool, permutationOf)
-import HTab.Statistics(Metric,closedBranches,StatisticsState,
+import HTab.Statistics(Metric,closedBranches,cacheHits,StatisticsState,
                        addMetric, addInspectionMetric, setPrintOutInterval,
                        ruleApplicationCount)
 
@@ -154,6 +154,7 @@ options =
            "METRICS is made of one or more of the following",
            "values:",
            "  c = number of closed branches",
+           "  h = number of UNSAT cache hits",
            "  r = number of rules applied",
            "",
            "The default is `" ++ statsStr defaultParams ++ "'",
@@ -283,6 +284,7 @@ usage header = unlines [
 
 metrics :: [(Char,Metric)]
 metrics = [('c',closedBranches),
+           ('h',cacheHits),
            ('r',ruleApplicationCount)]
 
 parseStats :: String -> Maybe (String, Maybe (Int, String))
