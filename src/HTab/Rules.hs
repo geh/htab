@@ -69,10 +69,10 @@ getMods _ (ConjRule todelete toadds) =
 
 getMods _ (DiaRule todelete@(PrFormula pr _ f) acctoadd@(AccFormula _ _ p1 p2) toadd) =
  [[BM_RemFormula todelete,
+   BM_AddParentPrefix p2 p1,
    BM_AddAccFormula acctoadd,
    BM_AddFormulas [toadd],
    BM_AddDiaRuleCheck pr f,
-   BM_AddParentPrefix p2 p1,
    BM_CreateNewPref]]
 
 getMods _ (DiaXRule todelete@(PrFormula pr _ f) toadd) =
