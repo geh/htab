@@ -40,6 +40,7 @@ data CmdLineParams = CLP {
            semBranch       :: Bool,
            unitProp        :: Bool,
            backJumping     :: Bool,
+           uBlocking       :: Bool,
            genModel        :: Maybe FilePath,
            quietMode       :: Bool,
            showFormula     :: Bool,
@@ -131,11 +132,16 @@ options =
           "  e = existential modality",
           "  D = difference modality",
           "  b = down-arrow binder",
+          "  u = unrestricted blocking",
           "",
           "The default is `" ++ strategyStr defaultParams ++ "'",
           "The rules box, universal modality and converse difference",
           "modality are immediate, thus have the highest precedence.",
           ""]),
+   Option ['U']
+          ["unrestricted-blocking"]
+          (NoArg $ \c -> return c{uBlocking = True})
+          "enable unrestricted blocking (disabled by default)",
    Option ['S']
           ["statistics"]
           (ReqArg setStats "PAT")
@@ -214,7 +220,7 @@ setStrategy = permutationOf strategyStrVal ?->
                    \s c -> return c{strategyStr = s}
 
 strategyStrVal :: String
-strategyStrVal = "asedtDbo"
+strategyStrVal = "asedtDbou"
 
 setStats :: String -> CLPModifier
 setStats = (isJust . parseStats) ?->
@@ -226,10 +232,11 @@ defaultParams = CLP {showHelp = False,
                      logState = False,
                      maxtimeout  = 0,
                      statsStr    = ":0:c",
-                     strategyStr = "asedtDbo",
+                     strategyStr = "asedtDbou",
                      semBranch   = True,
                      unitProp    = True,
                      backJumping = True,
+                     uBlocking   = False,
                      genModel    = Nothing,
                      quietMode   = False,
                      showFormula = False,

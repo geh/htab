@@ -213,5 +213,3 @@ wipeNotPrevPrefInPossBranches p (hd:tl) = (new_hd:new_tl)
                                                 new_tl = wipeNotPrevPrefInPossBranches p tl
 wipeNotPrevPrefInPossBranches _ [] = []
 
---debug :: Show a => a -> a
---debug x = trace (show x) x

@@ -12,7 +12,7 @@ module HTab.Branch
 Branch(..), BranchMonad, createNewProp, createNewPref, createNewNomTestRelevance, BranchInfo(..),
 addFormulas, addFormula, addAccFormula, remFormula,
 addDiaRuleCheck, addDiaXRuleCheck, addDownRuleCheck, addDiffRuleCheck,
-addParentPrefix, addFirstFormulas,
+addParentPrefix, addFirstFormulas,updateUBBookKeep,
 BranchData(..),branch_depth, getBranch,
 emptyBranch,initialBranchStateFor,
 addZeroInPath,incPathHead,prefixes,
@@ -22,7 +22,7 @@ getModelRepresentative, isNotBlocked,
 calculateStepInfo, BlockingMode(..), diaAlreadyDone, diaXAlreadyDone,
 downAlreadyDone, incPropSymbol, incNomSymbol,
 UCache(..),Univ_constraints,AugmentedPrefixes,UCMap,BranchTrueForms,gen_unsat_cache,wipeNotPrevPref,
-collectUevBprs, ReducedDisjunct(..), newNomBaseName, newPropBaseName,
+collectUevBprs, ReducedDisjunct(..), newNomBaseName, newPropBaseName, getUnappliedUBPairs,
 isReflexive, isSymmetric, isTransitive
 ) where
 
@@ -163,6 +163,7 @@ data Branch = Branch {clashStr :: Clashable_info,
                        incrPrs :: AugmentedPrefixes,
                   prefToUevFwd :: PrefToUev,
                   prefToUevBwd :: PrefToUev,
+                    bookKeepUB :: (Prefix,Prefix),
                  -- caching / memoisation data
              downVarRelevantCh :: DownVarRelevant_chart,
                  -- information about language of input formula and blocking mode
@@ -214,6 +215,7 @@ emptyBranch clp fLang relInfo_ =
                   prToDepSet= Map.empty::PrefToDepSet,
                   prefToUevFwd= DMap.empty::PrefToUev,
                   prefToUevBwd= DMap.empty::PrefToUev,
+                  bookKeepUB=(0,0),
                   nomPrefClasses= DS.mkDSet::EquivClasses,
                   inputLanguage = fLang,
                   inclUrMap = Nothing,
@@ -248,6 +250,7 @@ instance Show Branch where
               "\nExist rule chart:" ++ show (list $ existRlCh br) ++
               "\nDiff dia rule chart: "  ++ prettyShowMap_ (dDiaRlCh br) show "\n " ++
               "\nDown var relevant chart: " ++ prettyShowMap_ (downVarRelevantCh br) show ", " ++
+              "\nUnrestricted blocking book-keep:" ++ show (bookKeepUB br) ++ ", " ++
               "\nUniv constraints: "++ show (univCons br) ++
               "\nDiff box constraints: "++ show (dBoxCons br) ++
               "\nPrefix to dependency set:\n " ++ prettyShowMap_ (prToDepSet br) dsShow "\n " ++
@@ -1025,6 +1028,17 @@ addDiffUnivConstraint clp br ds f pr
 addDiffRuleCheck :: Branch -> Formula -> PropSymbol -> Bool -> Branch
 addDiffRuleCheck br f propsym b =
   br{dDiaRlCh=Map.insert f (propsym,b) (dDiaRlCh br)}
+
+--
+
+getUnappliedUBPairs :: Branch -> [(Prefix,Prefix)]
+getUnappliedUBPairs br =
+ [ (a,b) | a <-[0..lastP], b <- [0..lastP], a > b, (a == i && b > j) || (a > i)]
+ where (i,j) = bookKeepUB br -- i > j
+       lastP = lastPref br
+
+updateUBBookKeep :: Prefix -> Prefix -> Branch -> Branch
+updateUBBookKeep p1 p2 br = br{bookKeepUB = (p1,p2)}
 
 --
 

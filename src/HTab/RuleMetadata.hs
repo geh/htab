@@ -47,4 +47,5 @@ data RuleId = R_Conj    -- Conjunction
             | R_Diff    -- Difference modality
             | R_Discard -- Discarding a formula
             | R_Clash   -- Branch clash
+            | R_UBlocking -- Unrestricted Blocking
         deriving(Eq, Ord, Ix, Show)

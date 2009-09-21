@@ -11,7 +11,7 @@ import qualified Data.Map as Map
 import qualified HTab.DMap as DMap
 
 import HTab.Formula( Formula(..), PrFormula(..), showLess, neg, Atom(..),
-                     Dependency, DependencySet, dsUnion, dsInsert,
+                     Dependency, DependencySet, dsUnion, dsInsert, dsEmpty,
                      prefix, AccFormula(..),
                      Prefix, NomSymbol(..), PropSymbol(..),
                      nom, prop, replaceVar )
@@ -21,10 +21,11 @@ import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewNomTestRe
                     addDiaRuleCheck, addDiaXRuleCheck,
                     addDownRuleCheck, addDiffRuleCheck,
                     addParentPrefix, reduceDisjunctionAgainstBranch,
-                    getUrfatherAndDeps, isNotBlocked, 
+                    getUnappliedUBPairs, updateUBBookKeep,
+                    getUrfatherAndDeps, isNotBlocked,
                     diaAlreadyDone,  diaXAlreadyDone, downAlreadyDone, incPropSymbol, incNomSymbol,
                     ReducedDisjunct(..), newPropBaseName, newNomBaseName )
-import HTab.CommandLine(CmdLineParams, semBranch, unitProp, strategyStr)
+import HTab.CommandLine(CmdLineParams, semBranch, unitProp, strategyStr, uBlocking)
 import HTab.RuleMetadata(RuleId(..))
 import HTab.Base ( set )
 import qualified HTab.DisjSet as DS
@@ -43,6 +44,7 @@ data BranchModification =    BM_AddFormulas   [PrFormula]
                            | BM_CreateNewNomTestRelevance Formula
                            | BM_AddParentPrefix Prefix Prefix
                            | BM_Clash DependencySet PrFormula
+                           | BM_UpdateUBBookKeep Prefix Prefix
 
 -- each rule constructor contains exactly the needed data to know the effect of the rule
 data Rule =  ConjRule   PrFormula [PrFormula]
@@ -56,6 +58,7 @@ data Rule =  ConjRule   PrFormula [PrFormula]
            | ExistModRule PrFormula PrFormula                 -- creates a prefix
            | DiscardRule PrFormula
            | ClashRule DependencySet PrFormula
+           | UBlockRule Prefix Prefix [PrFormula] [PrFormula]
 
 -- from the description of a rule application, creates the list of lists of modifications to the branch
 -- for certain rules, we need to look in the branch to see what modifications we do
@@ -85,6 +88,11 @@ getMods _ (ExistModRule todelete toadd) =
  [[BM_RemFormula todelete,
    BM_AddFormulas [toadd],
    BM_CreateNewPref]]
+
+getMods _ (UBlockRule p1 p2 choiceEqual choiceDisequal) =
+ [[BM_UpdateUBBookKeep p1 p2, BM_AddFormulas choiceEqual],
+  [BM_UpdateUBBookKeep p1 p2, BM_AddFormulas choiceDisequal]
+ ]
 
 getMods _ (DisjRule todelete toadds) =
  [[BM_RemFormula todelete, BM_AddFormulas [toadd]] | toadd <- toadds]
@@ -159,6 +167,7 @@ instance Show Rule where
    show (DiffRule (pr,_,f) )       = "D:                  " ++ show pr ++ ":" ++ show f
    show (DiscardRule todelete)     = "Discard:            " ++ showLess todelete
    show (ClashRule bprs f)         = "Clash:              " ++ show bprs ++ " " ++ show f
+   show (UBlockRule p1 p2 _ _ )    = "Unrestricted blocking " ++ show (p1,p2)
 
 --
 ruleToId :: Rule -> RuleId
@@ -174,6 +183,7 @@ ruleToId r = case r of
               (DiffRule _ )      -> R_Diff
               (DiscardRule _)    -> R_Discard
               (ClashRule _ _)    -> R_Clash
+              (UBlockRule _ _ _ _) -> R_UBlocking
 
 -- the rules application strategy is defined here:
 -- the first rule is the one that will be applied at the next tableau step
@@ -191,6 +201,7 @@ ruleByChar br clp d char =
   'e' -> applicableExistRules br
   'D' -> applicableDiffRules br
   'b' -> applicableDownRules br
+  'u' -> if uBlocking clp then applicableUBlockRules br d else []
   _   -> error "ruleByChar"
 
 applicableConjRules :: Branch -> [Rule]
@@ -220,6 +231,9 @@ applicableExistRules br = [existRule f br | f <- Set.toAscList $ existStr br]
 applicableDiffRules :: Branch -> [Rule]
 applicableDiffRules br = [diffRule f br | f <- Set.toAscList $ diffStr br]
 
+applicableUBlockRules :: Branch -> Dependency -> [Rule]
+applicableUBlockRules  br d = [ubRule p1 p2 d | (p1,p2) <- getUnappliedUBPairs br]
+
 applyRule :: CmdLineParams -> Rule -> Branch -> [BranchInfo]
 applyRule clp rule br = applySetOfMods clp br (getMods br rule)
 
@@ -247,6 +261,7 @@ applyMod  _  br (BM_RemFormula f)                  = BranchOK $ remFormula br f
 applyMod  _  br (BM_AddDiffRuleCheck f pr b)       = BranchOK $ addDiffRuleCheck br f pr b
 applyMod  _  br (BM_AddParentPrefix son father)    = BranchOK $ addParentPrefix br son father
 applyMod  _  br (BM_Clash ds (PrFormula pr ds2 f)) = BranchClash br pr (dsUnion ds ds2) f
+applyMod  _  br (BM_UpdateUBBookKeep p1 p2)        = BranchOK $ updateUBBookKeep p1 p2 br
 
 -- the actual rules and their helper functions
 
@@ -376,3 +391,10 @@ get_pr_disjunt_rule (DisjRule (PrFormula pr _ _) _) = Just pr
 get_pr_disjunt_rule (SemBrRule (PrFormula pr _ _) _)=Just pr
 get_pr_disjunt_rule _  = Nothing
 
+ubRule :: Prefix -> Prefix -> Dependency -> Rule
+ubRule p1 p2 d = UBlockRule p1 p2 [PrFormula p1 deps equalNom,  PrFormula p2 deps equalNom]
+                                  [PrFormula p1 deps nequalNom, PrFormula p2 deps (neg nequalNom)]
+ where equalNom  = nom $ NomSymbol $ "0n_eq_"  ++ show p1 ++ "_" ++ show p2
+       nequalNom = nom $ NomSymbol $ "0n_neq_" ++ show p1 ++ "_" ++ show p2
+       -- the nominals above start with a 0 so that no input nominal can have the same name
+       deps = dsInsert d dsEmpty
