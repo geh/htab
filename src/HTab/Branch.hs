@@ -531,7 +531,7 @@ findDeps :: Branch -> Prefix -> DependencySet
 findDeps br pr = Map.findWithDefault dsEmpty pr (prToDepSet br)
 
 addClassDeps :: Prefix -> DependencySet -> Branch -> Branch
-addClassDeps pr ds br = br { prToDepSet = Map.insert pr ds (prToDepSet br) }
+addClassDeps pr ds br = br { prToDepSet = Map.insertWith dsUnion pr ds (prToDepSet br) }
 
 
 -- check if the added formula removes an unfulfilled eventuality
