@@ -37,6 +37,7 @@ data CmdLineParams = CLP {
            maxtimeout      :: Int,
            statsStr        :: String,
            strategyStr     :: String,
+           fairStrategy    :: Bool,
            semBranch       :: Bool,
            unitProp        :: Bool,
            backJumping     :: Bool,
@@ -142,6 +143,10 @@ options =
           ["unrestricted-blocking"]
           (NoArg $ \c -> return c{uBlocking = True})
           "enable unrestricted blocking (disabled by default)",
+   Option ['F']
+          ["fair-strategy"]
+          (NoArg $ \c -> return c{fairStrategy = True})
+          "enable fair strategy, ie single to-do list (disabled by default)",
    Option ['S']
           ["statistics"]
           (ReqArg setStats "PAT")
@@ -233,6 +238,7 @@ defaultParams = CLP {showHelp = False,
                      maxtimeout  = 0,
                      statsStr    = ":0:c",
                      strategyStr = "asedtDbou",
+                     fairStrategy = False,
                      semBranch   = True,
                      unitProp    = True,
                      backJumping = True,

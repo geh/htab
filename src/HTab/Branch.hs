@@ -12,7 +12,8 @@ module HTab.Branch
 Branch(..), BranchMonad, createNewProp, createNewPref, createNewNomTestRelevance, BranchInfo(..),
 addFormulas, addFormula, addAccFormula, remFormula,
 addDiaRuleCheck, addDiaXRuleCheck, addDownRuleCheck, addDiffRuleCheck,
-addParentPrefix, addFirstFormulas,updateUBBookKeep,
+addParentPrefix, addFirstFormulas,
+updateUBBookKeep, ScheduledRule(..), TodoList(..), processTodoList,
 BranchData(..),branch_depth, getBranch,
 emptyBranch,initialBranchStateFor,
 addZeroInPath,incPathHead,prefixes,
@@ -123,14 +124,7 @@ data UCache = UCache { matrix :: UCMatrix, --the bit matrix
 
 data Branch = Branch {clashStr :: Clashable_info,
                  -- pending formulas / todo lists
-                       conjStr :: Conj_structure,
-                       disjStr :: Disj_structure,
-                        diaStr :: Dia_structure,
-                       diaXStr :: DiaX_structure,
-                      existStr :: Exist_structure,
-                         atStr :: At_structure,
-                       downStr :: Down_structure,
-                       diffStr :: Diff_structure, -- D
+                      todoList :: TodoList,
                  -- immediate rules constraints
                   boxConstrFwd :: Box_constraints,
                   boxConstrBwd :: Box_constraints,
@@ -185,16 +179,9 @@ emptyBranch :: CmdLineParams -> LanguageInfo -> RelInfo -> Branch
 emptyBranch clp fLang relInfo_ =
  addReflexiveLinks 0 $
                 Branch
-                { clashStr= DMap.empty::Clashable_info,
-                  conjStr= Set.empty::Conj_structure,
-                  disjStr= Set.empty::Disj_structure,
-                  diaStr = Set.empty::Dia_structure,
-                  diaXStr = Set.empty::DiaX_structure,
-                  existStr = Set.empty::Exist_structure,
-                  atStr = Set.empty::At_structure,
-                  downStr = Set.empty::Down_structure,
-                  diffStr = Set.empty::Diff_structure,
-                  accStr      =emptyRels,
+                { clashStr = DMap.empty::Clashable_info,
+                  todoList = emptyTodoList clp,
+                  accStr   =emptyRels,
                   boxConstrBwd=DMap.empty::Box_constraints,
                   boxConstrFwd=DMap.empty::Box_constraints,
                   diaRlCh=Map.empty::Dia_rule_chart,
@@ -233,14 +220,7 @@ emptyBranch clp fLang relInfo_ =
 instance Show Branch where
     show br = "Input language: " ++ show (inputLanguage br) ++
               "\nClashable formulas:\n" ++ prettyShowMap_ (DMap.toMap $ clashStr br) (\v -> "(" ++ prettyShowMap_clashable v ++ ")") "\n " ++
-              "\nConjunctions: "   ++ show (list $ conjStr br)  ++
-              "\nDisjunctions: "   ++ show (list $ disjStr br)  ++
-              "\nDiamonds: "       ++ show (list $ diaStr br)   ++
-              "\nDiamondXs: "      ++ show (list $ diaXStr br)  ++
-              "\nExists: "         ++ show (list $ existStr br) ++
-              "\nAts: "            ++ show (list $ atStr br)    ++
-              "\nDowns: "          ++ show (list $ downStr br)  ++
-              "\nDiff exists: "    ++ show (list $ diffStr br)  ++
+              "\nTodo list(s): "   ++ show (todoList br)  ++
               "\nAccessibility: "        ++ showPretty (accStr br) ++
               "\nBox constraints fwd: " ++ prettyShowMap_ (DMap.toMap $ boxConstrFwd br) (\v -> "(" ++ prettyShowMap_rel_ds_x v ++ ")") "\n " ++
               "\nBox constraints bwd: " ++ prettyShowMap_ (DMap.toMap $ boxConstrBwd br) (\v -> "(" ++ prettyShowMap_rel_ds_x v ++ ")") "\n " ++
@@ -288,6 +268,43 @@ prettyShowMap_rel_ds_x dasMap
                                            $ map (\(d,x) -> show x ++ " " ++ dsShow d) d_x_s
                                         )
           $ Map.toList dasMap
+
+data TodoList =  Unfair{conjStr :: Conj_structure,
+                        disjStr :: Disj_structure,
+                         diaStr :: Dia_structure,
+                        diaXStr :: DiaX_structure,
+                       existStr :: Exist_structure,
+                          atStr :: At_structure,
+                        downStr :: Down_structure,
+                        diffStr :: Diff_structure }
+               | Fair [ScheduledRule]
+
+instance Show TodoList where
+ show (Fair srs) = show srs
+ show (Unfair conjs disjs dias diaxs es ars downs diffs)
+   = concatMap (\el -> "\n" ++ show (list el)) [conjs, disjs, dias, diaxs, es, ars, downs, diffs]
+
+data ScheduledRule =   SR_Formula PrFormula
+                     | SR_UBlocking Prefix Prefix
+
+instance Show ScheduledRule where
+ show (SR_Formula pf)    = show pf
+ show (SR_UBlocking i j) = "SR " ++ show (i,j)
+
+emptyTodoList :: CmdLineParams -> TodoList
+emptyTodoList clp =
+ if fairStrategy clp
+   then Fair []
+   else Unfair {
+                  conjStr= Set.empty::Conj_structure,
+                  disjStr= Set.empty::Disj_structure,
+                  diaStr = Set.empty::Dia_structure,
+                  diaXStr = Set.empty::DiaX_structure,
+                  existStr = Set.empty::Exist_structure,
+                  atStr = Set.empty::At_structure,
+                  downStr = Set.empty::Down_structure,
+                  diffStr = Set.empty::Diff_structure
+               }
 
 {-
    "add formula(s)" functions, that handle all that is related
@@ -434,10 +451,10 @@ addFormula2 clp br pf@(PrFormula pr _ f) =
 
 addFormula3 :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
 addFormula3 _ br pf@(PrFormula _ _ (Con _))
-           = BranchOK $ br{conjStr = Set.insert pf (conjStr br)}
+           = BranchOK $ addToTodo br pf
 
 addFormula3 _ br pf@(PrFormula _ _ (Dis _))
-           = BranchOK $ br{disjStr = Set.insert pf (disjStr br)}
+           = BranchOK $ addToTodo br pf
 
 addFormula3 clp br_ (PrFormula pr ds (Box r f))
            = let br = case r of { InvRelSymbol _ -> blockChain br_ ; _ -> br_ } in
@@ -450,13 +467,13 @@ addFormula3 _ br_ pf@(PrFormula pr _ f2@(Dia r _))
            = let br = case r of { InvRelSymbol _ -> blockChain br_ ; _ -> br_ } in
              BranchOK $ if diaAlreadyDone br pr f2
                           then br                  -- diamond rule saturation
-                          else br{diaStr = Set.insert pf (diaStr br)}
+                          else addToTodo br pf
 
 addFormula3 _ br pf@(PrFormula pr ds f2@(DiaX r f))
            = BranchOK $ if diaXAlreadyDone br pr f2
                           then br                  -- diamondX rule saturation
                           else addDiaXUev br' pr ds r f
-                                 where br' = blockChain br{diaXStr = Set.insert pf (diaXStr br)}
+                                 where br' = blockChain $ addToTodo br pf
 
 addFormula3 clp br (PrFormula _ ds (A f))
            = addUnivConstraint clp br ds f
@@ -467,24 +484,44 @@ addFormula3 clp br (PrFormula pr ds (B f))
 addFormula3 _ br pf@(PrFormula _ _ f2@(E _))
            = BranchOK $ if existAlreadyDone br f2  -- exist rule saturation
                          then br
-                         else br{ existStr = Set.insert pf (existStr br),
-                                 existRlCh = Set.insert f2 (existRlCh br)}
+                         else addToTodo br{existRlCh = Set.insert f2 (existRlCh br)} pf
 
 addFormula3 _ br pf@(PrFormula _ _ (D _))
-           = BranchOK $ br{diffStr = Set.insert pf (diffStr br)}
+           = BranchOK $ addToTodo br pf
 
 addFormula3 _ br pf@(PrFormula _ _ f2@(At _ _))
            = BranchOK $ if atAlreadyDone br f2  -- at rule saturation
                          then br
-                         else br{ atStr = Set.insert pf (atStr br),
-                                 atRlCh = Set.insert f2 (atRlCh br)}
+                         else addToTodo br{atRlCh = Set.insert f2 (atRlCh br)} pf
 
 addFormula3 _ br pf@(PrFormula pr _ f2@(Down _ _))
            = BranchOK $ if downAlreadyDone br pr f2
                             then br                            -- down-arrow rule saturation
-                            else br{downStr =  Set.insert pf (downStr br)}
+                            else addToTodo br pf
 
 addFormula3 _ br (PrFormula pr ds (Lit l)) = addAndUpdateMap br pr ds l
+
+
+{- todo list functions -}
+
+addToTodo :: Branch -> PrFormula -> Branch
+addToTodo br pf@(PrFormula _ _ f2) =
+ br{todoList = newTodoList}
+ where
+   newTodoList =
+     case todoList br of
+      Fair srs -> Fair (srs ++ [SR_Formula pf])
+      utodo    ->
+       case f2 of
+         Con _    -> utodo{conjStr  = Set.insert pf (conjStr utodo)}
+         Dis _    -> utodo{disjStr  = Set.insert pf (disjStr utodo)}
+         Dia _ _  -> utodo{diaStr   = Set.insert pf (diaStr utodo)}
+         DiaX _ _ -> utodo{diaXStr  = Set.insert pf (diaXStr utodo)}
+         E _      -> utodo{existStr = Set.insert pf (existStr utodo)}
+         D _      -> utodo{diffStr  = Set.insert pf (diffStr utodo)}
+         At _ _   -> utodo{atStr    = Set.insert pf (atStr utodo)}
+         Down _ _ -> utodo{downStr  = Set.insert pf (downStr utodo)}
+         _        -> error "addToTodo"
 
 
 {-    helper functions for equivalence class merge     -}
@@ -1049,10 +1086,25 @@ createNewPref clp br
                           ++ map (\(ds,f,newNom) -> PrFormula newPr ds (Dis $ set [f, nom newNom])) diffBoxConstraints)
                          []
    where newPr = lastPref br + 1
-         newBr = br{lastPref = newPr}
+         newBr_ = br{lastPref = newPr}
+         newBr = case todoList br of
+                    Fair _ -> addUBlockingSchedule newBr_
+                    _      -> newBr_
          univConstraints = univCons br
          diffBoxConstraints = dBoxCons br
          newBrWithRefl = addReflexiveLinks newPr newBr
+
+
+addUBlockingSchedule :: Branch -> Branch
+addUBlockingSchedule br
+ = if (l == 0) || ( (snd $ bookKeepUB br) == l - 1)
+    then br
+    else br{ bookKeepUB = (l,l-1),
+             todoList   = newTodo
+           }
+    where l       = lastPref br
+          newSrs  = map (uncurry SR_UBlocking) $ getUnappliedUBPairs br
+          newTodo = let Fair srs = todoList br in Fair (srs ++ newSrs)
 
 addReflexiveLinks :: Prefix -> Branch -> Branch
 addReflexiveLinks pr br
@@ -1107,20 +1159,34 @@ nextName name
 
 --
 
+processTodoList :: Branch -> Branch
+processTodoList br =
+ br{todoList = newTodo}
+ where newTodo
+        = case todoList br of
+            Fair (_:srs) -> Fair srs
+            Fair []      -> error "processTodoList : empty todo list"
+            _            -> error "processTodoList : wrong strategy"
+
+
 remFormula :: Branch  -> PrFormula -> Branch
-remFormula br f@(PrFormula _ _ (Con _))        = br{conjStr =(Set.delete f (conjStr br))}
-remFormula br f@(PrFormula _ _ (Dia _ _))      = br{diaStr  =(Set.delete f (diaStr br))}
-remFormula br f@(PrFormula _ _ (DiaX _ _))     = br{diaXStr =(Set.delete f (diaXStr br))}
-remFormula br f@(PrFormula _ _ (E _))          = br{existStr=(Set.delete f (existStr br))}
-remFormula br f@(PrFormula _ _ (Dis _))        = br{disjStr =(Set.delete f (disjStr br))}
-remFormula br f@(PrFormula _ _ (At _ _))       = br{atStr   =(Set.delete f (atStr br))}
-remFormula br f@(PrFormula _ _ (D _))          = br{diffStr =(Set.delete f (diffStr br))}
-remFormula br f@(PrFormula _ _ (Down _ _))     = br{downStr =(Set.delete f (downStr br))}
-remFormula _    (PrFormula _ _ (Box _ _))      = error "that formula should never be deleted"
-remFormula _    (PrFormula _ _ (BoxX _ _))     = error "that formula should never be deleted"
-remFormula _    (PrFormula _ _ (A _))          = error "that formula should never be deleted"
-remFormula _    (PrFormula _ _ (B _))          = error "that formula should never be deleted"
-remFormula _    (PrFormula _ _ (Lit _ ))       = error "that formula should never be deleted"
+remFormula br pf@(PrFormula _ _ f2)
+ = br{todoList = newTodoList}
+   where
+    newTodoList =
+     case todoList br of
+      f@(Fair _) -> f
+      utodo ->
+       case f2 of
+        Con _    -> utodo{conjStr =(Set.delete pf (conjStr  utodo))}
+        Dis _    -> utodo{disjStr =(Set.delete pf (disjStr  utodo))}
+        Dia _ _  -> utodo{diaStr  =(Set.delete pf (diaStr   utodo))}
+        DiaX _ _ -> utodo{diaXStr =(Set.delete pf (diaXStr  utodo))}
+        At _ _   -> utodo{atStr   =(Set.delete pf (atStr    utodo))}
+        E _      -> utodo{existStr=(Set.delete pf (existStr utodo))}
+        D _      -> utodo{diffStr =(Set.delete pf (diffStr  utodo))}
+        Down _ _ -> utodo{downStr =(Set.delete pf (downStr  utodo))}
+        _        -> error "remFormula unfair strategy"
 
 -- preparation of the branch at the beginning of the calculus:
 --  - add the input formula at prefix 0

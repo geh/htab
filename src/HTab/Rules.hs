@@ -24,7 +24,9 @@ import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewNomTestRe
                     getUnappliedUBPairs, updateUBBookKeep,
                     getUrfatherAndDeps, isNotBlocked,
                     diaAlreadyDone,  diaXAlreadyDone, downAlreadyDone, incPropSymbol, incNomSymbol,
-                    ReducedDisjunct(..), newPropBaseName, newNomBaseName )
+                    ReducedDisjunct(..), newPropBaseName, newNomBaseName,
+                    ScheduledRule(..), TodoList(..), processTodoList
+                 )
 import HTab.CommandLine(CmdLineParams, semBranch, unitProp, strategyStr, uBlocking)
 import HTab.RuleMetadata(RuleId(..))
 import HTab.Base ( set )
@@ -188,10 +190,29 @@ ruleToId r = case r of
 -- the rules application strategy is defined here:
 -- the first rule is the one that will be applied at the next tableau step
 applicableRules :: Branch -> CmdLineParams -> Dependency -> [Rule]
-applicableRules br clp d = concatMap (ruleByChar br clp d) (strategyStr clp)
+applicableRules br clp d =
+ case todoList br of
+  Fair srs -> map (scheduledRuleToRule br clp d) srs
+  _        -> concatMap (rulesByChar br clp d) (strategyStr clp)
 
-ruleByChar :: Branch -> CmdLineParams -> Dependency -> Char -> [Rule]
-ruleByChar br clp d char =
+scheduledRuleToRule :: Branch -> CmdLineParams -> Dependency -> ScheduledRule -> Rule
+scheduledRuleToRule br clp d (SR_Formula pf@(PrFormula _ _ f2)) =
+ case f2 of
+  Con _     -> conjRule pf br
+  Dis _     -> if semBranch clp then semBrRule clp pf br d else disjRule clp pf br d
+  Dia _ _   -> diaRule pf br
+  DiaX _ _  -> diaXRule pf br
+  At _ _    -> atRule pf br
+  Down _ _  -> downRule pf br
+  E _       -> existRule pf br
+  D _       -> diffRule pf br
+  _         -> error "scheduledRuleToRule, incorrect formula kind"
+
+scheduledRuleToRule _ _ d (SR_UBlocking p1 p2) = ubRule p1 p2 d
+
+
+rulesByChar :: Branch -> CmdLineParams -> Dependency -> Char -> [Rule]
+rulesByChar br clp d char =
  case char of
   'a' -> applicableConjRules br
   'o' -> applicableDisjRules clp br d
@@ -205,37 +226,41 @@ ruleByChar br clp d char =
   _   -> error "ruleByChar"
 
 applicableConjRules :: Branch -> [Rule]
-applicableConjRules br = [conjRule f br | f <- Set.toAscList $ conjStr br]
+applicableConjRules br = [conjRule f br | f <- Set.toAscList $ conjStr $ todoList br]
 
 applicableDiaRules :: Branch -> [Rule]
-applicableDiaRules br = [diaRule f br | f@(PrFormula pr _ _) <- Set.toAscList $ diaStr br, isNotBlocked br pr]
+applicableDiaRules br = [diaRule f br | f@(PrFormula pr _ _) <- Set.toAscList $ diaStr $ todoList br, isNotBlocked br pr]
                         -- TODO memoization for the isNotBlocked call
 
 applicableDiaXRules :: Branch -> [Rule]
-applicableDiaXRules br = [diaXRule f br | f <- Set.toAscList $ diaXStr br]
+applicableDiaXRules br = [diaXRule f br | f <- Set.toAscList $ diaXStr $ todoList br]
 
 applicableDisjRules :: CmdLineParams -> Branch -> Dependency -> [Rule]
 applicableDisjRules clp br d =
- if semBranch clp then [semBrRule clp f br d | f <- Set.toAscList $ disjStr br]
-                  else [disjRule  clp f br d | f <- Set.toAscList $ disjStr br]
+ if semBranch clp then [semBrRule clp f br d | f <- Set.toAscList $ disjStr $ todoList br]
+                  else [disjRule  clp f br d | f <- Set.toAscList $ disjStr $ todoList br]
 
 applicableAtRules :: Branch -> [Rule]
-applicableAtRules br = [atRule f br | f <- Set.toAscList $ atStr br]
+applicableAtRules br = [atRule f br | f <- Set.toAscList $ atStr $ todoList br]
 
 applicableDownRules :: Branch -> [Rule]
-applicableDownRules br = [downRule f br | f <- Set.toAscList $ downStr br]
+applicableDownRules br = [downRule f br | f <- Set.toAscList $ downStr $ todoList br]
 
 applicableExistRules :: Branch -> [Rule]
-applicableExistRules br = [existRule f br | f <- Set.toAscList $ existStr br]
+applicableExistRules br = [existRule f br | f <- Set.toAscList $ existStr $ todoList br]
 
 applicableDiffRules :: Branch -> [Rule]
-applicableDiffRules br = [diffRule f br | f <- Set.toAscList $ diffStr br]
+applicableDiffRules br = [diffRule f br | f <- Set.toAscList $ diffStr $ todoList br]
 
 applicableUBlockRules :: Branch -> Dependency -> [Rule]
 applicableUBlockRules  br d = [ubRule p1 p2 d | (p1,p2) <- getUnappliedUBPairs br]
 
 applyRule :: CmdLineParams -> Rule -> Branch -> [BranchInfo]
-applyRule clp rule br = applySetOfMods clp br (getMods br rule)
+applyRule clp rule br_ =
+  applySetOfMods clp br (getMods br rule)
+ where br = case todoList br_ of
+             Fair _ -> processTodoList br_
+             _      -> br_
 
 applySetOfMods :: CmdLineParams -> Branch -> [[BranchModification]] -> [BranchInfo]
 applySetOfMods clp br (hd:tl) = (applyMods clp br hd):(applySetOfMods clp br tl)
