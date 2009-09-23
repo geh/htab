@@ -265,8 +265,9 @@ diaRule :: PrFormula -> Branch -> Rule
 diaRule f@(PrFormula pr ds f1@(Dia r f2)) br
   = if (diaAlreadyDone br pr f1)
      then DiscardRule f
-     else DiaRule f (AccFormula ds r pr newPr) (PrFormula newPr ds f2)
-      where newPr = getNewPref br
+     else DiaRule f (AccFormula (dsUnion ds ds2) r ur newPr) (PrFormula newPr ds f2)
+      where newPr      = getNewPref br
+            (ur,ds2,_) = getUrfatherAndDeps br (DS.Prefix pr)
 
 diaRule _ _ = error $ "diaRule"
 
