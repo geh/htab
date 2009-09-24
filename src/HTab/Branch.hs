@@ -1070,12 +1070,22 @@ addDiffRuleCheck br f propsym b =
 
 getUnappliedUBPairs :: Branch -> [(Prefix,Prefix)]
 getUnappliedUBPairs br =
- [ (a,b) | a <-[0..lastP], b <- [0..lastP], a > b, (a == i && b > j) || (a > i)]
+ [ (a,b) | a <- [i..lastP], -- lastP >= a >=i
+           b <- [0..(a-1)], -- a > b
+           (a == i && b > j) || (a > i),
+           ur a /= ur b
+ ]
  where (i,j) = bookKeepUB br -- i > j
        lastP = lastPref br
+       ur = (getUrfather br) . DS.Prefix
 
 updateUBBookKeep :: Prefix -> Prefix -> Branch -> Branch
-updateUBBookKeep p1 p2 br = br{bookKeepUB = (p1,p2)}
+updateUBBookKeep p1 p2 br
+ = case todoList br of
+    Fair _ ->  br
+    _      ->  br{bookKeepUB = (p1,p2)}
+-- UGLY because if there's a fair schedule, the book keep is already updated
+
 
 --
 
