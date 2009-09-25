@@ -2,7 +2,7 @@ module HTab.Relations
 
 ( Relations(..), emptyRels, insertRelation, mergePrefixWith,
   getSuccessors, getPredecessors, getIncomingLinks, getOutgoingLinks,
-  getAllRels, showPretty ) 
+  getAllRels, null )
 
 where
 
@@ -20,7 +20,7 @@ import qualified HTab.DMap as DMap
 import HTab.DMap ( DMap(..) )
 
 import HTab.Formula (Prefix, Rel, DependencySet, dsUnion )
-import Prelude hiding (id, pred, succ)
+import Prelude hiding (id, pred, succ, null)
 
 type Id = (Prefix,Rel,Prefix)
 type IdToData = Map Id DependencySet
@@ -28,20 +28,21 @@ type InOutRel = DMap Prefix Rel (Set Prefix, Set Prefix)
 
 data Relations = Relations { idToData :: IdToData,
                              inOutRel :: InOutRel }
- deriving (Show)
 
-
-showPretty :: Relations -> String
-showPretty rels = concat  [ show p1 ++ "-R" ++ show rel ++ "->" ++ show (p2,bprs) ++ " "
-                                              | ((p1,rel),(_,outs))  <- DMap.flattenDMap $ inOutRel rels,
-                                                 let outs_l = Set.toList outs,
-                                                 not $ null outs_l,
-                                                 p2 <- outs_l,
-                                                 let bprs = IntSet.toList $ (Map.!) (idToData rels) (p1,rel,p2) ]
+instance Show Relations where
+  show rels = concat  [ show p1 ++ "-R" ++ show rel ++ "->" ++ show (p2,bprs) ++ " "
+                                        | ((p1,rel),(_,outs))  <- DMap.flatten $ inOutRel rels,
+                                           not $ Set.null outs,
+                                           let outs_l = Set.toList outs,
+                                           p2 <- outs_l,
+                                           let bprs = IntSet.toList $ (Map.!) (idToData rels) (p1,rel,p2) ]
 
 emptyRels :: Relations
 emptyRels = Relations { idToData = Map.empty,
                         inOutRel = DMap.empty }
+
+null :: Relations -> Bool
+null r = Map.null (idToData r)
 
 getAllRels :: Relations -> [(Prefix,Rel,Prefix)]
 getAllRels rels = Map.keys (idToData rels)

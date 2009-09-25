@@ -42,8 +42,8 @@ insertWith f k1 k2 v (DMap m)
     Nothing     -> DMap $ Map.insert k1 (Map.singleton k2 v) m
     Just innerM -> DMap $ Map.insert k1 (Map.insertWith f k2 v innerM) m
 
-flattenDMap :: DMap a b c -> [((a,b),c)]
-flattenDMap (DMap m)
+flatten :: DMap a b c -> [((a,b),c)]
+flatten (DMap m)
  = let ambcs = Map.assocs m  in --  [(a,Map.Map b c)]
     concatMap (\(a_,innerM_) ->  map  (\(b_,c_) -> ((a_,b_),c_))  (Map.assocs innerM_  {- [(b,c)] -} )) ambcs
 

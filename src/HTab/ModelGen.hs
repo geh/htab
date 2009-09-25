@@ -15,7 +15,7 @@ import HTab.Branch( Branch(..), prefixes, getUrfather,
                     isInTheModel, relationIsInTheModel, getModelRepresentative,
                     isTransitive, isSymmetric )
 import qualified HTab.DisjSet as DS
-import HTab.DMap (flattenDMap, DMap(..), toMap )
+import HTab.DMap (flatten, DMap(..), toMap )
 import HTab.Relations ( getAllRels )
 
 type Model = M.Model NomSymbol NomSymbol PropSymbol RelSymbol
@@ -51,7 +51,7 @@ prefixAndProps br =
   [(pr, p_) | (pr , P p_) <- prPosLitProp]
  where clashable             = toMap $ clashStr br
        clashableRelevant     = Map.filterWithKey (\k _ -> isInTheModel br k) clashable
-       prPosLitProp          = filter (isPosLitProp . snd) $ map fst $ filter (fst . snd) $ flattenDMap $ DMap clashableRelevant
+       prPosLitProp          = filter (isPosLitProp . snd) $ map fst $ filter (fst . snd) $ flatten $ DMap clashableRelevant
        isPosLitProp   (P _)  = True
        isPosLitProp     _    = False
 

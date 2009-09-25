@@ -480,7 +480,21 @@ data LanguageInfo = LanguageInfo {   languageNoms :: [NomSymbol], -- ascending l
                                      languageDiff :: Bool,
                                     languageTrans :: Bool,
                                      languageDown :: Bool }
- deriving (Show)
+
+instance Show LanguageInfo where
+ show li =         "Input Language:"
+           ++ "\n|" ++ yesnol "Noms " ( languageNoms li )
+           ++ "\n|" ++ yesnol "Relevant Noms " ( relevantNoms li )
+           ++ "\n|" ++ yesnol "Props " ( languageProps li) ++ "\n|"
+           ++ yesno "Univ, " ( languageUniv li )
+           ++ yesno "Past, " ( languagePast li )
+           ++ yesno "Trans, " ( languageTrans li)
+           ++ yesno "Down." ( languageDown li )
+  where yesno :: String -> Bool -> String
+        yesno s b = ( if b then "" else "no " ) ++ s
+        yesnol :: Show a => String -> [a] -> String
+        yesnol s l | null l = "no " ++ s
+        yesnol s l = s ++ show l
 
 formulaLanguageInfo :: Formula -> LanguageInfo
 formulaLanguageInfo f
