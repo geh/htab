@@ -32,6 +32,7 @@ HyLoFormula, extractNominals,showNom,get_num_nominals, RelProperties(..)
 
 import qualified Data.Set as Set
 import Data.Set ( Set )
+import qualified Data.Map as Map
 import qualified Data.IntSet as IntSet
 import Data.List ( delete, nub )
 
@@ -39,10 +40,13 @@ import HyLo.Signature.String( PropSymbol(..),
                               NomSymbol(..),
                               RelSymbol(..))
 
+import HyLo.Signature( HasSignature(..), relSymbols )
+
 import qualified HyLo.InputFile as InputFile
 import qualified HyLo.InputFile.Parser as P
 import HTab.Base (set, list)
 import qualified HyLo.Formula as F
+import HTab.CommandLine ( CmdLineParams(..) )
 
 type Prefix = Int
 type Rel = String
@@ -125,16 +129,36 @@ data RelProperties = Reflexive |
                      TRClosureOf RelSymbol
                      deriving (Eq, Show, Ord)
 
-parse :: String -> (Theory,RelInfo,[Task])
-parse s
+parse :: CmdLineParams -> String -> (Theory,RelInfo,[Task])
+parse clp s
   = (theory, relInfo, tasks)
     where parseOutput = InputFile.myparse s
           pRelInfo    = P.relations parseOutput
-          relInfo     = handleFunInj $ saturate $ convertToOurType pRelInfo 
+          rels        = Set.toList $ Set.unions $ map (relSymbols . getSignature) $ P.theory parseOutput
+          relInfo     = handleFunInj $ saturate $ forceProperties clp rels $ convertToOurType pRelInfo
           theory      = convert relInfo $ P.theory parseOutput
           tasks       = P.tasks parseOutput
 
-convertToOurType :: PRelInfo -> RelInfo
+
+-- add properties specified by the --all-PROP parameters
+-- in order to work in case of automatic signature, requires
+-- the list of RelSymbol present in the formula
+
+forceProperties :: CmdLineParams -> [RelSymbol] -> RelInfo -> RelInfo
+forceProperties clp rels relI
+ = Map.toList $ foldr addToAll mRelI conds
+   where mRelI_ = Map.fromList relI
+         map2 = Map.fromList $ map (\r -> (r,[])) rels
+         mRelI = Map.union mRelI_ map2 -- mRelI_ is preferred when there is a key duplication
+         addToAll cond m = Map.map (\li -> nub (cond:li)) m
+         conds = map snd $
+                   filter fst $ [(allTransitive clp, Transitive),
+                                 (allReflexive  clp, Reflexive ),
+                                 (allSymmetric  clp, Symmetric ),
+                                 (allFunctional clp, Functional),
+                                 (allInjective  clp, Injective )]
+
+convertToOurType :: PRelInfo -> RelInfo -- and add for each relation in the formula, the relevant key
 convertToOurType prelI = map convertOne prelI
  where convertOne :: (RelSymbol,[P.RelProperties]) -> (RelSymbol,[RelProperties])
        convertOne (rs,pprops) = (rs, map c pprops)
@@ -149,8 +173,8 @@ convertToOurType prelI = map convertOne prelI
        c (P.SubsetOf _)    = error "SubsetOf not handled"
        c (P.TClosureOf _)  = error "TClosureOf not handled"
 
-simpleParse :: String -> (Theory,RelInfo,[Task])
-simpleParse s = parse $ "signature { automatic } theory { " ++ removeBeginEnd s ++ "}"
+simpleParse :: CmdLineParams -> String -> (Theory,RelInfo,[Task])
+simpleParse clp s = parse clp $ "signature { automatic } theory { " ++ removeBeginEnd s ++ "}"
  where removeBeginEnd = unwords . delete "begin" . delete "end" . words
 
 convert :: RelInfo -> [F.Formula NomSymbol PropSymbol RelSymbol] -> Formula

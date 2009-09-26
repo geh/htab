@@ -40,7 +40,7 @@ runWithParams clp =
                         hSetBuffering stdin LineBuffering
                         getContents
 
-     let parse = if simpleInput clp then F.simpleParse else F.parse
+     let parse = if simpleInput clp then F.simpleParse clp else F.parse clp
      allTasks <- parse <$> maybe fromStdIn readFile (filename clp)
      --
      let handleTimeout

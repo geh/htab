@@ -48,7 +48,12 @@ data CmdLineParams = CLP {
            inclBlockGlobal :: Bool,
            inclBlockChain  :: Bool,
            caching         :: Maybe Caching,
-           simpleInput     :: Bool
+           simpleInput     :: Bool,
+           allTransitive   :: Bool,
+           allReflexive    :: Bool,
+           allSymmetric    :: Bool,
+           allFunctional   :: Bool,
+           allInjective    :: Bool
          } deriving (Show)
 
 type CLPModifier   = CmdLineParams -> Either ParsingErrMsg CmdLineParams
@@ -180,8 +185,28 @@ options =
          "enable inclusion blocking among all nodes of a chain",
   Option []
          ["simple"]
-          (NoArg $ \c -> return c{simpleInput = True})
-         "read formula in the simple input format"
+         (NoArg $ \c -> return c{simpleInput = True})
+         "read formula in the simple input format",
+  Option []
+         ["all-transitive"]
+         (NoArg $ \c -> return c{allTransitive = True})
+         "make all relations transitive",
+  Option []
+         ["all-reflexive"]
+         (NoArg $ \c -> return c{allReflexive = True})
+         "make all relations reflexive",
+  Option []
+         ["all-symmetric"]
+         (NoArg $ \c -> return c{allSymmetric = True})
+         "make all relations symmetric",
+  Option []
+         ["all-functional"]
+         (NoArg $ \c -> return c{allFunctional = True})
+         "make all relations functional",
+  Option []
+         ["all-injective"]
+         (NoArg $ \c -> return c{allInjective = True})
+         "make all relations injective"
   ]
 
 
@@ -249,7 +274,12 @@ defaultParams = CLP {showHelp = False,
                      inclBlockGlobal = False,
                      inclBlockChain  = True,
                      caching     = Nothing,
-                     simpleInput = False
+                     simpleInput   = False,
+                     allTransitive = False,
+                     allReflexive  = False,
+                     allSymmetric  = False,
+                     allFunctional = False,
+                     allInjective  = False
 }
 
 getCmdLineParams :: IO (Either ParsingErrMsg CmdLineParams)
