@@ -96,6 +96,7 @@ runOneTask (query,mOutFile,fs) relInfo theory clp ts=
      let f = case query of { Valid -> encodeValidityTest relInfo theory fs ; Satisfiable -> encodeSatTest relInfo theory fs}
      --
      f `seq` when (showFormula clp) $ myPutStrLn ("\nInput for SAT test:\n{ " ++ show f ++ " }\nEnd of input\n")
+     when (showFormula clp) $ myPutStrLn $ "Relations properties :" ++ show relInfo
      --
      let fLang         = formulaLanguageInfo f
      let initialBranch = emptyBranch clp fLang relInfo
