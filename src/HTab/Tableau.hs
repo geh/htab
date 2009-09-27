@@ -226,5 +226,20 @@ setPrevPrefInBranch (hd:tl) = (new_hd:new_tl)
                                        new_tl = setPrevPrefInBranch tl
 setPrevPrefInBranch [] = []
 
---debug :: Show a => a -> a
---debug x = trace (show x) x
+set_disjointPrefixes :: Int -> Maybe Prefix -> BranchMonad BranchData
+set_disjointPrefixes lev pref_dis_rule =
+              do bd <- get
+                 case pref_dis_rule of
+                    Nothing -> return bd
+                    Just p -> do put bd{disjunctPrefixes=((lev,p):(disjunctPrefixes bd))}
+                                 return bd{disjunctPrefixes=((lev,p):(disjunctPrefixes bd))}
+
+delete_levels :: Int -> BranchData ->  BranchData
+delete_levels cur_level bd =
+        let new_d = del_level_disjunctPrefixes cur_level (disjunctPrefixes bd)
+        in bd{disjunctPrefixes = new_d}
+
+update_clash_hit :: DisjunctPrefixes -> BranchInfo -> BranchData ->  BranchData
+update_clash_hit new_disjunctPrefixes new_bi bd = bd{branch_info = new_bi,
+                                                     disjunctPrefixes = new_disjunctPrefixes}
+

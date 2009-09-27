@@ -59,8 +59,9 @@ import qualified HTab.DMap as DMap
 import HTab.Base(moveInMap, almostCartesianProduct, doMemoize, set, list)
 
 import HTab.Relations ( Relations, emptyRels, insertRelation, mergePrefixWith,
-                        getSuccessors, getPredecessors, getIncomingLinks, getOutgoingLinks,
-                        showPretty )
+                        getSuccessors, getPredecessors, getIncomingLinks, getOutgoingLinks)
+import qualified HTab.Relations as Relations
+import qualified Data.Bimap as Bimap
 
 data BranchInfo = BranchOK Branch |
                   BranchClash Branch Prefix DependencySet Formula
@@ -225,33 +226,50 @@ emptyBranch clp fLang relInfo_ =
                        else InclusionBlockingGlobal
 
 instance Show Branch where
-    show br = "Input language: " ++ show (inputLanguage br) ++
-              "\nClashable formulas:\n" ++ prettyShowMap_ (DMap.toMap $ clashStr br) (\v -> "(" ++ prettyShowMap_clashable v ++ ")") "\n " ++
-              "\nTodo list(s): "   ++ show (todoList br)  ++
-              "\nAccessibility: "        ++ showPretty (accStr br) ++
-              "\nBox constraints fwd: " ++ prettyShowMap_ (DMap.toMap $ boxConstrFwd br) (\v -> "(" ++ prettyShowMap_rel_ds_x v ++ ")") "\n " ++
-              "\nBox constraints bwd: " ++ prettyShowMap_ (DMap.toMap $ boxConstrBwd br) (\v -> "(" ++ prettyShowMap_rel_ds_x v ++ ")") "\n " ++
-              "\nDia rule chart: "  ++ prettyShowMap_ (diaRlCh br) (show . list) "\n " ++
-              "\nDown rule chart: " ++ prettyShowMap_ (downRlCh br) (show . list) "\n " ++
-              "\n@ rule chart: "   ++ show (list $ atRlCh br) ++
-              "\nExist rule chart:" ++ show (list $ existRlCh br) ++
-              "\nDiff dia rule chart: "  ++ prettyShowMap_ (dDiaRlCh br) show "\n " ++
-              "\nDown var relevant chart: " ++ prettyShowMap_ (downVarRelevantCh br) show ", " ++
-              "\nUnrestricted blocking book-keep:" ++ show (bookKeepUB br) ++ ", " ++
-              "\nUniv constraints: "++ show (univCons br) ++
-              "\nDiff box constraints: "++ show (dBoxCons br) ++
-              "\nPrefix to dependency set:\n " ++ prettyShowMap_ (prToDepSet br) dsShow "\n " ++
-              "\nPrefix to formulas:\n" ++ prettyShowMap_ (prefToForms br) (show . Set.toList) "\n " ++
-              "\nPrefix to unfulfilled <*>: " ++ show (DMap.flattenDMap $ prefToUevFwd br) ++
-              "\nPrefix to unfulfilled <-*>: " ++ show (DMap.flattenDMap $ prefToUevBwd br) ++
-              "\nTrue formulas: " ++ "\n " ++ prettyShowMap_ (branchTrueForms br) (show . Set.toList) "\n " ++
-              "\nParent: " ++ prettyShowMap (prefParent br) ", " ++
-              "\nInclusion urfather map: "  ++ show (inclUrMap br) ++
-              "\nIncreased prefixes: " ++ show (incrPrs br) ++
-              "\nPrefixes in (current branch - prev(current branch): " ++ show (notPrevPref br) ++ 
-              "\nBlocking mode: " ++ show (blockMode br) ++
-              "\nPrefix-Nominal classes : " ++ prettyShowMap (nomPrefClasses br) ", " ++
-              "\nModel-relevant nominals : " ++ show (relevantNominals br)
+ show br
+  = concat [  "Input language: ", show (inputLanguage br),
+              "\nClashable formulas:", showMap (\v -> "(" ++ showMap_lits v ++ ")") "\n " (toMap $ clashStr br),
+              "\n", show (todoList br),
+              showl "\nRelations: "       (accStr br),
+              ifNotEmpty (boxConstrFwd br) (\c -> "\nBox fwd: " ++ showMap (\v -> "(" ++ showMap_rel v ++ ")") "\n " (toMap c)),
+              ifNotEmpty (boxConstrBwd br) (\c -> "\nBox bwd: " ++ showMap (\v -> "(" ++ showMap_rel v ++ ")") "\n " (toMap c)),
+              showl "\nDia rule chart: "  (diaRlCh br),
+              showl "\nDown rule chart: " (downRlCh br),
+              showl "\n@ rule chart: "     (list $ atRlCh br),
+              showl "\nExist rule chart: " (list $ existRlCh br),
+              showl "\nDiff dia rule chart: "   (dDiaRlCh br),
+              showl "\nDown var relevant chart: " (downVarRelevantCh br),
+              "\nUnrestricted blocking book-keep:", show (bookKeepUB br), ", ",
+              showl "\nUniv constraints: " (univCons br),
+              showl "\nDiff box constraints: " (dBoxCons br),
+              ifNotEmpty (prToDepSet br) (\m -> "\nPrefix to dependency set:" ++ showMap  dsShow "\n " m),
+              ifNotEmpty (prefToForms br) (\m -> "\nPrefix to formulas:"       ++ showMap  (show . Set.toList) "\n " m),
+              showl "\nPrefix to unfulfilled <*>: "  (DMap.flatten $ prefToUevFwd br),
+              showl "\nPrefix to unfulfilled <-*>: " (DMap.flatten $ prefToUevBwd br),
+              ifNotEmpty (branchTrueForms br) (\m -> "\nTrue formulas: " ++ show (DMap.flatten m)),
+              showl "\nParent: " (prefParent br),
+              "\nInclusion urfather map: ", show (inclUrMap br),
+              "\nIncreased prefixes: ", show (incrPrs br),
+              "\nPrefixes in (current branch - prev(current branch): ", show (prevPref br),
+              "\nBlocking mode: ", show (blockMode br),
+              "\nPrefix-Nominal classes : ", showMap show ", " (nomPrefClasses br),
+              showl "\nModel-relevant nominals : " (list $ relevantNominals br)
+           ]
+              where
+                  ifNotEmpty b f = if empty b then "" else f b
+                  showl intro b  = if empty b then "" else intro ++ show b
+                  str True = "" ; str False = "!"
+
+                  showMap vShow sep = foldWithKey (\k v -> (++ sep ++ show k ++ " -> " ++ vShow v )) ""
+                  showMap_lits = foldWithKey (\a (b,d) -> (++ str b ++ show a ++ " " ++ dsShow d  ++ ", ")) ""
+                  showMap_rel = foldWithKey (\r dxs -> (++ "-" ++ r ++ "-> " ++ show dxs ++ ", ")) ""
+
+class Emptyable a where
+ empty :: a -> Bool
+
+instance Emptyable [a] where
+ empty [] = True
+ empty _  = False
 
 instance Emptyable (Map a b) where
  empty = Map.null
@@ -265,6 +283,43 @@ instance Emptyable Relations where
 instance Emptyable (Set a) where
  empty = Set.null
 
+
+data TodoList =  Unfair{conjStr :: Conj_structure,
+                        disjStr :: Disj_structure,
+                         diaStr :: Dia_structure,
+                        diaXStr :: DiaX_structure,
+                       existStr :: Exist_structure,
+                          atStr :: At_structure,
+                        downStr :: Down_structure,
+                        diffStr :: Diff_structure }
+               | Fair [ScheduledRule]
+
+instance Show TodoList where
+ show (Fair srs) = "Todo list: " ++ show srs
+ show (Unfair conjs disjs dias diaxs es ars downs diffs)
+   = "Todo lists:" ++ concatMap (\el -> "\n" ++ show (list el)) [conjs, disjs, dias, diaxs, es, ars, downs, diffs]
+
+data ScheduledRule =   SR_Formula PrFormula
+                     | SR_UBlocking Prefix Prefix
+
+instance Show ScheduledRule where
+ show (SR_Formula pf)    = show pf
+ show (SR_UBlocking i j) = "SR " ++ show (i,j)
+
+emptyTodoList :: CmdLineParams -> TodoList
+emptyTodoList clp =
+ if fairStrategy clp
+   then Fair []
+   else Unfair {
+                  conjStr= Set.empty::Conj_structure,
+                  disjStr= Set.empty::Disj_structure,
+                  diaStr = Set.empty::Dia_structure,
+                  diaXStr = Set.empty::DiaX_structure,
+                  existStr = Set.empty::Exist_structure,
+                  atStr = Set.empty::At_structure,
+                  downStr = Set.empty::Down_structure,
+                  diffStr = Set.empty::Diff_structure
+               }
 
 {-
    "add formula(s)" functions, that handle all that is related
