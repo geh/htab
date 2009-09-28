@@ -116,7 +116,7 @@ data BlockingMode = InclusionBlockingGlobal | InclusionBlockingChain | ChainBloc
 
 
 type BranchTrueForms = DMap Prefix Formula DependencySet 
-type UCMap = Bimap.Bimap UCFormula Int 
+type UCMap = Bimap.Bimap Formula Int
 --The unsat cache, includes two data structure to allow us to choose any of them.
 --once chosen a data structure, the other is kept emptied
 type DisjunctPrefixes = [(Int,Prefix)]

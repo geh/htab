@@ -79,13 +79,12 @@ update_cache_ approach pr br uc =
      trueForms    = DMap.lookupInter pr $ branchTrueForms br
 
      univForms1   = fst $ get_univ_forms (univCons br)
-     univForms    = map UniversalC    univForms1
-     nonUnivForms = map NonUniversalC (remove_univ trueForms univForms1)
+     univForms  = map A univForms1
 
      noms         = getNoms (trueForms ++ univForms1)
      nominalForms = fst $ get_nominal_forms noms br
 
-     cacheForms = nonUnivForms ++ univForms ++ nominalForms -- formulas to be cached
+     cacheForms = nub $ trueForms ++ univForms ++ nominalForms -- formulas to be cached
 
      -- Update the Formula <-> Int BiMap
      (maxIdx, indexes,newMapDesc) = update_ucmap ( descrip_matrix uc ) cacheForms (current_index uc)
@@ -110,7 +109,7 @@ update_cache_ approach pr br uc =
 getNoms :: [Formula]-> [NomSymbol]
 getNoms fs = Set.toList $ Set.unions $ map (fst . extractNominals ) fs
 
-get_nominal_forms:: [NomSymbol] -> Branch -> ([UCFormula],DependencySet)
+get_nominal_forms:: [NomSymbol] -> Branch -> ([Formula],DependencySet)
 get_nominal_forms noms br = 
  foldr merge ([],dsEmpty) $ map get_nominal_forms_one noms 
  where merge (fs1,ds1) (fs2,ds2) = (fs1 ++ fs2, dsUnion ds1 ds2)
@@ -121,24 +120,12 @@ get_nominal_forms noms br =
             (btf_list,dps) = case btf of
                                Nothing     -> ([], dsEmpty)
                                Just btfSet -> (Map.keys btfSet, dsUnions $ Map.elems btfSet)
-        in (map (NominalC n) btf_list, dps)
+        in (map (At n) btf_list, dps)
 
 
 --to get the universally constrained formulas
 get_univ_forms :: Univ_constraints -> ([Formula],DependencySet)
 get_univ_forms ucs = ( map snd ucs, dsUnions $ map fst ucs )
-
-
-type TrueForms = [Formula]
-type UnivForms = [Formula]
-
-remove_univ :: TrueForms -> UnivForms -> [Formula] 
-remove_univ trueForms univ_forms
- = filter (\f -> not $ is_universal f univ_forms) trueForms
-
-is_universal :: Formula -> UnivForms -> Bool 
-is_universal (A _) _  = True
-is_universal form ufs = any (== form) ufs
 
 ---------------------------------------------------------------------------
 --------------------------------search------------------------------------
@@ -171,13 +158,12 @@ search_cache_pr approach pr br bd =
  let  trueForms    = DMap.lookupInter pr $ branchTrueForms br
 
       univForms1 = fst $ get_univ_forms (univCons br)
-      univForms  = map UniversalC univForms1
-      nonUnivForms = map NonUniversalC (remove_univ trueForms univForms1)
+      univForms  = map A univForms1
 
       noms         = getNoms (trueForms ++ univForms1)
       nominalForms = fst $ get_nominal_forms noms br
 
-      cacheForms = nonUnivForms ++ univForms ++ nominalForms -- formulas to be cached
+      cacheForms = nub $ trueForms ++ univForms ++ nominalForms -- formulas to be cached
 
       uc  = unsat_cache bd
       c_i = current_index uc
@@ -194,54 +180,51 @@ search_cache_pr approach pr br bd =
       Nothing     -> branch_info bd
       Just newIdx ->
                let new_form_list = get_new_formula_list de newIdx
-                   dps           = get_dps new_form_list br pr
+                   dps           = get_dps br pr new_form_list
                in
                  BranchClash br pr dps (neg taut)
 
 
 -- receives the list of indexes of formulas in the cache, and the bidirectional map,
 -- and returns the list of formulas corresponding to this list of indexes
-get_new_formula_list :: UCMap -> [Int] -> [UCFormula]
+get_new_formula_list :: UCMap -> [Int] -> [Formula]
 get_new_formula_list inv_desc = map (\i -> fromJust $ Bimap.lookupR i inv_desc)
 
 
 --to get the dependency set corresponding to a list of UCFormulas
-get_dps::[UCFormula] -> Branch -> Prefix -> DependencySet
-get_dps (UniversalC form: restForms) br pr= 
-  let dps = get_dps_fU (univCons br) form
-  in dsUnion dps (get_dps restForms br pr)
+get_dps :: Branch -> Prefix -> [Formula] -> DependencySet
+get_dps br pr
+ = dsUnions . map get_dps_one
 
-get_dps (NominalC n form: restForms) br pr
- = let ds_n =  (DS.Nominal (showNom n))
-       uf_n = getUrfather br ds_n 
-       dps1 = DMap.lookup uf_n form (branchTrueForms br)
-       dps = case dps1  of
-                Nothing -> dsEmpty
-                Just d -> d
-   in dsUnion dps (get_dps restForms br pr)
+   where get_dps_one (A f)
+          =  dsUnion (get_dps_local (A f))
+                     ( case lookup_ f (univCons br) of
+                          Nothing -> dsEmpty
+                          Just dps -> dps              )
 
-get_dps (NonUniversalC form: restForms) br pr
- = let dps1 = DMap.lookup pr form (branchTrueForms br)
-       dps = case dps1  of
-                Nothing -> dsEmpty
-                Just d -> d
-   in dsUnion dps (get_dps restForms br pr)
+         get_dps_one (At n f)
+           = let ur = getUrfather br $ DS.Nominal $ showNom n
+                 dn = case DMap.lookup ur f (branchTrueForms br) of
+                         Nothing -> dsEmpty
+                         Just d -> d
+             in dsUnion dn (get_dps_local (At n f))
 
-get_dps [] _ _ = dsEmpty
+         get_dps_one f = get_dps_local f
 
-get_dps_fU :: Univ_constraints -> Formula -> DependencySet
-get_dps_fU ucs fo
- = case lookup fo $ map switch ucs of
-      Nothing -> dsEmpty
-      Just dps -> dps
-    where switch (x,y) = (y,x)
+         get_dps_local f
+            = case DMap.lookup pr f (branchTrueForms br) of
+                  Nothing -> dsEmpty
+                  Just d -> d
+
+         lookup_ f = (lookup f) . (map switch)
+         switch (x,y) = (y,x)
 
 
 -----------------------------------------------------------------------------------
 ---------------Mapping Structure functions------------------------------------------
 ------------------------------------------------------------------------------------
 
-update_ucmap :: UCMap -> [UCFormula] -> Int -> (Int,[Int],UCMap)
+update_ucmap :: UCMap -> [Formula] -> Int -> (Int,[Int],UCMap)
 update_ucmap descMat fs maxIdx =
  foldr  (\f (currentMaxIdx,currentIdxs,currentMap)
             -> let (newMaxIdx,idx,newMap) = get_index currentMap f currentMaxIdx
@@ -249,21 +232,21 @@ update_ucmap descMat fs maxIdx =
         )
         (maxIdx, [], descMat) fs
 
-get_index :: UCMap -> UCFormula -> Int -> (Int,Int,UCMap)
+get_index :: UCMap -> Formula -> Int -> (Int,Int,UCMap)
 get_index mapDes f maxIdx = 
  case Bimap.lookup f mapDes of
     Just i  -> (maxIdx, i, mapDes)
     Nothing -> let (n_i,new_mapDes) = updateBiMap mapDes f maxIdx
                in  (n_i, n_i, new_mapDes)
 
-updateBiMap :: UCMap -> UCFormula -> Int -> (Int,UCMap)
+updateBiMap :: UCMap -> Formula -> Int -> (Int,UCMap)
 updateBiMap mapDes f maxIdx = 
   let newMaxIdx  = maxIdx + 1
       new_mapDes = Bimap.insert f newMaxIdx mapDes
   in ( newMaxIdx, new_mapDes )
 
 
-lookup_ucmap :: UCMap -> [UCFormula] -> Maybe [Int]
+lookup_ucmap :: UCMap -> [Formula] -> Maybe [Int]
 lookup_ucmap descMat fs =
  foldr  (\f mList
             -> case mList of

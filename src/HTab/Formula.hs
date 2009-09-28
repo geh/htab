@@ -12,7 +12,7 @@ module HTab.Formula
 (PropSymbol(..), NomSymbol(..), RelSymbol(..),
 Rel, Prefix,
 Formula(..), Literal(..), Atom(..),
-UCFormula(..),get_max_subterms,
+get_max_subterms,
 DependencySet, Dependency,
 dsUnion, dsUnions, dsInsert, dsMember,
 dsEmpty, dsMin, dsShow,
@@ -50,10 +50,6 @@ import HTab.CommandLine ( CmdLineParams(..) )
 
 type Prefix = Int
 type Rel = String
-
---the formulas stored in the unsat cache
-data UCFormula = NonUniversalC Formula | UniversalC Formula | NominalC NomSymbol Formula
-                 deriving (Eq, Ord, Show)
 
 data Atom = Taut
           | N NomSymbol
