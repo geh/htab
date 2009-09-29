@@ -374,11 +374,11 @@ addFormula clp br f@(PrFormula pr fDs f2@(Lit (PosLit (N (NomSymbol n))))) histo
                   Slot_UpdateSuccess urfatherSlot ->
                       let newClashStr    = DMap $ Map.delete oldUr $ Map.insert newUr urfatherSlot (toMap $ clashStr br)
                           newPrefToForms = moveInMap (prefToForms br) oldUr newUr Set.union
-                          newTrueForms   = DMap.moveInnerDataDMap (trueForms br) oldUr newUr dsUnion
                           newBoxConstrFwd = DMap.moveInnerDataDMapPlusDeps fDs (boxConstrFwd br) oldUr newUr
                           newBoxConstrBwd = DMap.moveInnerDataDMapPlusDeps fDs (boxConstrBwd br) oldUr newUr
                           newAccStr       = mergePrefixWith (accStr br) oldUr newUr fDs
 
+                          newTrueForms   = case caching clp of {Nothing -> trueForms br ; _ -> DMap.moveInnerDataDMap (trueForms br) oldUr newUr dsUnion}
 
                           newDiaRlCh     = moveInMap (diaRlCh br)  oldUr newUr Set.union
                           newDiaXRlCh    = moveInMap (diaXRlCh br) oldUr newUr Set.union
@@ -458,12 +458,13 @@ addFormula2 :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
 addFormula2 clp br pf@(PrFormula pr _ f) =
    addFormula3 clp br5 pf
  where
-     br2 = addToTrueForms br pf -- TODO if cache ...
+     br2 = case caching clp of
+             Just _  -> addToTrueForms br pf
+             Nothing -> br
      br3 = if forInclusion br f
              then addToPrefToForms br2 pf
              else br2
      br4 = updatePrefToUev br3 pr f
-     --br5 = addToNotPrevPref pr br4 -- TODO if cache ...
      br5 = addToAugmentedPrefixes pr br4
 
 addFormula3 :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
