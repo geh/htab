@@ -76,15 +76,15 @@ update_cache_prefixes approach pr br uc notvps=
 update_cache_ :: Caching -> Prefix -> Branch -> UCache-> UCache
 update_cache_ approach pr br uc =
  let -- See what formulas we cache
-     trueForms    = DMap.lookupInter pr $ branchTrueForms br
+     localForms   = DMap.lookupInter pr $ trueForms br
 
      univForms1   = fst $ get_univ_forms (univCons br)
-     univForms  = map A univForms1
+     univForms    = map A univForms1
 
-     noms         = getNoms (trueForms ++ univForms1)
+     noms         = getNoms (localForms ++ univForms1)
      nominalForms = fst $ get_nominal_forms noms br
 
-     cacheForms = nub $ trueForms ++ univForms ++ nominalForms -- formulas to be cached
+     cacheForms = nub $ localForms ++ univForms ++ nominalForms -- formulas to be cached
 
      -- Update the Formula <-> Int BiMap
      (maxIdx, indexes,newMapDesc) = update_ucmap ( descrip_matrix uc ) cacheForms (current_index uc)
@@ -116,7 +116,7 @@ get_nominal_forms noms br =
 
        get_nominal_forms_one n = 
         let ur  = getUrfather br $ DS.Nominal (showNom n)
-            btf = Map.lookup ur $ DMap.toMap $ branchTrueForms br
+            btf = Map.lookup ur $ DMap.toMap $ trueForms br
             (btf_list,dps) = case btf of
                                Nothing     -> ([], dsEmpty)
                                Just btfSet -> (Map.keys btfSet, dsUnions $ Map.elems btfSet)
@@ -155,15 +155,15 @@ search_cache_ _ [] _ bd = branch_info bd
 
 search_cache_pr :: Caching -> Prefix -> Branch -> BranchData -> BranchInfo
 search_cache_pr approach pr br bd =
- let  trueForms    = DMap.lookupInter pr $ branchTrueForms br
+ let  localForms   = DMap.lookupInter pr $ trueForms br
 
-      univForms1 = fst $ get_univ_forms (univCons br)
-      univForms  = map A univForms1
+      univForms1   = fst $ get_univ_forms (univCons br)
+      univForms    = map A univForms1
 
-      noms         = getNoms (trueForms ++ univForms1)
+      noms         = getNoms (localForms ++ univForms1)
       nominalForms = fst $ get_nominal_forms noms br
 
-      cacheForms = nub $ trueForms ++ univForms ++ nominalForms -- formulas to be cached
+      cacheForms = nub $ localForms ++ univForms ++ nominalForms -- formulas to be cached
 
       uc  = unsat_cache bd
       c_i = current_index uc
@@ -204,7 +204,7 @@ get_dps br pr
 
          get_dps_one (At n f)
            = let ur = getUrfather br $ DS.Nominal $ showNom n
-                 dn = case DMap.lookup ur f (branchTrueForms br) of
+                 dn = case DMap.lookup ur f (trueForms br) of
                          Nothing -> dsEmpty
                          Just d -> d
              in dsUnion dn (get_dps_local (At n f))
@@ -212,7 +212,7 @@ get_dps br pr
          get_dps_one f = get_dps_local f
 
          get_dps_local f
-            = case DMap.lookup pr f (branchTrueForms br) of
+            = case DMap.lookup pr f (trueForms br) of
                   Nothing -> dsEmpty
                   Just d -> d
 

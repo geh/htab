@@ -22,7 +22,7 @@ getUrfather, getUrfatherAndDeps, isInTheModel, relationIsInTheModel,
 getModelRepresentative, isNotBlocked,
 calculateStepInfo, BlockingMode(..), diaAlreadyDone, diaXAlreadyDone,
 downAlreadyDone, incPropSymbol, incNomSymbol,
-UCache(..),Univ_constraints,AugmentedPrefixes,UCMap,BranchTrueForms,gen_unsat_cache,setPrevPref,
+UCache(..),Univ_constraints,AugmentedPrefixes,UCMap,TrueForms,gen_unsat_cache,setPrevPref,
 collectUevBprs, ReducedDisjunct(..), newNomBaseName, newPropBaseName, getUnappliedUBPairs,
 isReflexive, isSymmetric, isTransitive,
 del_pref_disjunctPrefixes, del_level_disjunctPrefixes, search_disjunctPrefixes,DisjunctPrefixes
@@ -115,7 +115,7 @@ data BlockingMode = InclusionBlockingGlobal | InclusionBlockingChain | ChainBloc
  deriving (Eq,Show)
 
 
-type BranchTrueForms = DMap Prefix Formula DependencySet 
+type TrueForms = DMap Prefix Formula DependencySet
 type UCMap = Bimap.Bimap Formula Int
 --The unsat cache, includes two data structure to allow us to choose any of them.
 --once chosen a data structure, the other is kept emptied
@@ -149,9 +149,9 @@ data Branch = Branch {clashStr :: Clashable_info,
                  -- formulas true in an equivalence class
                    prefToForms :: PrefToFormulas,
              --all formulas true in the branch, by prefixes
-               branchTrueForms :: BranchTrueForms,
+                     trueForms :: TrueForms,
         --To keep the prefixes true at b-b1, where b is the current branch, and b1 is prev(b)
-                   prevPref :: PrevPrefixes, 
+                      prevPref :: PrevPrefixes,
                  -- backjumping data attached to equivalence classes
                     prToDepSet :: PrefToDepSet,
                  -- other data
@@ -206,7 +206,7 @@ emptyBranch clp fLang relInfo_ =
                   lastNom  = Nothing,
                   lastProp = Nothing,
                   prefToForms= Map.empty::PrefToFormulas,
-                  branchTrueForms=DMap.empty :: BranchTrueForms, 
+                  trueForms=DMap.empty :: TrueForms,
                   prToDepSet= Map.empty::PrefToDepSet,
                   prefToUevFwd= DMap.empty::PrefToUev,
                   prefToUevBwd= DMap.empty::PrefToUev,
@@ -246,7 +246,7 @@ instance Show Branch where
               ifNotEmpty (prefToForms br) (\m -> "\nPrefix to formulas:"       ++ showMap  (show . Set.toList) "\n " m),
               showl "\nPrefix to unfulfilled <*>: "  (DMap.flatten $ prefToUevFwd br),
               showl "\nPrefix to unfulfilled <-*>: " (DMap.flatten $ prefToUevBwd br),
-              ifNotEmpty (branchTrueForms br) (\m -> "\nTrue formulas: " ++ show (DMap.flatten m)),
+              ifNotEmpty (trueForms br) (\m -> "\nTrue formulas: " ++ show (DMap.flatten m)),
               showl "\nParent: " (prefParent br),
               "\nInclusion urfather map: ", show (inclUrMap br),
               "\nIncreased prefixes: ", show (incrPrs br),
@@ -374,7 +374,7 @@ addFormula clp br f@(PrFormula pr fDs f2@(Lit (PosLit (N (NomSymbol n))))) histo
                   Slot_UpdateSuccess urfatherSlot ->
                       let newClashStr    = DMap $ Map.delete oldUr $ Map.insert newUr urfatherSlot (toMap $ clashStr br)
                           newPrefToForms = moveInMap (prefToForms br) oldUr newUr Set.union
-                          newbranchTrueForms = DMap.moveInnerDataDMap (branchTrueForms br) oldUr newUr dsUnion
+                          newTrueForms   = DMap.moveInnerDataDMap (trueForms br) oldUr newUr dsUnion
                           newBoxConstrFwd = DMap.moveInnerDataDMapPlusDeps fDs (boxConstrFwd br) oldUr newUr
                           newBoxConstrBwd = DMap.moveInnerDataDMapPlusDeps fDs (boxConstrBwd br) oldUr newUr
                           newAccStr       = mergePrefixWith (accStr br) oldUr newUr fDs
@@ -421,7 +421,7 @@ addFormula clp br f@(PrFormula pr fDs f2@(Lit (PosLit (N (NomSymbol n))))) histo
                                                  accStr         = newAccStr,
                                                  prToDepSet     = newPrToDepSet,
                                                  prefToForms    = newPrefToForms,
-                                                 branchTrueForms= newbranchTrueForms,
+                                                 trueForms      = newTrueForms,
                                                  prefToUevFwd   = newPrefToUevFwd,
                                                  prefToUevBwd   = newPrefToUevBwd,
                                                  diaRlCh        = newDiaRlCh,
@@ -458,7 +458,7 @@ addFormula2 :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
 addFormula2 clp br pf@(PrFormula pr _ f) =
    addFormula3 clp br5 pf
  where
-     br2 = addToBranchTrueForms br pf -- TODO if cache ...
+     br2 = addToTrueForms br pf -- TODO if cache ...
      br3 = if forInclusion br f
              then addToPrefToForms br2 pf
              else br2
@@ -562,11 +562,10 @@ namd [] theMap = map (\((p,f),ds) -> PrFormula p ds f) (Map.assocs theMap)
 
 
 --to fill the new field
-addToBranchTrueForms :: Branch -> PrFormula -> Branch
-addToBranchTrueForms br (PrFormula pre dps f) =
-  br{branchTrueForms = newMap}
- where currentBtf = branchTrueForms br
-       newMap = DMap.insertWith dsUnion pre f dps currentBtf
+addToTrueForms :: Branch -> PrFormula -> Branch
+addToTrueForms br (PrFormula pre dps f) =
+  br{trueForms = newMap}
+ where newMap = DMap.insertWith dsUnion pre f dps $ trueForms br
 
 
 addToPrefToForms :: Branch -> PrFormula -> Branch
