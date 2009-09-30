@@ -18,11 +18,7 @@ import HTab.Statistics(Statistics)
 import HTab.Formula(Prefix,DependencySet,Formula,dsEmpty,dsMember,dsUnion,languageTrans)
 import HTab.ModelGen ( Model, buildModel )
 import HTab.Timeout( isTimeout )
-import HTab.UnsatCache
-
---import Debug.Trace
-
--- import qualified HTab.DisjSet as DS
+import HTab.UnsatCache (updateWhenClash, updateWhenDisjunct, query)
 
 data OpenFlag = OPEN Model | CLOSED DependencySet | TIMEOUT
 
@@ -32,60 +28,55 @@ tableau =
          bd <- get
          let clp = branch_clp bd
 
-         let signal = timeout_signal bd
-         timeout <- isTimeout signal
+         timeout <- isTimeout $ timeout_signal bd
          if timeout
           then return TIMEOUT
           else do debugMsg_NewSection
-                  case (branch_info bd) of
+                  case branch_info bd of
                      BranchClash br pr bprs f ->
                       do debugMsg_BranchClash br pr bprs f
                          liftStats $ recordClosedBranch
-                         -- update the cache
-                         case caching $ clp of
-                             Just _
-                                    -> do _ <- update_cache pr br Cclash
-                                          debugMsg_BranchClash1 br pr dsEmpty 1
-                                          return (CLOSED bprs)
+                         case caching clp of
                              Nothing -> return (CLOSED bprs)
+                             Just _  -> do updateWhenClash pr br
+                                           debugMsg_BranchClash1 br pr dsEmpty 1
+                                           return (CLOSED bprs)
                      BranchOK br_ ->
-                      do 
-                         case caching $ clp of
+                      do let currentBranchingDepth = (branch_depth bd) + 1
+                         let br = calculateStepInfo br_
+                         case caching clp of
                           Nothing
                             -> do debugMsg_BranchOK br_
-                                  let currentBranchingDepth = (branch_depth bd) + 1
-                                  let br = calculateStepInfo br_
                                   case applicableRules br clp currentBranchingDepth of
+                                    []   ->
+                                        do debugMsg_BranchOK_saturated
+                                           return $ if existUnsatisfiedEventualities br
+                                                     then CLOSED $ collectUevBprs br
+                                                     else OPEN   $ buildModel br
                                     (rule:_) ->
                                         do debugMsg_BranchOK_applicableRule rule
                                            liftStats $ recordFiredRule $ ruleToId rule
                                            let possibleBranches = applyRule clp rule br
                                            modify addZeroInPath
                                            chooseBranch possibleBranches
-                                    []   ->
-                                        do debugMsg_BranchOK_saturated
-                                           return $ if (Map.null $ DMap.toMap $ prefToUevFwd br) && (Map.null $ DMap.toMap $ prefToUevBwd br)
-                                                     then OPEN (buildModel br)        -- no unsatisfied eventuality
-                                                     else CLOSED $ collectUevBprs br  -- which bprs ? union those of the unsatisfied eventualities
+
                           Just _
-                            -> do let new_bi = search_cache br_ bd
-                                  case (new_bi) of
-                                     BranchClash br1 pr1 bprs1 _ ->
-                                         do --we found a hit: update branch data to reflect the closed branch... 
-                                            debugMsg_BranchClash1 br1 pr1 bprs1 0--TODO see should I add this line?
+                            -> do case query br_ (unsat_cache bd) of-- not br, because br has removed its augmented prefixes
+                                     new_bi@(BranchClash br1 pr1 bprs1 _) ->
+                                         do debugMsg_BranchClash1 br1 pr1 bprs1 0--TODO see should I add this line?
                                             let new_disjunctPrefixes = del_pref_disjunctPrefixes br1 pr1 (disjunctPrefixes bd)
-                                            modify (update_clash_hit new_disjunctPrefixes new_bi)
-                                            --put bd{branch_info = new_bi,
-                                              --     disjunctPrefixes = new_disjunctPrefixes}
+                                            modify (update_cache_hit new_disjunctPrefixes new_bi)
                                             liftStats $ recordClosedBranch
                                             liftStats $ recordCacheHit
                                             return (CLOSED bprs1)
                                      BranchOK br1_ ->
-                                        do --we didn't find a hit: go on working with the branch
+                                        do -- no cache hit: go on working with the branch
                                            debugMsg_BranchOK br1_
-                                           let currentBranchingDepth = (branch_depth bd) + 1
-                                           let br = calculateStepInfo br1_
                                            case applicableRules br clp currentBranchingDepth of
+                                                [] ->   do debugMsg_BranchOK_saturated
+                                                           return $ if existUnsatisfiedEventualities br
+                                                                      then CLOSED $ collectUevBprs br
+                                                                      else OPEN   $ buildModel br
                                                 (rule:_) ->
                                                         do debugMsg_BranchOK_applicableRule rule
                                                            liftStats $ recordFiredRule $ ruleToId rule
@@ -108,15 +99,12 @@ tableau =
                                                              do modify (delete_levels currentBranchingDepth)
                                                                 case result_branching of 
                                                                   c@(CLOSED bprs) ->
-                                                                     do _ <- update_cache p br Cdisjunct
+                                                                     do updateWhenDisjunct p br
                                                                         debugMsg_BranchClash1 br p bprs 2
                                                                         return c
                                                                   TIMEOUT -> return TIMEOUT
                                                                   o@(OPEN _)  -> return o
-                                                [] ->   do debugMsg_BranchOK_saturated
-                                                           return $ if (Map.null $ DMap.toMap $ prefToUevFwd br) && (Map.null $ DMap.toMap $ prefToUevBwd br)
-                                                                      then OPEN (buildModel br)        -- no unsatisfied eventuality
-                                                                      else CLOSED $ collectUevBprs br  -- which bprs ? union those of the unsatisfied eventualities
+
 
 -- depth-first branch-choosing strategy
 chooseBranch :: [BranchInfo] ->  BranchMonad OpenFlag
@@ -215,7 +203,8 @@ debugMsg_BranchOK_saturated =
     let traceMsg = "Saturated open branch"
     liftIO $ vPutStrLn ("\n>> " ++ traceMsg) showState
 
-
+existUnsatisfiedEventualities :: Branch -> Bool
+existUnsatisfiedEventualities br = not ((Map.null $ DMap.toMap $ prefToUevFwd br) && (Map.null $ DMap.toMap $ prefToUevBwd br))
 
 setPrevPrefInBranch :: [BranchInfo] -> [BranchInfo]
 setPrevPrefInBranch (hd:tl) = (new_hd:new_tl)
@@ -239,7 +228,8 @@ delete_levels cur_level bd =
         let new_d = del_level_disjunctPrefixes cur_level (disjunctPrefixes bd)
         in bd{disjunctPrefixes = new_d}
 
-update_clash_hit :: DisjunctPrefixes -> BranchInfo -> BranchData ->  BranchData
-update_clash_hit new_disjunctPrefixes new_bi bd = bd{branch_info = new_bi,
+-- only called when new_bi is BranchClash ...
+update_cache_hit :: DisjunctPrefixes -> BranchInfo -> BranchData ->  BranchData
+update_cache_hit new_disjunctPrefixes new_bi bd = bd{branch_info = new_bi,
                                                      disjunctPrefixes = new_disjunctPrefixes}
 

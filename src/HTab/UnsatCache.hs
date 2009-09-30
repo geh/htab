@@ -1,7 +1,8 @@
 module HTab.UnsatCache 
-(update_cache,search_cache,CachingInstance(..))
+( updateWhenClash, updateWhenDisjunct, query )
 where
 
+import Control.Monad ( when )
 import Control.Monad.State(put, get)
 import Control.Applicative ( (<$>) )
 import qualified HTab.DMap as DMap
@@ -19,58 +20,46 @@ import HTab.Branch(BranchInfo(..),Branch(..),BranchMonad, BranchData(..),
                    del_pref_disjunctPrefixes, search_disjunctPrefixes)
 import qualified HTab.DisjSet as DS
 
-data CachingInstance = Cclash | Cdisjunct deriving Show
-
-------------update--------------------------------
---given the input prefix, get the parents and call to update cache 
-update_cache :: Prefix -> Branch -> CachingInstance -> BranchMonad BranchData
---when calling from a clash, don't add into the cache the info from the clashing prefix
-update_cache pr1 br Cclash =
+updateWhenClash :: Prefix -> Branch -> BranchMonad ()
+updateWhenClash pr br =
  do bd <- get
     let invalid_prefixes = nub $ prevPref br
-    let new_disPr = del_pref_disjunctPrefixes br pr1 (disjunctPrefixes bd)
-    case Map.lookup pr1 (prefParent br) of
-          Nothing -> do put    bd{disjunctPrefixes = new_disPr}
-                        return bd{disjunctPrefixes = new_disPr}
-          Just p -> if not $ elem p invalid_prefixes
-                      then do let new_uc = update_cache_prefixes p br (unsat_cache bd) invalid_prefixes
-                              put    bd{unsat_cache = new_uc, disjunctPrefixes = new_disPr}
-                              return bd{unsat_cache = new_uc, disjunctPrefixes = new_disPr}
-                      else do put    bd{disjunctPrefixes = new_disPr}
-                              return bd{disjunctPrefixes = new_disPr}
+    let new_disPr = del_pref_disjunctPrefixes br pr (disjunctPrefixes bd)
+    put $ case Map.lookup pr (prefParent br) of
+            Nothing -> bd{disjunctPrefixes = new_disPr}
+            Just p -> if p `notElem` invalid_prefixes
+                        then let new_uc = update_prefixes p br (unsat_cache bd) invalid_prefixes
+                             in bd{unsat_cache = new_uc, disjunctPrefixes = new_disPr}
+                        else bd{disjunctPrefixes = new_disPr}
 
---when calling after backtracking from the application of a disjunct rule, add the info from the first prefix
-update_cache pr1  br Cdisjunct =
+updateWhenDisjunct :: Prefix -> Branch -> BranchMonad ()
+updateWhenDisjunct pr br =
  do bd <- get
-    let pr = getUrfather br $ DS.Prefix pr1
-    let add_cache = search_disjunctPrefixes pr1 (disjunctPrefixes bd)
+    let ur = getUrfather br $ DS.Prefix pr
+    let add_cache = search_disjunctPrefixes pr (disjunctPrefixes bd)
     let invalid_prefixes = nub (prevPref br)
-    if add_cache && (not $ elem pr1 invalid_prefixes )
-     then
-       do let n_uc = update_cache_ pr br (unsat_cache bd)
-          case Map.lookup pr1 (prefParent br) of
-                Nothing -> return bd{unsat_cache = n_uc}
-                Just p -> if not $ elem p invalid_prefixes
-                            then do let new_new_uc = update_cache_prefixes p br n_uc invalid_prefixes
-                                    put    bd{unsat_cache = new_new_uc}
-                                    return bd{unsat_cache = new_new_uc}
-                            else do put    bd{unsat_cache = n_uc}
-                                    return bd{unsat_cache = n_uc}
-      else return bd
-
+    when (add_cache && (pr `notElem` invalid_prefixes ))
+      $
+       do let n_uc = update_ ur br (unsat_cache bd)
+          put $ case Map.lookup pr (prefParent br) of
+                  Nothing -> bd{unsat_cache = n_uc} -- BUGFIX ? ask alexandra (was "return" before, without any put)
+                  Just p -> if p `notElem` invalid_prefixes
+                              then let new_new_uc = update_prefixes p br n_uc invalid_prefixes
+                                   in bd{unsat_cache = new_new_uc}
+                              else bd{unsat_cache = n_uc}
                                                                         
-update_cache_prefixes :: Prefix -> Branch -> UCache-> [Prefix] -> UCache
-update_cache_prefixes pr br uc notvps=
- let u_pr   = getUrfather br $ DS.Prefix pr
-     new_uc = update_cache_ u_pr br uc
+update_prefixes :: Prefix -> Branch -> UCache-> [Prefix] -> UCache
+update_prefixes pr br uc notvps=
+ let ur     = getUrfather br $ DS.Prefix pr
+     new_uc = update_ ur br uc
  in case Map.lookup pr (prefParent br) of
        Nothing -> new_uc
-       Just p -> if not $ elem p notvps
-                  then update_cache_prefixes p br new_uc notvps
+       Just p -> if p `notElem` notvps
+                  then update_prefixes p br new_uc notvps
                   else new_uc
 
-update_cache_ :: Prefix -> Branch -> UCache -> UCache
-update_cache_ pr br UCache{bimap = bm, cache = c} =
+update_ :: Prefix -> Branch -> UCache -> UCache
+update_ pr br UCache{bimap = bm, cache = c} =
  let -- See what formulas we cache
      localForms   = DMap.lookupInter pr $ trueForms br
 
@@ -124,19 +113,19 @@ get_univ_forms ucs = ( map snd ucs, dsUnions $ map fst ucs )
 --        if it is -> we have a cache hit, and the branch is unsat
 --        if not -> go on working with the branch
 
-search_cache :: Branch -> BranchData -> BranchInfo
-search_cache br bd  = search_cache_ (nub (incrPrs br)) br bd
+query :: Branch -> UCache -> BranchInfo
+query br uc  = query_ (nub (incrPrs br)) br uc
 
-search_cache_ :: AugmentedPrefixes -> Branch -> BranchData -> BranchInfo
-search_cache_ (pr:tail_pr) br bd =
- case search_cache_pr pr br bd  of
+query_ :: AugmentedPrefixes -> Branch -> UCache -> BranchInfo
+query_ (p:ps) br uc =
+ case query_pr p br uc  of
      b@(BranchClash _ _ _ _) -> b
-     BranchOK _              -> search_cache_ tail_pr br bd
+     BranchOK _              -> query_ ps br uc
 
-search_cache_ [] _ bd = branch_info bd
+query_ [] br _ = BranchOK br
 
-search_cache_pr :: Prefix -> Branch -> BranchData -> BranchInfo
-search_cache_pr pr br bd =
+query_pr :: Prefix -> Branch -> UCache -> BranchInfo
+query_pr pr br UCache{bimap = bm, cache = c} =
  let  localForms   = DMap.lookupInter pr $ trueForms br
 
       univForms1   = fst $ get_univ_forms (univCons br)
@@ -146,19 +135,15 @@ search_cache_pr pr br bd =
       nominalForms = fst $ get_nominal_forms noms br
 
       cacheForms = localForms ++ univForms ++ nominalForms -- formulas to be cached
-  in
-      case unsat_cache bd of
-       UCache{bimap = bm,
-              cache = c}
-        ->
-         case ( do indexes <- Set.fromList <$> lookupBimap bm cacheForms
-                   queryCache indexes c   ) of
-          Nothing     -> branch_info bd
-          Just newIdx ->
-                   let new_form_list = get_new_formula_list bm newIdx
-                       dps           = get_dps br pr new_form_list
-                   in
-                     BranchClash br pr dps (neg taut)
+ in
+      case ( do indexes <- Set.fromList <$> lookupBimap bm cacheForms
+                queryCache indexes c   ) of
+       Nothing     -> BranchOK br
+       Just newIdx ->
+                let new_form_list = get_new_formula_list bm newIdx
+                    dps           = get_dps br pr new_form_list
+                in
+                  BranchClash br pr dps (neg taut)
 
 
 -- receives the list of indexes of formulas in the cache, and the bidirectional map,

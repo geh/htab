@@ -118,7 +118,6 @@ data BlockingMode = InclusionBlockingGlobal | InclusionBlockingChain | ChainBloc
 
 
 type TrueForms = DMap Prefix Formula DependencySet
-type DisjunctPrefixes = [(Int,Prefix)]
 
 data Branch = Branch {clashStr :: Clashable_info,
                  -- pending formulas / todo lists
@@ -1438,23 +1437,20 @@ instance CacheStructure UCTrie where
 
 -- 
 
-getAllParents_without_urfather :: Branch -> Prefix -> [Prefix]
-getAllParents_without_urfather br pr = (pr:rest)
-       where rest = case Map.lookup pr (prefParent br) of
-                      Nothing     -> []
-                      Just parent -> getAllParents_without_urfather br parent
-                               
+type DisjunctPrefixes = [(Int,Prefix)]
+
 search_disjunctPrefixes :: Prefix -> DisjunctPrefixes  -> Bool
-search_disjunctPrefixes  p plist = any (\(_,pd) -> p==pd) plist
+search_disjunctPrefixes  p = any ((==p) . snd)
 
-test_level :: Int -> (Int,Prefix) -> Bool
-test_level cur_lev (lev, _) = cur_lev >= lev
-
-del_level_disjunctPrefixes :: Int -> DisjunctPrefixes  -> DisjunctPrefixes  
-del_level_disjunctPrefixes lev list_p = filter (test_level lev) list_p
+del_level_disjunctPrefixes :: Int -> DisjunctPrefixes  -> DisjunctPrefixes
+del_level_disjunctPrefixes lev = filter ((<=lev) . fst)
 
 del_pref_disjunctPrefixes :: Branch -> Prefix -> DisjunctPrefixes -> DisjunctPrefixes 
-del_pref_disjunctPrefixes br pr_clash disjunctPrefixes_list = 
-                    let all_parents =  (getAllParents_without_urfather br pr_clash )
-                    in  filter (\(_,pd) -> (elem pd all_parents)) disjunctPrefixes_list
+del_pref_disjunctPrefixes br pr_clash
+ = filter ((`elem` ancestors) . snd)
+   where ancestors = getAncestors pr_clash
+         getAncestors pr = (pr:rest)
+               where rest = case Map.lookup pr (prefParent br) of
+                              Just parent -> getAncestors parent
+                              Nothing     -> []
 
