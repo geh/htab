@@ -15,7 +15,7 @@ import HyLo.InputFile.Parser ( QueryType(..) )
 import HTab.CommandLine( filename, maxtimeout, CmdLineParams, logState, genModel,
                          configureMetrics, quietMode, simpleInput, showFormula )
 import HTab.Branch( BranchInfo(..),initialBranchStateFor,BranchMonad, BranchData(..),
-                    emptyBranch, addFirstFormulas,gen_unsat_cache,UCache )
+                    emptyBranch, addFirstFormulas,initUnsatCache )
 import HTab.Statistics( Statistics, initialStatisticsStateFor, printOutAllMetrics' )
 import HTab.Base( vPutStrLn )
 import HTab.Tableau( liftStats, tableau, OpenFlag(..) )
@@ -101,12 +101,8 @@ runOneTask (query,mOutFile,fs) relInfo theory clp ts=
      let fLang         = formulaLanguageInfo f
      let initialBranch = emptyBranch clp fLang relInfo
      let branchInfo    = addFirstFormulas clp initialBranch f fLang
-
-     --ale
-     let uc       = gen_unsat_cache clp f
-     
      --
-     result <- tableauInit branchInfo clp ts uc
+     result <- tableauInit branchInfo clp ts
      --
      case result of
         (OPEN m, stats)   -> do myPutStrLn $
@@ -140,8 +136,8 @@ saveGenModel clp mOutFile m = maybe (return ()) doWrite mOutFile
     where doWrite f = do writeFile f (show m)
                          unless (quietMode clp) $ vPutStrLn ("Model saved as " ++ f) (logState clp)
 
-tableauInit :: BranchInfo -> CmdLineParams -> TimeoutSignal -> UCache -> IO (OpenFlag,Statistics)
-tableauInit bi clp ts uc=
+tableauInit :: BranchInfo -> CmdLineParams -> TimeoutSignal -> IO (OpenFlag,Statistics)
+tableauInit bi clp ts =
         do vPutStrLn ">> Starting rules application" (logState clp)
            ((openflag,_),stats) <- initStatsState $ initBranchState bd $ tableauStart clp
            return (openflag,stats)
@@ -152,7 +148,7 @@ tableauInit bi clp ts uc=
                             branch_clp  = clp,
                             branch_path = [0],
                             timeout_signal = ts,
-			    unsat_cache = uc,
+			    unsat_cache = initUnsatCache clp,
                             disjunctPrefixes = []
 			    }
 

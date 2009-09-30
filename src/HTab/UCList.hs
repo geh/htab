@@ -6,18 +6,23 @@ where
 
 import Data.List
 import Data.IntSet as IntSet
+import Data.Set ( Set )
+import qualified Data.Set as Set
 
 type UCList = [UCListRow]
 type UCListRow = IntSet
 
 ----------subset matching------------------------------
 --if indexes is a subset of any row
-subset_matching :: Int -> [Int] -> UCList -> Maybe Int
-subset_matching counter indexes (hd:tai) =
+subset_matching :: [Int] -> UCList -> Maybe Int
+subset_matching idxs listCache =
+  go 0 idxs listCache
+ where go :: Int -> [Int] -> UCList -> Maybe Int
+       go counter indexes (hd:tai) =
         if subset_matching_ indexes hd
          then Just counter
-         else subset_matching (counter + 1) indexes tai
-subset_matching _ _ [] = Nothing
+         else go (counter + 1) indexes tai
+       go _ _ [] = Nothing
 
 
 subset_matching_ :: [Int] -> UCListRow -> Bool
@@ -31,23 +36,27 @@ isEmpty = IntSet.null
 
 ----------superset matching------------------------------
 --if index is a superset of any row
-superset_matching :: Int -> [Int] -> UCList -> Maybe [Int]
-superset_matching counter indexes (hd:tai) =
-        if superset_matching_ indexes hd
-         then Just (toList hd)
-         else superset_matching (counter + 1) indexes tai
-superset_matching _ _ [] = Nothing
+superset_matching :: Set Int -> UCList -> Maybe [Int]
+superset_matching idxs listCache =
+  go 0 (Set.toList idxs) listCache
+ where go :: Int -> [Int] -> UCList -> Maybe [Int]
+       go counter indexes (hd:tai) =
+           if superset_matching_ indexes hd
+            then Just (toList hd)
+            else go (counter + 1) indexes tai
+       go _ _ [] = Nothing
 
 superset_matching_ :: [Int] -> UCListRow -> Bool
 superset_matching_ [] _ = False
 superset_matching_ _ row | isEmpty row= True
 superset_matching_ indexes row = row `isSubsetOf` ( fromList indexes )
 
-update:: [Int] -> UCList -> UCList
-update indexes li = 
-        case subset_matching 0 indexes li of
+update:: Set Int -> UCList -> UCList
+update sindexes li =
+  let indexes = Set.toList sindexes
+  in   case subset_matching indexes li of
           Just i -> update_row_list i indexes li
-          Nothing -> case superset_matching 0 indexes li of
+          Nothing -> case superset_matching sindexes li of
                         Just _  -> li --if indexes is a superset of a row, don't update
                         Nothing -> add_row_list indexes li
 

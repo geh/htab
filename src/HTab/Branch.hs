@@ -22,7 +22,8 @@ getUrfather, getUrfatherAndDeps, isInTheModel, relationIsInTheModel,
 getModelRepresentative, isNotBlocked,
 calculateStepInfo, BlockingMode(..), diaAlreadyDone, diaXAlreadyDone,
 downAlreadyDone, incPropSymbol, incNomSymbol,
-UCache(..),Univ_constraints,AugmentedPrefixes,UCMap,TrueForms,gen_unsat_cache,setPrevPref,
+UCache(..),CacheStructure(..),
+Univ_constraints,AugmentedPrefixes,UCMap,TrueForms,initUnsatCache,setPrevPref,
 collectUevBprs, ReducedDisjunct(..), newNomBaseName, newPropBaseName, getUnappliedUBPairs,
 isReflexive, isSymmetric, isTransitive,
 del_pref_disjunctPrefixes, del_level_disjunctPrefixes, search_disjunctPrefixes,DisjunctPrefixes
@@ -34,9 +35,10 @@ import Control.Monad.State(StateT, MonadState)
 import Data.List(delete, minimumBy)
 import Data.Char ( isNumber )
 
-import HTab.UCMatrix ( UCMatrix )
-import qualified HTab.UCMatrix as UCMatrix
-import HTab.UCList
+import HTab.UCList ( UCList )
+import qualified HTab.UCList as UCList
+import HTab.UCTrie ( UCTrie )
+import qualified HTab.UCTrie as UCTrie
 
 import Data.Map ( Map, foldWithKey )
 import qualified Data.Map as Map
@@ -116,19 +118,7 @@ data BlockingMode = InclusionBlockingGlobal | InclusionBlockingChain | ChainBloc
 
 
 type TrueForms = DMap Prefix Formula DependencySet
-type UCMap = Bimap.Bimap Formula Int
---The unsat cache, includes two data structure to allow us to choose any of them.
---once chosen a data structure, the other is kept emptied
 type DisjunctPrefixes = [(Int,Prefix)]
-
-data UCache = UCache { matrix :: UCMatrix, --the bit matrix 
-                       listsList :: UCList, --list apporach
-                       current_index :: Int,  
-                       descrip_matrix :: UCMap,
-                       current_row :: Int,
-                       max_row :: Int}
-              deriving (Show)
-
 
 data Branch = Branch {clashStr :: Clashable_info,
                  -- pending formulas / todo lists
@@ -459,8 +449,8 @@ addFormula2 clp br pf@(PrFormula pr _ f) =
    addFormula3 clp br5 pf
  where
      br2 = case caching clp of
-             Just _  -> addToTrueForms br pf
              Nothing -> br
+             _       -> addToTrueForms br pf
      br3 = if forInclusion br f
              then addToPrefToForms br2 pf
              else br2
@@ -1228,32 +1218,16 @@ addFirstFormulas clp br_ f fLang
           br =  foldr addReflexiveLinks (  br_{lastPref = nbNs} ) noms
           pf = firstPrefixedFormula f
 
-gen_unsat_cache :: CmdLineParams -> Formula -> UCache
-gen_unsat_cache clp f = case caching clp of
-                          Just MatrixCaching
-                                -> let c = ((get_max_subterms f)+(get_num_nominals f)) * 2
-                                   in UCache{matrix = UCMatrix.empty c c,
-                                         listsList = [],--not used in this approach
-                                               current_index =(-1),
-                                               descrip_matrix = Bimap.empty,
-                                               current_row = (-1),
-                                               max_row=(c-1)}
-                          Just ListCaching
-                                   -> UCache{matrix = UCMatrix.empty 0 0,--not used in this approach
-                                      listsList = [],
-                                            current_index =(-1),
-                                            descrip_matrix = Bimap.empty,
-                                            current_row = (-1),
-                                            max_row=0}  --not used in this approach
-                          Nothing
-                           -> UCache{matrix = UCMatrix.empty 0 0,--not used in this approach
-                                              listsList = [],
-                                              current_index =(-1),
-                                              descrip_matrix = Bimap.empty,
-                                              current_row = (-1),
-                                              max_row=0}  --not used in this approach
-
-
+initUnsatCache :: CmdLineParams -> UCache
+initUnsatCache clp
+ = case caching clp of
+     Just TrieCaching -> UCache{ cache = emptyCache::UCTrie,
+                                 bimap =emptyBimap }
+     Just ListCaching -> UCache{ cache = emptyCache::UCList,
+                                 bimap =emptyBimap }
+     Nothing          -> UCache{ cache = emptyCache::UCList,
+                                 bimap =emptyBimap }
+  where  emptyBimap = Bimap.singleton (neg taut) 0
 
 {-     functions to handle the "clashable information", ie literals associated to prefixes     -}
 
@@ -1434,6 +1408,34 @@ addZeroInPath bd = bd{branch_path=(0:(branch_path bd))}
 incPathHead :: BranchData -> BranchData
 incPathHead bd = bd{branch_path=(( head (branch_path bd) + 1 ):(tail $ branch_path bd))}
 
+-- Unsat Cache
+
+data UCache = forall a . CacheStructure a
+                => UCache { cache :: a,
+                            bimap :: UCMap}
+
+type UCMap = Bimap.Bimap Formula Int
+
+instance Show UCache where
+ show UCache{ cache = c,
+              bimap = bm }
+  = "UCache: " ++ show c ++ show bm
+
+class Show a => CacheStructure a where
+  emptyCache :: a
+  insertCache :: Set Int -> a -> a
+  queryCache :: Set Int -> a -> Maybe [Int]
+
+instance CacheStructure UCList where
+ emptyCache = []
+ insertCache = UCList.update
+ queryCache = UCList.superset_matching
+
+instance CacheStructure UCTrie where
+ emptyCache  = UCTrie.empty
+ insertCache = UCTrie.update
+ queryCache  = UCTrie.query
+
 -- 
 
 getAllParents_without_urfather :: Branch -> Prefix -> [Prefix]
@@ -1442,14 +1444,8 @@ getAllParents_without_urfather br pr = (pr:rest)
                       Nothing     -> []
                       Just parent -> getAllParents_without_urfather br parent
                                
-
-
 search_disjunctPrefixes :: Prefix -> DisjunctPrefixes  -> Bool
 search_disjunctPrefixes  p plist = any (\(_,pd) -> p==pd) plist
--- search_disjunctPrefixes br p ((_,pd):t) = if (p == pd)
---                                               then True
---                                               else search_disjunctPrefixes br p t
-
 
 test_level :: Int -> (Int,Prefix) -> Bool
 test_level cur_lev (lev, _) = cur_lev >= lev
@@ -1457,27 +1453,8 @@ test_level cur_lev (lev, _) = cur_lev >= lev
 del_level_disjunctPrefixes :: Int -> DisjunctPrefixes  -> DisjunctPrefixes  
 del_level_disjunctPrefixes lev list_p = filter (test_level lev) list_p
 
--- test_prefix_acc ::  [Prefix] -> (Int,Prefix) -> Bool
--- test_prefix_acc all_parents (_,p) = 
---             elem p all_parents -- check if the urfather of the ancestor is in the list of all parents.
-
-
-                       
 del_pref_disjunctPrefixes :: Branch -> Prefix -> DisjunctPrefixes -> DisjunctPrefixes 
 del_pref_disjunctPrefixes br pr_clash disjunctPrefixes_list = 
                     let all_parents =  (getAllParents_without_urfather br pr_clash )
                     in  filter (\(_,pd) -> (elem pd all_parents)) disjunctPrefixes_list
-                    
---                     in  filter (test_prefix_acc all_parents) disjunctPrefixes_list
 
-
-
-
-
-
------------------------------------------------------------------------
----------------------------debugging----------------------------------
------------------------------------------------------------------------
-
--- debug :: Show a => a -> a
--- debug x = trace (show x) x

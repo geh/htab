@@ -58,7 +58,7 @@ data CmdLineParams = CLP {
 
 type CLPModifier   = CmdLineParams -> Either ParsingErrMsg CmdLineParams
 type ParsingErrMsg = String
-data Caching = MatrixCaching | ListCaching deriving Show
+data Caching = TrieCaching | ListCaching deriving Show
 
 parseCmds :: [String] -> CmdLineParams -> Either ParsingErrMsg CmdLineParams
 parseCmds argv clp = case getOpt RequireOrder options argv of
@@ -119,9 +119,9 @@ options =
           ["caching"]
           (ReqArg setCaching "[0|1|2]")
           (unlines [
-	  "0 disable caching optimisation, ",
-          "1 enable caching optimisation with bit matrices approach,",
-          "2 enable caching optimisation with lists approach.",
+	  "0 disable caching optimisation (default), ",
+          "1 enable caching optimisation using trie data structure,",
+          "2 enable caching optimisation using list data structure.",
 	  ""]),
    Option ['o']
           ["strategy"]
@@ -238,7 +238,7 @@ is0or1or2 s = (s == "2") || (s == "1") || (s == "0")
 
 strToCaching :: String -> Maybe Caching
 strToCaching s = case (read s )::Int of
-                  1 -> Just MatrixCaching
+                  1 -> Just TrieCaching
                   2 -> Just ListCaching
                   _ -> Nothing
 

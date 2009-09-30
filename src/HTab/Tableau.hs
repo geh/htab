@@ -43,8 +43,8 @@ tableau =
                          liftStats $ recordClosedBranch
                          -- update the cache
                          case caching $ clp of
-                             Just caching_approach
-                                    -> do _ <- update_cache caching_approach pr br Cclash
+                             Just _
+                                    -> do _ <- update_cache pr br Cclash
                                           debugMsg_BranchClash1 br pr dsEmpty 1
                                           return (CLOSED bprs)
                              Nothing -> return (CLOSED bprs)
@@ -67,8 +67,8 @@ tableau =
                                            return $ if (Map.null $ DMap.toMap $ prefToUevFwd br) && (Map.null $ DMap.toMap $ prefToUevBwd br)
                                                      then OPEN (buildModel br)        -- no unsatisfied eventuality
                                                      else CLOSED $ collectUevBprs br  -- which bprs ? union those of the unsatisfied eventualities
-                          Just caching_approach
-                            -> do let new_bi = search_cache caching_approach br_ bd
+                          Just _
+                            -> do let new_bi = search_cache br_ bd
                                   case (new_bi) of
                                      BranchClash br1 pr1 bprs1 _ ->
                                          do --we found a hit: update branch data to reflect the closed branch... 
@@ -108,7 +108,7 @@ tableau =
                                                              do modify (delete_levels currentBranchingDepth)
                                                                 case result_branching of 
                                                                   c@(CLOSED bprs) ->
-                                                                     do _ <- update_cache caching_approach p br Cdisjunct
+                                                                     do _ <- update_cache p br Cdisjunct
                                                                         debugMsg_BranchClash1 br p bprs 2
                                                                         return c
                                                                   TIMEOUT -> return TIMEOUT
