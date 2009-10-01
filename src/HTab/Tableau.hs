@@ -6,9 +6,8 @@ import qualified HTab.DMap as DMap
 import HTab.Base(vPutStrLn)
 import HTab.Statistics(updateStep,printOutInspectionMetrics,
                        recordClosedBranch, recordCacheHit, recordFiredRule)
-import HTab.Branch(BranchInfo(..),Branch(..),BranchMonad, BranchData(..),branch_depth,
-                   addZeroInPath, incPathHead, calculateStepInfo, collectUevBprs,
-                   getBranch,setPrevPref,
+import HTab.Branch(BranchInfo(..),Branch(..),BranchMonad, BranchData(..),
+                   calculateStepInfo, collectUevBprs, getBranch, setPrevPref,
                    del_pref_disjunctPrefixes, del_level_disjunctPrefixes,DisjunctPrefixes)
 import HTab.CommandLine(logState,backJumping,caching,CmdLineParams)
 import HTab.Rules(Rule,applyRule,
@@ -20,10 +19,11 @@ import HTab.ModelGen ( Model, buildModel )
 import HTab.Timeout( isTimeout )
 import HTab.UnsatCache (updateWhenClash, updateWhenDisjunct, query)
 
+type Path = [Int]
 data OpenFlag = OPEN Model | CLOSED DependencySet | TIMEOUT
 
-tableau :: BranchMonad OpenFlag
-tableau =
+tableau :: Path -> BranchMonad OpenFlag
+tableau path =
       do logMe
          bd <- get
          let clp = branch_clp bd
@@ -31,18 +31,18 @@ tableau =
          timeout <- isTimeout $ timeout_signal bd
          if timeout
           then return TIMEOUT
-          else do debugMsg_NewSection
+          else do debugMsg_NewSection path
                   case branch_info bd of
                      BranchClash br pr bprs f ->
-                      do debugMsg_BranchClash br pr bprs f
+                      do debugMsg_BranchClash br pr bprs f path
                          liftStats $ recordClosedBranch
                          case caching clp of
                              Nothing -> return (CLOSED bprs)
                              Just _  -> do updateWhenClash pr br
-                                           debugMsg_BranchClash1 br pr dsEmpty 1
+                                           debugMsg_BranchClash1 br pr dsEmpty 1 path
                                            return (CLOSED bprs)
                      BranchOK br_ ->
-                      do let currentBranchingDepth = (branch_depth bd) + 1
+                      do let currentBranchingDepth = length path + 1
                          let br = calculateStepInfo br_
                          case caching clp of
                           Nothing
@@ -57,13 +57,12 @@ tableau =
                                         do debugMsg_BranchOK_applicableRule rule
                                            liftStats $ recordFiredRule $ ruleToId rule
                                            let possibleBranches = applyRule clp rule br
-                                           modify addZeroInPath
-                                           chooseBranch possibleBranches
+                                           chooseBranch possibleBranches path
 
                           Just _
                             -> do case query br_ (unsat_cache bd) of-- not br, because br has removed its augmented prefixes
                                      new_bi@(BranchClash br1 pr1 bprs1 _) ->
-                                         do debugMsg_BranchClash1 br1 pr1 bprs1 0--TODO see should I add this line?
+                                         do debugMsg_BranchClash1 br1 pr1 bprs1 0 path--TODO see should I add this line?
                                             let new_disjunctPrefixes = del_pref_disjunctPrefixes br1 pr1 (disjunctPrefixes bd)
                                             modify (update_cache_hit new_disjunctPrefixes new_bi)
                                             liftStats $ recordClosedBranch
@@ -89,8 +88,7 @@ tableau =
                                                                   Nothing -> possibleBranches'
                                                                   Just _ -> setPrevPrefInBranch possibleBranches'
                                                            set_disjointPrefixes currentBranchingDepth pref_dis_rule 
-                                                           modify addZeroInPath
-                                                           result_branching <- chooseBranch possibleBranches
+                                                           result_branching <- chooseBranch possibleBranches path
                                                            --if rule is a disjunction rule and if the result 
                                                            --of chooseBranch is closed, then update the cache 
                                                            case pref_dis_rule of 
@@ -100,21 +98,21 @@ tableau =
                                                                 case result_branching of 
                                                                   c@(CLOSED bprs) ->
                                                                      do updateWhenDisjunct p br
-                                                                        debugMsg_BranchClash1 br p bprs 2
+                                                                        debugMsg_BranchClash1 br p bprs 2 path
                                                                         return c
                                                                   TIMEOUT -> return TIMEOUT
                                                                   o@(OPEN _)  -> return o
 
-
 -- depth-first branch-choosing strategy
-chooseBranch :: [BranchInfo] ->  BranchMonad OpenFlag
-chooseBranch = chooseBranch_ dsEmpty
 
-chooseBranch_ :: DependencySet -> [BranchInfo] -> BranchMonad OpenFlag
-chooseBranch_ currentDepSet (hd:tl) =
+chooseBranch :: [BranchInfo] ->  Path -> BranchMonad OpenFlag
+chooseBranch bis path = chooseBranch_ dsEmpty $ zipWith (\bi n -> (bi,n:path)) bis [0..]
+
+chooseBranch_ :: DependencySet -> [(BranchInfo,Path)] -> BranchMonad OpenFlag
+chooseBranch_ currentDepSet ((hd,path):tl) =
  do bd' <- get
     put bd'{branch_info=hd}
-    res <- tableau
+    res <- tableau path
     --when caching is activated, get the cache information added during tableau to the current branch level
     bd <- case ( caching $ branch_clp bd' ) of 
              Nothing -> return bd' 
@@ -124,16 +122,16 @@ chooseBranch_ currentDepSet (hd:tl) =
                       return bd'{unsat_cache= unsatC,
                                  disjunctPrefixes = old_disPr} 
 
-    let currentBranchingDepth = (branch_depth bd) 
-    let backjump = (not $ languageTrans $ inputLanguage $ getBranch $ branch_info bd) && (backJumping $ branch_clp bd) -- disable backjumping in presence of transitive closure
+    let currentBranchingDepth = length path
+    let backjump = (not $ languageTrans $ inputLanguage $ getBranch $ branch_info bd)
+                   && (backJumping $ branch_clp bd) -- disable backjumping in presence of transitive closure
     case res of
      TIMEOUT       -> return TIMEOUT
      o@(OPEN _)    -> return o
      CLOSED depSet ->
       if backjump && (not $ dsMember currentBranchingDepth depSet)
        then return $ CLOSED depSet
-       else do put $ incPathHead bd
-               chooseBranch_ (dsUnion currentDepSet depSet) tl
+       else chooseBranch_ (dsUnion currentDepSet depSet) tl
 
 chooseBranch_ currentDepSet [] = return $ CLOSED currentDepSet
 
@@ -151,31 +149,29 @@ liftIO = lift . lift
 
 --
 
-debugMsg_NewSection :: BranchMonad ()
-debugMsg_NewSection =  
+debugMsg_NewSection :: Path -> BranchMonad ()
+debugMsg_NewSection path =
  do bd <- get
     let showState = logState $ branch_clp bd
-    let path = branch_path bd
-    let depth = branch_depth bd
+    let depth = length path
     let width = head path 
     let traceMsg = "Depth " ++ show depth ++ " Width " ++ show width ++ " path " ++ show path
     liftIO $ vPutStrLn ("\n>> " ++ traceMsg) showState
 
-debugMsg_BranchClash :: Branch -> Prefix -> DependencySet -> Formula -> BranchMonad ()
-debugMsg_BranchClash br pr bprs f =
+debugMsg_BranchClash :: Branch -> Prefix -> DependencySet -> Formula -> Path -> BranchMonad ()
+debugMsg_BranchClash br pr bprs f path =
  do bd <- get
     let showState = logState $ branch_clp bd
-    let currentBranchingDepth = branch_depth bd
+    let currentBranchingDepth = length path
     liftIO $ vPutStrLn (show br ++ "\nClasher : " ++ show (pr,bprs,currentBranchingDepth,f)) showState
 
-debugMsg_BranchClash1 :: Branch -> Prefix -> DependencySet -> Int-> BranchMonad ()
-debugMsg_BranchClash1 br pr dps n =
+debugMsg_BranchClash1 :: Branch -> Prefix -> DependencySet -> Int-> Path -> BranchMonad ()
+debugMsg_BranchClash1 br pr dps n path =
  do bd <- get
     let showState = logState $ branch_clp bd
     let ucache = (unsat_cache bd)
-    let path = (branch_path bd)
     let d_p = (disjunctPrefixes bd)
-    let currentBranchingDepth = branch_depth bd
+    let currentBranchingDepth = length path
     liftIO $ vPutStrLn (show br ++ "\nUC Clasher : " ++ show (pr,dps,currentBranchingDepth,n,path,ucache,d_p)) showState
 
 

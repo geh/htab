@@ -14,9 +14,8 @@ addFormulas, addFormula, addAccFormula, remFormula,
 addDiaRuleCheck, addDiaXRuleCheck, addDownRuleCheck, addDiffRuleCheck,
 addParentPrefix, addFirstFormulas,
 updateUBBookKeep, ScheduledRule(..), TodoList(..), processTodoList,
-BranchData(..),branch_depth, getBranch,
-emptyBranch,initialBranchStateFor,
-addZeroInPath,incPathHead,prefixes,
+BranchData(..), getBranch,
+emptyBranch,initialBranchStateFor,prefixes,
 reduceDisjunctionAgainstBranch,
 getUrfather, getUrfatherAndDeps, isInTheModel, relationIsInTheModel,
 getModelRepresentative, isNotBlocked,
@@ -164,11 +163,6 @@ data Branch = Branch {clashStr :: Clashable_info,
                     prefParent :: PrefixParent,
               relevantNominals :: Set.Set NomSymbol,
                        relInfo :: RelInfo}
-
---
-
-branch_depth :: BranchData -> Int
-branch_depth b = length $ branch_path b
 
 --
 
@@ -1390,7 +1384,6 @@ isInjective relI r = hasProperty relI (RelSymbol r) Injective
 
 data BranchData = BranchData { branch_info :: BranchInfo,
                                branch_clp :: CmdLineParams,
-                               branch_path :: [Int],
                                timeout_signal :: TimeoutSignal,
                                ------unsat cache info-------
                                unsat_cache :: UCache,
@@ -1400,12 +1393,6 @@ type BranchMonad a = StateT BranchData (StateT Statistics IO) a
 
 initialBranchStateFor :: (MonadState BranchData m) =>  (m a -> BranchData -> b) -> BranchData -> m a -> b
 initialBranchStateFor f bd = flip f bd
-
-addZeroInPath :: BranchData -> BranchData
-addZeroInPath bd = bd{branch_path=(0:(branch_path bd))}
-
-incPathHead :: BranchData -> BranchData
-incPathHead bd = bd{branch_path=(( head (branch_path bd) + 1 ):(tail $ branch_path bd))}
 
 -- Unsat Cache
 

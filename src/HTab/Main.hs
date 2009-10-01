@@ -146,7 +146,6 @@ tableauInit bi clp ts =
        bd              = BranchData
                           { branch_info = bi,
                             branch_clp  = clp,
-                            branch_path = [0],
                             timeout_signal = ts,
 			    unsat_cache = initUnsatCache clp,
                             disjunctPrefixes = []
@@ -155,7 +154,8 @@ tableauInit bi clp ts =
 tableauStart :: CmdLineParams -> BranchMonad OpenFlag
 tableauStart clp =
  do liftStats $ configureMetrics clp
-    tableau
+    let initialPath = [0]
+    tableau initialPath
 
 --
 
