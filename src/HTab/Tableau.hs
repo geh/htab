@@ -130,15 +130,10 @@ chooseBranch_ currentDepSet (hd:tl) =
      TIMEOUT       -> return TIMEOUT
      o@(OPEN _)    -> return o
      CLOSED depSet ->
-      if backjump
-       then
-          if dsMember currentBranchingDepth depSet  -- was the clash because of this branching ?
-             then do put $ incPathHead bd
-                     chooseBranch_ (dsUnion currentDepSet depSet) tl
-             else return $ CLOSED depSet
-       else
-        do put $ incPathHead bd
-           chooseBranch_ (dsUnion currentDepSet depSet) tl
+      if backjump && (not $ dsMember currentBranchingDepth depSet)
+       then return $ CLOSED depSet
+       else do put $ incPathHead bd
+               chooseBranch_ (dsUnion currentDepSet depSet) tl
 
 chooseBranch_ currentDepSet [] = return $ CLOSED currentDepSet
 
