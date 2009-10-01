@@ -80,7 +80,7 @@ update_cache_ pr br UCache{bimap = bm, cache = c} =
      noms         = getNoms (localForms ++ univForms1)
      nominalForms = fst $ get_nominal_forms noms br
 
-     cacheForms = nub $ localForms ++ univForms ++ nominalForms -- formulas to be cached
+     cacheForms = localForms ++ univForms ++ nominalForms -- formulas to be cached
 
      -- Update the Formula <-> Int BiMap
      (indexes,newBimap) = updateBimap bm cacheForms
@@ -145,7 +145,7 @@ search_cache_pr pr br bd =
       noms         = getNoms (localForms ++ univForms1)
       nominalForms = fst $ get_nominal_forms noms br
 
-      cacheForms = nub $ localForms ++ univForms ++ nominalForms -- formulas to be cached
+      cacheForms = localForms ++ univForms ++ nominalForms -- formulas to be cached
   in
       case unsat_cache bd of
        UCache{bimap = bm,
