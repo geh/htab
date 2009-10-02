@@ -110,18 +110,9 @@ chooseBranch bis path = chooseBranch_ dsEmpty $ zipWith (\bi n -> (bi,n:path)) b
 
 chooseBranch_ :: DependencySet -> [(BranchInfo,Path)] -> BranchMonad OpenFlag
 chooseBranch_ currentDepSet ((hd,path):tl) =
- do bd' <- get
-    put bd'{branch_info=hd}
+ do bd <- get
+    put bd{branch_info=hd}
     res <- tableau path
-    --when caching is activated, get the cache information added during tableau to the current branch level
-    bd <- case ( caching $ branch_clp bd' ) of 
-             Nothing -> return bd' 
-             _ ->  do auxbd <-get
-                      let unsatC = (unsat_cache auxbd)
-                      let old_disPr = (disjunctPrefixes auxbd)
-                      return bd'{unsat_cache= unsatC,
-                                 disjunctPrefixes = old_disPr} 
-
     let currentBranchingDepth = length path
     let backjump = (not $ languageTrans $ inputLanguage $ getBranch $ branch_info bd)
                    && (backJumping $ branch_clp bd) -- disable backjumping in presence of transitive closure
