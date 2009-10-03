@@ -8,7 +8,7 @@ import HTab.Statistics(updateStep,printOutInspectionMetrics,
                        recordClosedBranch, recordCacheHit, recordFiredRule)
 import HTab.Branch(BranchInfo(..),Branch(..),BranchMonad, BranchData(..),
                    calculateStepInfo, collectUevBprs, getBranch, setPrevPref,
-                   del_pref_disjunctPrefixes, del_level_disjunctPrefixes)
+                   delNonAncestors, del_level_disjunctPrefixes)
 import HTab.CommandLine(logState,backJumping,caching,CmdLineParams)
 import HTab.Rules(Rule,applyRule,
                   applicableRules,ruleToId,
@@ -38,7 +38,7 @@ tableau path =
                          liftStats $ recordClosedBranch
                          case caching clp of
                              Nothing -> return (CLOSED bprs)
-                             Just _  -> do let new_disPr = del_pref_disjunctPrefixes br pr (disjunctPrefixes bd)
+                             Just _  -> do let new_disPr = delNonAncestors br pr (disjunctPrefixes bd)
                                            put bd{disjunctPrefixes = new_disPr}
                                            debugMsg_BranchClash1 br pr dsEmpty 1 path
                                            return (CLOSED bprs)
@@ -64,7 +64,7 @@ tableau path =
                             -> do case query br_ (unsat_cache bd) of-- not br, because br has removed its augmented prefixes
                                      BranchClash br1 pr1 bprs1 _ ->
                                          do debugMsg_BranchClash1 br1 pr1 bprs1 0 path--TODO see should I add this line?
-                                            let new_disjunctPrefixes = del_pref_disjunctPrefixes br1 pr1 (disjunctPrefixes bd)
+                                            let new_disjunctPrefixes = delNonAncestors br1 pr1 (disjunctPrefixes bd)
                                             modify (\b -> b{disjunctPrefixes = new_disjunctPrefixes})
                                             liftStats $ recordClosedBranch
                                             liftStats $ recordCacheHit
@@ -87,7 +87,7 @@ tableau path =
                                                            let possibleBranches = 
                                                                 case pref_dis_rule of
                                                                   Nothing -> possibleBranches'
-                                                                  Just _ -> setPrevPrefInBranch possibleBranches'
+                                                                  _       -> setPrevPrefInBranch possibleBranches'
                                                            set_disjointPrefixes currentBranchingDepth pref_dis_rule 
                                                            result_branching <- chooseBranch possibleBranches path
                                                            --if rule is a disjunction rule and if the result 
@@ -190,13 +190,8 @@ existUnsatisfiedEventualities :: Branch -> Bool
 existUnsatisfiedEventualities br = not ((Map.null $ DMap.toMap $ prefToUevFwd br) && (Map.null $ DMap.toMap $ prefToUevBwd br))
 
 setPrevPrefInBranch :: [BranchInfo] -> [BranchInfo]
-setPrevPrefInBranch (hd:tl) = (new_hd:new_tl)
-                                 where new_hd = case hd of
-                                                            BranchOK br -> BranchOK (setPrevPref br )
-                                                            BranchClash br pr dp f -> 
-                                                                      BranchClash (setPrevPref br) pr dp f  
-                                       new_tl = setPrevPrefInBranch tl
-setPrevPrefInBranch [] = []
+setPrevPrefInBranch
+ = map (\bi -> case bi of {BranchOK br -> BranchOK (setPrevPref br); BranchClash br pr dp f ->  BranchClash (setPrevPref br) pr dp f})
 
 set_disjointPrefixes :: Int -> Maybe Prefix -> BranchMonad ()
 set_disjointPrefixes lev pref_dis_rule =

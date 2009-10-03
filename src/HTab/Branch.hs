@@ -25,7 +25,7 @@ UCache(..),CacheStructure(..),
 Univ_constraints,AugmentedPrefixes,UCMap,TrueForms,initUnsatCache,setPrevPref,
 collectUevBprs, ReducedDisjunct(..), newNomBaseName, newPropBaseName, getUnappliedUBPairs,
 isReflexive, isSymmetric, isTransitive,
-del_pref_disjunctPrefixes, del_level_disjunctPrefixes, search_disjunctPrefixes,DisjunctPrefixes
+delNonAncestors, del_level_disjunctPrefixes, search_disjunctPrefixes,DisjunctPrefixes
 ) where
 
 --import Debug.Trace
@@ -1432,12 +1432,10 @@ search_disjunctPrefixes  p = any ((==p) . snd)
 del_level_disjunctPrefixes :: Int -> DisjunctPrefixes  -> DisjunctPrefixes
 del_level_disjunctPrefixes lev = filter ((<=lev) . fst)
 
-del_pref_disjunctPrefixes :: Branch -> Prefix -> DisjunctPrefixes -> DisjunctPrefixes 
-del_pref_disjunctPrefixes br pr_clash
+delNonAncestors :: Branch -> Prefix -> DisjunctPrefixes -> DisjunctPrefixes
+delNonAncestors br pr_clash
  = filter ((`elem` ancestors) . snd)
    where ancestors = getAncestors pr_clash
          getAncestors pr = (pr:rest)
-               where rest = case Map.lookup pr (prefParent br) of
-                              Just parent -> getAncestors parent
-                              Nothing     -> []
+               where rest = maybe [] getAncestors $ Map.lookup pr (prefParent br)
 
