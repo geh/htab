@@ -1,12 +1,11 @@
 Name:                HTab
-Version:             1.4.98.1
+Version:             1.5.0
 Homepage:            http://hylo.loria.fr/intohylo/htab.php
 Description:         Tableau based theorem prover for hybrid logics
 License:             GPL
 License-file:        COPYING
 Author:              Guillaume Hoffmann, Carlos Areces, Daniel Gorín, Juan Heguiabehere
 Maintainer:          guillaume.hoffmann@loria.fr
-Extra-source-files:  INSTALL man/htab.1
 Cabal-version:       >= 1.2
 Build-type:          Simple
 
