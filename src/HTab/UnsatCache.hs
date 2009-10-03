@@ -1,5 +1,5 @@
 module HTab.UnsatCache 
-( updateWhenClash, updateWhenDisjunct, query )
+( update, query )
 where
 
 import Control.Monad ( when )
@@ -17,51 +17,21 @@ import HTab.Branch(BranchInfo(..),Branch(..),BranchMonad, BranchData(..),
                    UCache(..),UCMap,CacheStructure(..),
                    Univ_constraints,AugmentedPrefixes,
                    getUrfather,
-                   del_pref_disjunctPrefixes, search_disjunctPrefixes)
+                   search_disjunctPrefixes)
 import qualified HTab.DisjSet as DS
 
-updateWhenClash :: Prefix -> Branch -> BranchMonad ()
-updateWhenClash pr br =
- do bd <- get
-    let invalid_prefixes = nub $ prevPref br
-    let new_disPr = del_pref_disjunctPrefixes br pr (disjunctPrefixes bd)
-    put $ case Map.lookup pr (prefParent br) of
-            Nothing -> bd{disjunctPrefixes = new_disPr}
-            Just p -> if p `notElem` invalid_prefixes
-                        then let new_uc = update_prefixes p br (unsat_cache bd) invalid_prefixes
-                             in bd{unsat_cache = new_uc, disjunctPrefixes = new_disPr}
-                        else bd{disjunctPrefixes = new_disPr}
-
-updateWhenDisjunct :: Prefix -> Branch -> BranchMonad ()
-updateWhenDisjunct pr br =
+update :: Prefix -> Branch -> BranchMonad ()
+update pr br =
  do bd <- get
     let ur = getUrfather br $ DS.Prefix pr
+    let invalid_prefixes = nub $ prevPref br
     let add_cache = search_disjunctPrefixes pr (disjunctPrefixes bd)
-    let invalid_prefixes = nub (prevPref br)
-    when (add_cache && (pr `notElem` invalid_prefixes ))
-      $
-       do let n_uc = update_ ur br (unsat_cache bd)
-          put $ case Map.lookup pr (prefParent br) of
-                  Nothing -> bd{unsat_cache = n_uc} -- BUGFIX ? ask alexandra (was "return" before, without any put)
-                  Just p -> if p `notElem` invalid_prefixes
-                              then let new_new_uc = update_prefixes p br n_uc invalid_prefixes
-                                   in bd{unsat_cache = new_new_uc}
-                              else bd{unsat_cache = n_uc}
+                    && (pr `notElem` invalid_prefixes )
+    when add_cache $ put bd{unsat_cache = updateOne ur br (unsat_cache bd)}
                                                                         
-update_prefixes :: Prefix -> Branch -> UCache-> [Prefix] -> UCache
-update_prefixes pr br uc notvps=
- let ur     = getUrfather br $ DS.Prefix pr
-     new_uc = update_ ur br uc
- in case Map.lookup pr (prefParent br) of
-       Nothing -> new_uc
-       Just p -> if p `notElem` notvps
-                  then update_prefixes p br new_uc notvps
-                  else new_uc
-
-update_ :: Prefix -> Branch -> UCache -> UCache
-update_ pr br UCache{bimap = bm, cache = c} =
- let -- See what formulas we cache
-     localForms   = DMap.lookupInter pr $ trueForms br
+updateOne :: Prefix -> Branch -> UCache -> UCache
+updateOne pr br UCache{bimap = bm, cache = c} =
+ let localForms   = DMap.lookupInter pr $ trueForms br
 
      univForms1   = fst $ get_univ_forms (univCons br)
      univForms    = map A univForms1
@@ -69,16 +39,14 @@ update_ pr br UCache{bimap = bm, cache = c} =
      noms         = getNoms (localForms ++ univForms1)
      nominalForms = fst $ get_nominal_forms noms br
 
-     cacheForms = localForms ++ univForms ++ nominalForms -- formulas to be cached
+     cacheForms = localForms ++ univForms ++ nominalForms
 
-     -- Update the Formula <-> Int BiMap
      (indexes,newBimap) = updateBimap bm cacheForms
-
  in
       UCache{ bimap  = newBimap,
               cache  = insertCache (Set.fromList indexes) c }
 
---get the set of formulas true at the nominals appearing in the formulas to be cached
+-- get the set of formulas true at the nominals appearing in the formulas to be cached
 getNoms :: [Formula]-> [NomSymbol]
 getNoms fs = Set.toList $ Set.unions $ map (fst . extractNominals ) fs
 
@@ -96,22 +64,9 @@ get_nominal_forms noms br =
         in (map (At n) btf_list, dps)
 
 
---to get the universally constrained formulas
+-- get the universally constrained formulas
 get_univ_forms :: Univ_constraints -> ([Formula],DependencySet)
 get_univ_forms ucs = ( map snd ucs, dsUnions $ map fst ucs )
-
----------------------------------------------------------------------------
---------------------------------search------------------------------------
----------------------------------------------------------------------------
-
---for each branch, we will only look for a cache hit in the new prefixes introduced by the branch,
---this value is stored in the field incrPrs :: AugmentedPrefixes, in the branch.
-
---idea: to create, for each prefix, a list of indexes consisting in the non universal formulas
---         true at that prefix, plus the universal formulas true at that prefix.
---        Then, check if this indexes list is a superset of some row in the matrix
---        if it is -> we have a cache hit, and the branch is unsat
---        if not -> go on working with the branch
 
 query :: Branch -> UCache -> BranchInfo
 query br uc  = query_ (nub (incrPrs br)) br uc
@@ -134,7 +89,7 @@ query_pr pr br UCache{bimap = bm, cache = c} =
       noms         = getNoms (localForms ++ univForms1)
       nominalForms = fst $ get_nominal_forms noms br
 
-      cacheForms = localForms ++ univForms ++ nominalForms -- formulas to be cached
+      cacheForms = localForms ++ univForms ++ nominalForms
  in
       case ( do indexes <- Set.fromList <$> lookupBimap bm cacheForms
                 queryCache indexes c   ) of

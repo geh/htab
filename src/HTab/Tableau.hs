@@ -8,7 +8,7 @@ import HTab.Statistics(updateStep,printOutInspectionMetrics,
                        recordClosedBranch, recordCacheHit, recordFiredRule)
 import HTab.Branch(BranchInfo(..),Branch(..),BranchMonad, BranchData(..),
                    calculateStepInfo, collectUevBprs, getBranch, setPrevPref,
-                   del_pref_disjunctPrefixes, del_level_disjunctPrefixes,DisjunctPrefixes)
+                   del_pref_disjunctPrefixes, del_level_disjunctPrefixes)
 import HTab.CommandLine(logState,backJumping,caching,CmdLineParams)
 import HTab.Rules(Rule,applyRule,
                   applicableRules,ruleToId,
@@ -17,7 +17,7 @@ import HTab.Statistics(Statistics)
 import HTab.Formula(Prefix,DependencySet,Formula,dsEmpty,dsMember,dsUnion,languageTrans)
 import HTab.ModelGen ( Model, buildModel )
 import HTab.Timeout( isTimeout )
-import HTab.UnsatCache (updateWhenClash, updateWhenDisjunct, query)
+import HTab.UnsatCache (update, query)
 
 type Path = [Int]
 data OpenFlag = OPEN Model | CLOSED DependencySet | TIMEOUT
@@ -38,7 +38,8 @@ tableau path =
                          liftStats $ recordClosedBranch
                          case caching clp of
                              Nothing -> return (CLOSED bprs)
-                             Just _  -> do updateWhenClash pr br
+                             Just _  -> do let new_disPr = del_pref_disjunctPrefixes br pr (disjunctPrefixes bd)
+                                           put bd{disjunctPrefixes = new_disPr}
                                            debugMsg_BranchClash1 br pr dsEmpty 1 path
                                            return (CLOSED bprs)
                      BranchOK br_ ->
@@ -59,12 +60,12 @@ tableau path =
                                            let possibleBranches = applyRule clp rule br
                                            chooseBranch possibleBranches path
 
-                          Just _
+                          _
                             -> do case query br_ (unsat_cache bd) of-- not br, because br has removed its augmented prefixes
-                                     new_bi@(BranchClash br1 pr1 bprs1 _) ->
+                                     BranchClash br1 pr1 bprs1 _ ->
                                          do debugMsg_BranchClash1 br1 pr1 bprs1 0 path--TODO see should I add this line?
                                             let new_disjunctPrefixes = del_pref_disjunctPrefixes br1 pr1 (disjunctPrefixes bd)
-                                            modify (update_cache_hit new_disjunctPrefixes new_bi)
+                                            modify (\b -> b{disjunctPrefixes = new_disjunctPrefixes})
                                             liftStats $ recordClosedBranch
                                             liftStats $ recordCacheHit
                                             return (CLOSED bprs1)
@@ -97,7 +98,7 @@ tableau path =
                                                              do modify (delete_levels currentBranchingDepth)
                                                                 case result_branching of 
                                                                   c@(CLOSED bprs) ->
-                                                                     do updateWhenDisjunct p br
+                                                                     do update p br
                                                                         debugMsg_BranchClash1 br p bprs 2 path
                                                                         return c
                                                                   TIMEOUT -> return TIMEOUT
@@ -114,8 +115,6 @@ chooseBranch_ currentDepSet ((hd,path):tl) =
     put bd{branch_info=hd}
     res <- tableau path
     let currentBranchingDepth = length path
-    let backjump = (not $ languageTrans $ inputLanguage $ getBranch $ branch_info bd)
-                   && (backJumping $ branch_clp bd) -- disable backjumping in presence of transitive closure
     case res of
      TIMEOUT       -> return TIMEOUT
      o@(OPEN _)    -> return o
@@ -123,6 +122,8 @@ chooseBranch_ currentDepSet ((hd,path):tl) =
       if backjump && (not $ dsMember currentBranchingDepth depSet)
        then return $ CLOSED depSet
        else chooseBranch_ (dsUnion currentDepSet depSet) tl
+        where backjump = (not $ languageTrans $ inputLanguage $ getBranch $ branch_info bd)
+                         && (backJumping $ branch_clp bd) -- disable backjumping in presence of transitive closure
 
 chooseBranch_ currentDepSet [] = return $ CLOSED currentDepSet
 
@@ -160,8 +161,8 @@ debugMsg_BranchClash1 :: Branch -> Prefix -> DependencySet -> Int-> Path -> Bran
 debugMsg_BranchClash1 br pr dps n path =
  do bd <- get
     let showState = logState $ branch_clp bd
-    let ucache = (unsat_cache bd)
-    let d_p = (disjunctPrefixes bd)
+    let ucache = unsat_cache bd
+    let d_p = disjunctPrefixes bd
     let currentBranchingDepth = length path
     liftIO $ vPutStrLn (show br ++ "\nUC Clasher : " ++ show (pr,dps,currentBranchingDepth,n,path,ucache,d_p)) showState
 
@@ -197,21 +198,15 @@ setPrevPrefInBranch (hd:tl) = (new_hd:new_tl)
                                        new_tl = setPrevPrefInBranch tl
 setPrevPrefInBranch [] = []
 
-set_disjointPrefixes :: Int -> Maybe Prefix -> BranchMonad BranchData
+set_disjointPrefixes :: Int -> Maybe Prefix -> BranchMonad ()
 set_disjointPrefixes lev pref_dis_rule =
               do bd <- get
                  case pref_dis_rule of
-                    Nothing -> return bd
-                    Just p -> do put bd{disjunctPrefixes=((lev,p):(disjunctPrefixes bd))}
-                                 return bd{disjunctPrefixes=((lev,p):(disjunctPrefixes bd))}
+                    Nothing -> return () 
+                    Just p -> put bd{disjunctPrefixes=((lev,p):(disjunctPrefixes bd))}
 
 delete_levels :: Int -> BranchData ->  BranchData
 delete_levels cur_level bd =
         let new_d = del_level_disjunctPrefixes cur_level (disjunctPrefixes bd)
         in bd{disjunctPrefixes = new_d}
-
--- only called when new_bi is BranchClash ...
-update_cache_hit :: DisjunctPrefixes -> BranchInfo -> BranchData ->  BranchData
-update_cache_hit new_disjunctPrefixes new_bi bd = bd{branch_info = new_bi,
-                                                     disjunctPrefixes = new_disjunctPrefixes}
 
