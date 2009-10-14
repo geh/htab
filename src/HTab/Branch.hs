@@ -447,7 +447,7 @@ addFormula2 clp br pf@(PrFormula pr _ f) =
      br3 = if forInclusion br f
              then addToPrefToForms br2 pf
              else br2
-     br4 = updatePrefToUev br3 pr f
+     br4 = updatePrefToUev f pr br3
      br5 = addToAugmentedPrefixes pr br4
 
 addFormula3 :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
@@ -588,11 +588,11 @@ addClassDeps pr ds br = br { prToDepSet = Map.insertWith dsUnion pr ds (prToDepS
 
 -- check if the added formula removes an unfulfilled eventuality
 -- if yes, propagate to the previous prefixes
-updatePrefToUev :: Branch -> Prefix -> Formula -> Branch
-updatePrefToUev br pr f = let br2 = updatePrefToUevFwd br pr f in updatePrefToUevBwd br2 pr f
+updatePrefToUev :: Formula -> Prefix -> Branch -> Branch
+updatePrefToUev f pr = (updatePrefToUevBwd f pr) . (updatePrefToUevFwd f pr)
 
-updatePrefToUevFwd :: Branch -> Prefix -> Formula -> Branch
-updatePrefToUevFwd br pr' f =
+updatePrefToUevFwd :: Formula -> Prefix -> Branch -> Branch
+updatePrefToUevFwd f pr' br =
  case DMap.lookup1 pr $ prefToUevFwd br of
    Nothing     -> br
    Just uevs   -> let (toRemove,toKeep) = Map.partitionWithKey (\(f2,_) _ -> f2==f) uevs
@@ -603,13 +603,13 @@ updatePrefToUevFwd br pr' f =
                                       else DMap.insert1 pr newUevs $ prefToUevFwd br
                       previousPrefixes = concatMap (findPreviousPrefixes br pr) relsToCrawl
                   in
-                      foldr (\pp br_ -> updatePrefToUev br_ pp f)
+                      foldr (updatePrefToUev f)
                             br{prefToUevFwd = newPrefToUev}
                             previousPrefixes
  where pr = getUrfather br (DS.Prefix pr')
 
-updatePrefToUevBwd :: Branch -> Prefix -> Formula -> Branch
-updatePrefToUevBwd br pr' f =
+updatePrefToUevBwd :: Formula -> Prefix -> Branch -> Branch
+updatePrefToUevBwd f pr' br =
  case DMap.lookup1 pr $ prefToUevBwd br of
    Nothing     -> br
    Just uevs   -> let (toRemove,toKeep) = Map.partitionWithKey (\(f2,_) _ -> f2==f) uevs
@@ -620,7 +620,7 @@ updatePrefToUevBwd br pr' f =
                                       else DMap.insert1 pr newUevs $ prefToUevBwd br
                       followingPrefixes = concatMap (findFollowingPrefixes br pr) relsToCrawl
                   in
-                      foldr (\pp br_ -> updatePrefToUev br_ pp f)
+                      foldr (updatePrefToUev f)
                             br{prefToUevBwd = newPrefToUev}
                             followingPrefixes
  where pr = getUrfather br (DS.Prefix pr')
