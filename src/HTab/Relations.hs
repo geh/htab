@@ -1,8 +1,8 @@
 module HTab.Relations
 
 ( Relations(..), emptyRels, insertRelation, mergePrefixWith,
-  getSuccessors, getPredecessors, getIncomingLinks, getOutgoingLinks,
-  getAllRels, null )
+  successors, predecessors, incomingLinks, outgoingLinks,
+  allRels, null )
 
 where
 
@@ -44,8 +44,8 @@ emptyRels = Relations { idToData = Map.empty,
 null :: Relations -> Bool
 null r = Map.null (idToData r)
 
-getAllRels :: Relations -> [(Prefix,Rel,Prefix)]
-getAllRels rels = Map.keys (idToData rels)
+allRels :: Relations -> [(Prefix,Rel,Prefix)]
+allRels rels = Map.keys (idToData rels)
 
 tMap2 :: (a -> b -> c) -> (a,a) -> (b,b) -> (c,c)
 tMap2 f (a1,a2) (b1,b2) = (f a1 b1, f a2 b2)
@@ -133,29 +133,29 @@ replaceOut ior p r pRemove pAdd
    DMap.insert p r (ins,outs_) ior
 
 
-getSuccessors :: Relations -> Prefix -> Rel -> [(Prefix, DependencySet)]
-getSuccessors rels p r
+successors :: Relations -> Prefix -> Rel -> [(Prefix, DependencySet)]
+successors rels p r
  = case DMap.lookup p r (inOutRel rels) of
     Nothing        -> []
     Just (_,succs) -> (`map` Set.toList succs) $ \succ -> let ds = (Map.!) (idToData rels) (p,r,succ) in (succ, ds)
 
-getOutgoingLinks :: Relations -> Prefix -> [(Rel, [(Prefix, DependencySet)])]
-getOutgoingLinks rels p
+outgoingLinks :: Relations -> Prefix -> [(Rel, [(Prefix, DependencySet)])]
+outgoingLinks rels p
  = case Map.lookup p (DMap.toMap $ inOutRel rels) of
     Nothing    -> []
     Just rToId -> [ (r,p_ds_s) | (r,(_,succs)) <- Map.assocs rToId,
                                  let p_ds_s = [(succ,ds) | succ <- Set.toList succs, let ds = (Map.!) (idToData rels) (p,r,succ)]
                   ]
 
-getPredecessors :: Relations -> Prefix -> Rel -> [(Prefix, DependencySet)]
-getPredecessors rels p r
+predecessors :: Relations -> Prefix -> Rel -> [(Prefix, DependencySet)]
+predecessors rels p r
  = case DMap.lookup p r (inOutRel rels) of
     Nothing        -> []
     Just (preds,_) -> (`map` Set.toList preds) $ \pred -> let ds = (Map.!) (idToData rels) (pred,r,p) in (pred, ds)
 
 
-getIncomingLinks :: Relations -> Prefix -> [(Rel,[( Prefix, DependencySet)])]
-getIncomingLinks rels p
+incomingLinks :: Relations -> Prefix -> [(Rel,[( Prefix, DependencySet)])]
+incomingLinks rels p
  = case Map.lookup p (DMap.toMap $ inOutRel rels) of
     Nothing     -> []
     Just rToId -> [ (r,p_ds_s) | (r,(preds,_)) <- Map.assocs rToId,

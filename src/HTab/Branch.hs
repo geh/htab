@@ -60,7 +60,7 @@ import qualified HTab.DMap as DMap
 import HTab.Base(moveInMap, almostCartesianProduct, doMemoize, set, list)
 
 import HTab.Relations ( Relations, emptyRels, insertRelation, mergePrefixWith,
-                        getSuccessors, getPredecessors, getIncomingLinks, getOutgoingLinks)
+                        successors, predecessors, incomingLinks, outgoingLinks)
 import qualified HTab.Relations as Relations
 import qualified Data.Bimap as Bimap
 
@@ -204,9 +204,17 @@ emptyBranch clp fLang relInfo_ =
                   relevantNominals = set $ languageNoms fLang,
                   relInfo = relInfo_
                 }
- where blockingMode = if inclBlockChain clp && (not $ inclBlockGlobal clp)
-                       then InclusionBlockingChain
-                       else InclusionBlockingGlobal
+ where blockingMode =
+         if    languagePast fLang
+            || languageTrans fLang
+            || languageDown fLang
+            || relInfo_ `oneIs` Symmetric
+            || relInfo_ `oneIs` Functional
+            || relInfo_ `oneIs` Injective
+           then ChainBlocking
+           else if inclBlockChain clp && (not $ inclBlockGlobal clp)
+                 then InclusionBlockingChain
+                 else InclusionBlockingGlobal
 
 instance Show Branch where
  show br
@@ -305,210 +313,67 @@ emptyTodoList clp =
                }
 
 {-
-   "add formula(s)" functions, that handle all that is related
-   to prefixes, nominals, and vId/nom rules
+   "add formula" functions, that handle
+   prefixes, nominals, and vId rule
 -}
 
-type MergeHistory = [(Prefix,String)]
+type MergeHistory = [(Prefix,NomSymbol)]
 
 addFormulas :: CmdLineParams -> Branch -> [PrFormula] -> MergeHistory -> BranchInfo
-addFormulas clp br (hd:tl) history
-       = case addFormula clp br hd history of
-          BranchOK br2             -> addFormulas clp br2 tl history
-          bi@(BranchClash _ _ _ _) -> bi
+addFormulas clp br fs history =
+ foldr (\f bi ->
+          case bi of
+           BranchOK br2 -> addFormula clp br2 f history
+           clash -> clash
+       )
+       (BranchOK br)
+       fs
 
-addFormulas _ br [] _ = BranchOK br
-
-
--- 3 main cases : adding a positive nominal, adding a disjunction, and otherwise.
+-- 2 main cases : adding a positive nominal, and otherwise.
 addFormula :: CmdLineParams -> Branch -> PrFormula -> MergeHistory -> BranchInfo
-addFormula clp br f@(PrFormula pr fDs f2@(Lit (PosLit (N (NomSymbol n))))) history
- | (pr,n) `elem` history = addFormulaBaseCase clp br f
- | otherwise
-   = let
-         (DS.Prefix ur1,classes1) = DS.find  (DS.Prefix pr) (nomPrefClasses br)
-         (nomAncestor  ,classes2) = DS.find  (DS.Nominal n) classes1
-         classes3                 = DS.union (DS.Prefix pr) (DS.Nominal n) classes2
-     in
-      case nomAncestor of
-       DS.Nominal _  ->     -- nominal not yet in the equivalence classes
-            let
-                newBr = addClassDeps ur1 fDs $ br { nomPrefClasses = classes3 }
-            in
-                addFormula clp newBr ( PrFormula ur1 fDs f2 ) ((ur1,n):history)
-       DS.Prefix ur2
-         | ur1 == ur2       -- same class
-            -> addFormula clp (addClassDeps ur1 fDs br) ( PrFormula ur1 fDs f2 ) ((ur1,n):history)
-         | otherwise        -- two different classes
-            ->
-              let
-                 oldUr                    = max ur1 ur2
-                 newUr                    = min ur1 ur2
-                 clashableInfoSlots       = catMaybes $ map (\ur -> DMap.lookup1 ur (clashStr br))  [ur1,ur2]
-                 currentDependencies      = dsUnions $ fDs:(map (findDeps br) [ur1,ur2])
-                 newPrToDepSet            = Map.insert newUr currentDependencies (prToDepSet br)
-                 newClashableSlotUrfather = addDepsToClashableSlot currentDependencies $ clashableInfoSlotsUnions clashableInfoSlots
-              in
-                 case newClashableSlotUrfather of
-                  Slot_UpdateFailure clashingDeps ->
-                      let newBr = br{nomPrefClasses = classes3} in
-                      BranchClash newBr pr (dsUnion clashingDeps currentDependencies) f2
+addFormula clp br f@(PrFormula pr ds (Lit (PosLit (N n)))) history
+ | (pr,n) `elem` history = addFormulaBookKeep clp br f
+ | otherwise             = merge clp br pr ds n history
 
-                  Slot_UpdateSuccess urfatherSlot ->
-                      let newClashStr    = DMap $ Map.delete oldUr $ Map.insert newUr urfatherSlot (toMap $ clashStr br)
-                          newPrefToForms = moveInMap (prefToForms br) oldUr newUr Set.union
-                          newBoxConstrFwd = DMap.moveInnerDataDMapPlusDeps fDs (boxConstrFwd br) oldUr newUr
-                          newBoxConstrBwd = DMap.moveInnerDataDMapPlusDeps fDs (boxConstrBwd br) oldUr newUr
-                          newAccStr       = mergePrefixWith (accStr br) oldUr newUr fDs
+addFormula clp br f _    = addFormulaBookKeep clp br f
 
-                          newTrueForms   = case caching clp of {Nothing -> trueForms br ; _ -> DMap.moveInnerDataDMap (trueForms br) oldUr newUr dsUnion}
+addFormulaBookKeep :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
+addFormulaBookKeep clp br_ pf_
+ =   addFormulaPutAway        pf clp
+   -- book keep follows
+   $ addToAugmentedPrefixes   pr
+   $ updatePrefToUev        f pr
+   $ addToPrefToForms         pf
+   $ addToTrueForms       clp pf br
+  where
+   (br, pf@(PrFormula pr _ f)  ) = vId br_ pf_
 
-                          newDiaRlCh     = moveInMap (diaRlCh br)  oldUr newUr Set.union
-                          newDiaXRlCh    = moveInMap (diaXRlCh br) oldUr newUr Set.union
-                          newBoxXRlCh    = moveInMap (boxXRlCh br) oldUr newUr Set.union
-
-                          mapBoxFwd = map (\idx -> Map.findWithDefault Map.empty idx (toMap $ boxConstrFwd br) ) [ur1,ur2]
-                          mapBoxBwd = map (\idx -> Map.findWithDefault Map.empty idx (toMap $ boxConstrBwd br) ) [ur1,ur2]
-                          mapAccFwd = map (Map.fromList . (getOutgoingLinks (accStr br))) [ur1,ur2]
-                          mapAccBwd = map (Map.fromList . (getIncomingLinks (accStr br))) [ur1,ur2]
-                          formulasToSend1 = concatMap (newFormulasToSend fDs) $ almostCartesianProduct mapBoxFwd mapAccFwd
-                          formulasToSend2 = concatMap (newFormulasToSend fDs) $ almostCartesianProduct mapBoxBwd mapAccBwd
-
-                          functionalityNominalToSend = addFNom $ filter ((isFunctional (relInfo br)) . fst) $ getOutgoingLinks (accStr br) oldUr
-                               where addFNom :: [(Rel, [(Prefix,DependencySet)])] -> [PrFormula]
-                                     addFNom = concatMap (\(r,pds) ->
-                                                            map (\(p,ds) -> PrFormula p (dsUnion ds fDs) (funcNominal r newUr)) pds
-                                                         )
-                          injectivityNominalsToSend  = addINom $ filter ((isInjective  (relInfo br)) . fst) $ getIncomingLinks (accStr br) oldUr
-                               where addINom :: [(Rel, [(Prefix,DependencySet)])] -> [PrFormula]
-                                     addINom = concatMap (\(r,pds) ->
-                                                            map (\(p,ds) -> PrFormula p (dsUnion ds fDs) (injNominal r newUr)) pds
-                                                         )
-
-                          formulasToSend  = formulasToSend1 ++ formulasToSend2 ++ functionalityNominalToSend ++ injectivityNominalsToSend
-
-                          newPrefToUevFwd
-                           = if hasTransClos br
-                              then DMap $ moveInMap (toMap $ prefToUevFwd br) oldUr newUr ( Map.unionWith dsUnion )
-                              else prefToUevFwd br
-
-                          newPrefToUevBwd
-                           = if hasTransClos br
-                              then DMap $ moveInMap (toMap $ prefToUevBwd br) oldUr newUr ( Map.unionWith dsUnion )
-                              else prefToUevBwd br
-
-                          formulasToAdd  = nubAndMergeDeps (PrFormula newUr fDs f2:formulasToSend)
-                          newBr             = br{nomPrefClasses = classes3,
-                                                 boxConstrFwd   = newBoxConstrFwd,
-                                                 boxConstrBwd   = newBoxConstrBwd,
-                                                 accStr         = newAccStr,
-                                                 prToDepSet     = newPrToDepSet,
-                                                 prefToForms    = newPrefToForms,
-                                                 trueForms      = newTrueForms,
-                                                 prefToUevFwd   = newPrefToUevFwd,
-                                                 prefToUevBwd   = newPrefToUevBwd,
-                                                 diaRlCh        = newDiaRlCh,
-                                                 diaXRlCh       = newDiaXRlCh,
-                                                 boxXRlCh       = newBoxXRlCh,
-                                                 clashStr       = newClashStr}
-                      in
-                          addFormulas clp newBr formulasToAdd ((newUr,n):history)
-
-
--- if Unit Propagation enabled : try to reduce disjunction
-addFormula clp br pf@(PrFormula pr ds disF@(Dis fs)) _
- = if not $ unitProp clp
-    then addFormulaBaseCase clp br pf
-    else case reduceDisjunctionAgainstBranch br pr fs of
-           Triviality              -> BranchOK br
-           Contradiction dsClash   -> BranchClash br pr (dsUnion ds dsClash) disF
-           Reduced newDs disjuncts -> addFormulaBaseCase clp br (PrFormula pr (dsUnion ds newDs) (Dis disjuncts))
-
-addFormula clp br f _
- = addFormulaBaseCase clp br f
-
-addFormulaBaseCase :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
-addFormulaBaseCase clp br f@(PrFormula pr ds f2)
- = addFormula2 clp newBr fToAdd
-    where
-      (urfather,ds2,newClasses) = getUrfatherAndDeps br (DS.Prefix pr)
-      newBr = br{nomPrefClasses = newClasses}
-      fToAdd = if urfather == pr -- always the case if we are in the modal language
-                then f
-                else PrFormula urfather (dsUnion ds ds2) f2
-
-addFormula2 :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
-addFormula2 clp br pf@(PrFormula pr _ f) =
-   addFormula3 clp br5 pf
- where
-     br2 = case caching clp of
-             Nothing -> br
-             _       -> addToTrueForms br pf
-     br3 = if forInclusion br f
-             then addToPrefToForms br2 pf
-             else br2
-     br4 = updatePrefToUev f pr br3
-     br5 = addToAugmentedPrefixes pr br4
-
-addFormula3 :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
-addFormula3 _ br pf@(PrFormula _ _ (Con _))
-           = BranchOK $ addToTodo br pf
-
-addFormula3 _ br pf@(PrFormula _ _ (Dis _))
-           = BranchOK $ addToTodo br pf
-
-addFormula3 clp br_ (PrFormula pr ds (Box r f))
-           = let br = case r of { InvRelSymbol _ -> blockChain br_ ; _ -> br_ } in
-             addBoxConstraint clp br pr r f ds
-
-addFormula3 clp br (PrFormula pr ds (BoxX r f))
-           = addBoxXConstraint clp br pr r f ds
-
-addFormula3 _ br_ pf@(PrFormula pr _ f2@(Dia r _))
-           = let br = case r of { InvRelSymbol _ -> blockChain br_ ; _ -> br_ } in
-             BranchOK $ if diaAlreadyDone br pr f2
-                          then br                  -- diamond rule saturation
-                          else addToTodo br pf
-
-addFormula3 _ br pf@(PrFormula pr ds f2@(DiaX r f))
-           = BranchOK $ if diaXAlreadyDone br pr f2
-                          then br                  -- diamondX rule saturation
-                          else addDiaXUev br' pr ds r f
-                                 where br' = blockChain $ addToTodo br pf
-
-addFormula3 clp br (PrFormula _ ds (A f))
-           = addUnivConstraint clp br ds f
-
-addFormula3 clp br (PrFormula pr ds (B f))
-           = addDiffUnivConstraint clp br ds f pr
-
-addFormula3 _ br pf@(PrFormula _ _ f2@(E _))
-           = BranchOK $ if existAlreadyDone br f2  -- exist rule saturation
-                         then br
-                         else addToTodo br{existRlCh = Set.insert f2 (existRlCh br)} pf
-
-addFormula3 _ br pf@(PrFormula _ _ (D _))
-           = BranchOK $ addToTodo br pf
-
-addFormula3 _ br pf@(PrFormula _ _ f2@(At _ _))
-           = BranchOK $ if atAlreadyDone br f2  -- at rule saturation
-                         then br
-                         else addToTodo br{atRlCh = Set.insert f2 (atRlCh br)} pf
-
-addFormula3 _ br pf@(PrFormula pr _ f2@(Down _ _))
-           = BranchOK $ if downAlreadyDone br pr f2
-                            then br                            -- down-arrow rule saturation
-                            else addToTodo br pf
-
-addFormula3 _ br (PrFormula pr ds (Lit l)) = addAndUpdateMap br pr ds l
-
+addFormulaPutAway :: PrFormula -> CmdLineParams -> Branch -> BranchInfo
+addFormulaPutAway pf@(PrFormula pr ds f2) clp br =
+ case f2 of
+   Con _    -> addToTodo pf br
+   Dis _    -> addToTodo pf br
+   Dia _ _  -> addToTodo pf br
+   DiaX _ _ -> addToTodo pf br
+   Box r f  -> addBoxConstraint      pr r f ds clp br
+   BoxX r f -> addBoxXConstraint     pr r f ds clp br
+   A f      -> addUnivConstraint          f ds clp br
+   B f      -> addDiffUnivConstraint pr   f ds clp br
+   E _      -> addToTodo pf br
+   D _      -> addToTodo pf br
+   At _ _   -> addToTodo pf br
+   Down _ _ -> addToTodo pf br
+   Lit l    -> addAndUpdateMap pr ds l br
 
 {- todo list functions -}
 
-addToTodo :: Branch -> PrFormula -> Branch
-addToTodo br pf@(PrFormula _ _ f2) =
- br{todoList = newTodoList}
- where
+addToTodo :: PrFormula -> Branch -> BranchInfo
+addToTodo pf@(PrFormula p ds f2) br =
+ BranchOK $
+  if alreadyDone
+   then br
+   else brWithSaturation{todoList = newTodoList}
+  where
    newTodoList =
      case todoList br of
       Fair srs -> Fair (srs ++ [SR_Formula pf])
@@ -523,9 +388,118 @@ addToTodo br pf@(PrFormula _ _ f2) =
          At _ _   -> utodo{atStr    = Set.insert pf (atStr utodo)}
          Down _ _ -> utodo{downStr  = Set.insert pf (downStr utodo)}
          _        -> error "addToTodo"
-
+   alreadyDone =
+    case f2 of
+     E  _     -> existAlreadyDone br f2
+     D _      -> False
+     At _ _   -> atAlreadyDone br f2
+     Down _ _ -> downAlreadyDone br pf
+     Dia  _ _ -> diaAlreadyDone br pf
+     DiaX _ _ -> diaXAlreadyDone br pf
+     Con _    -> False
+     Dis _    -> False
+     _        -> error "alreadyDone"
+   brWithSaturation =
+    case f2 of
+     E _      -> br{existRlCh = Set.insert f2 (existRlCh br)}
+     At _ _   -> br{atRlCh    = Set.insert f2 (atRlCh br)}
+     DiaX r g -> addDiaXUev br p ds r g -- soon to be removed, replaced by end-of-calculus model checking
+     -- do-nothing cases
+     Con _    -> br
+     Dis _    -> br
+     D _      -> br
+     Down _ _ -> br
+     Dia _ _  -> br
+     -- error cases
+     _        -> error "writeSaturation"
 
 {-    helper functions for equivalence class merge     -}
+
+merge :: CmdLineParams -> Branch -> Prefix -> DependencySet -> NomSymbol -> MergeHistory -> BranchInfo
+merge clp br pr fDs ns@(NomSymbol n) history
+ = let
+       f2                       = nom $ NomSymbol n
+       (DS.Prefix ur1,classes1) = DS.find  (DS.Prefix pr) (nomPrefClasses br)
+       (nomAncestor  ,classes2) = DS.find  (DS.Nominal n) classes1
+       classes3                 = DS.union (DS.Prefix pr) (DS.Nominal n) classes2
+   in
+    case nomAncestor of
+     DS.Nominal _  ->     -- nominal not yet in the equivalence classes
+          let
+              newBr = addClassDeps ur1 fDs $ br { nomPrefClasses = classes3 }
+          in
+              addFormula clp newBr ( PrFormula ur1 fDs f2 ) ((ur1,ns):history)
+     DS.Prefix ur2
+       | ur1 == ur2
+          -> addFormula clp (addClassDeps ur1 fDs br) ( PrFormula ur1 fDs f2 ) ((ur1,ns):history)
+       | otherwise
+          ->
+            let
+               oldUr                    = max ur1 ur2
+               newUr                    = min ur1 ur2
+               clashableInfoSlots       = catMaybes $ map (\ur -> DMap.lookup1 ur (clashStr br))  [ur1,ur2]
+               currentDependencies      = dsUnions $ fDs:(map (findDeps br) [ur1,ur2])
+               newPrToDepSet            = Map.insert newUr currentDependencies (prToDepSet br)
+               newClashableSlotUrfather = cisAddDeps currentDependencies $ cisUnions clashableInfoSlots
+            in
+             case newClashableSlotUrfather of
+              Slot_UpdateFailure clashingDeps ->
+                  let newBr = br{nomPrefClasses = classes3} in
+                  BranchClash newBr pr (dsUnion clashingDeps currentDependencies) f2
+
+              Slot_UpdateSuccess urfatherSlot ->
+                  let newClashStr     = DMap $ Map.delete oldUr $ Map.insert newUr urfatherSlot (toMap $ clashStr br)
+
+                      -- structures that merge
+                      newPrefToForms  = moveInMap (prefToForms br) oldUr newUr Set.union
+                      newBoxConstrFwd = DMap.moveInnerDataDMapPlusDeps fDs (boxConstrFwd br) oldUr newUr
+                      newBoxConstrBwd = DMap.moveInnerDataDMapPlusDeps fDs (boxConstrBwd br) oldUr newUr
+                      newAccStr       = mergePrefixWith (accStr br) oldUr newUr fDs
+                      newTrueForms    = DMap.moveInnerDataDMap (trueForms br) oldUr newUr dsUnion
+                      newDiaRlCh      = moveInMap (diaRlCh br)  oldUr newUr Set.union
+                      newDiaXRlCh     = moveInMap (diaXRlCh br) oldUr newUr Set.union
+                      newBoxXRlCh     = moveInMap (boxXRlCh br) oldUr newUr Set.union
+                      newPrefToUevFwd = DMap $ moveInMap (toMap $ prefToUevFwd br) oldUr newUr ( Map.unionWith dsUnion )
+                      newPrefToUevBwd = DMap $ moveInMap (toMap $ prefToUevBwd br) oldUr newUr ( Map.unionWith dsUnion )
+
+                      -- structures that combine
+                      mapBoxFwd = map (\idx -> Map.findWithDefault Map.empty idx (toMap $ boxConstrFwd br) ) [ur1,ur2]
+                      mapAccFwd = map (Map.fromList . (outgoingLinks (accStr br))) [ur1,ur2]
+                      formulasToSend1 = concatMap (boxRule fDs) $ almostCartesianProduct mapBoxFwd mapAccFwd
+
+                      mapBoxBwd = map (\idx -> Map.findWithDefault Map.empty idx (toMap $ boxConstrBwd br) ) [ur1,ur2]
+                      mapAccBwd = map (Map.fromList . (incomingLinks (accStr br))) [ur1,ur2]
+                      formulasToSend2 = concatMap (boxRule fDs) $ almostCartesianProduct mapBoxBwd mapAccBwd
+
+                      funNomsToSend = addFNom $ filter ((isFunctional (relInfo br)) . fst) $ outgoingLinks (accStr br) oldUr
+                       where addFNom :: [(Rel, [(Prefix,DependencySet)])] -> [PrFormula]
+                             addFNom = concatMap (\(r,pds) ->
+                                                    map (\(p,ds) -> PrFormula p (dsUnion ds fDs) (funcNominal r newUr)) pds
+                                                 )
+                      injNomsToSend  = addINom $ filter ((isInjective (relInfo br)) . fst) $ incomingLinks (accStr br) oldUr
+                       where addINom :: [(Rel, [(Prefix,DependencySet)])] -> [PrFormula]
+                             addINom = concatMap (\(r,pds) ->
+                                                    map (\(p,ds) -> PrFormula p (dsUnion ds fDs) (injNominal r newUr)) pds
+                                                 )
+
+                      formulasToSend  = formulasToSend1 ++ formulasToSend2 ++ funNomsToSend ++ injNomsToSend
+                      formulasToAdd   = nubAndMergeDeps (PrFormula newUr fDs f2:formulasToSend)
+
+                      newBr           = br{nomPrefClasses = classes3,
+                                           boxConstrFwd   = newBoxConstrFwd,
+                                           boxConstrBwd   = newBoxConstrBwd,
+                                           accStr         = newAccStr,
+                                           prToDepSet     = newPrToDepSet,
+                                           prefToForms    = newPrefToForms,
+                                           trueForms      = newTrueForms,
+                                           prefToUevFwd   = newPrefToUevFwd,
+                                           prefToUevBwd   = newPrefToUevBwd,
+                                           diaRlCh        = newDiaRlCh,
+                                           diaXRlCh       = newDiaXRlCh,
+                                           boxXRlCh       = newBoxXRlCh,
+                                           clashStr       = newClashStr}
+                  in
+                      addFormulas clp newBr formulasToAdd ((newUr,ns):history)
 
 nubAndMergeDeps :: [PrFormula] -> [PrFormula]
 -- Rationale : because of the equivalence classes, a same formula can be added to a branch
@@ -544,19 +518,29 @@ namd [] theMap = map (\((p,f),ds) -> PrFormula p ds f) (Map.assocs theMap)
    Functions related to vId, nom, prefixes and nominals ...
 -}
 
+vId :: Branch -> PrFormula -> (Branch,PrFormula)
+vId br f@(PrFormula pr ds f2)
+ = (newBr, newF)
+   where
+     (urfather,ds2,newClasses) = getUrfatherAndDeps br (DS.Prefix pr)
+     newBr = br{nomPrefClasses = newClasses}
+     newF  = if urfather == pr
+                 then f else PrFormula urfather (dsUnion ds ds2) f2
 
---to fill the new field
-addToTrueForms :: Branch -> PrFormula -> Branch
-addToTrueForms br (PrFormula pre dps f) =
-  br{trueForms = newMap}
+addToTrueForms :: CmdLineParams -> PrFormula -> Branch -> Branch
+addToTrueForms clp (PrFormula pre dps f) br =
+ case caching clp of
+   Nothing -> br
+   _       -> br{trueForms = newMap}
  where newMap = DMap.insertWith dsUnion pre f dps $ trueForms br
 
 
-addToPrefToForms :: Branch -> PrFormula -> Branch
-addToPrefToForms br (PrFormula pre _ f) =
+addToPrefToForms :: PrFormula -> Branch -> Branch
+addToPrefToForms (PrFormula pre _ f) br | forInclusion br f =
   br{prefToForms = newMap}
  where currentPtf = prefToForms br
        newMap = Map.insertWith Set.union pre (Set.singleton f) currentPtf
+addToPrefToForms _ br = br
 
 {-     handling nominal urfathers, equivalence classes and dependencies     -}
 
@@ -627,27 +611,27 @@ updatePrefToUevBwd f pr' br =
 
 
 findPreviousPrefixes :: Branch -> Prefix -> Rel -> [Prefix]
-findPreviousPrefixes br p r = map fst $ getPredecessors (accStr br) p r
+findPreviousPrefixes br p r = map fst $ predecessors (accStr br) p r
 
 findFollowingPrefixes :: Branch -> Prefix -> Rel -> [Prefix]
-findFollowingPrefixes br p r = map fst $ getSuccessors (accStr br) p r
+findFollowingPrefixes br p r = map fst $ successors (accStr br) p r
 
 {-     box-related constraints     -}
 
-newFormulasToSend :: DependencySet -> (Map.Map Rel [(DependencySet,Formula)], Map.Map Rel [(Prefix,DependencySet)]) -> [PrFormula]
-newFormulasToSend deps (mapBox, mapAcc)
+boxRule :: DependencySet -> (Map.Map Rel [(DependencySet,Formula)], Map.Map Rel [(Prefix,DependencySet)]) -> [PrFormula]
+boxRule deps (mapBox, mapAcc)
  = [PrFormula p (dsUnions [deps,ds1,ds2]) f |
                       r1 <- Map.keys mapBox,
                       r2 <- Map.keys mapAcc,    r1 == r2,
                       (ds1,f) <- (Map.!) mapBox r1,
                       (p,ds2) <- (Map.!) mapAcc r2     ]
 
-addBoxConstraint :: CmdLineParams -> Branch -> Prefix -> RelSymbol -> Formula -> DependencySet -> BranchInfo
-addBoxConstraint clp br pr_ (RelSymbol r) f ds
+addBoxConstraint :: Prefix -> RelSymbol -> Formula -> DependencySet -> CmdLineParams -> Branch -> BranchInfo
+addBoxConstraint pr_ (RelSymbol r) f ds clp br
  = addFormulas clp newBr toAdd []
    where pr = getUrfather br (DS.Prefix pr_)
          newBr = br{boxConstrFwd = updateBoxConstr pr r f ds (boxConstrFwd br)}
-         accessiblePrDs   = getSuccessors (accStr br) pr r
+         accessiblePrDs   = successors (accStr br) pr r
          toAdd = symApplications ++ transApplications ++ boxApplications
          transApplications = if isTransitive (relInfo br) (RelSymbol r)
                              then map (\(p,ds2) -> PrFormula p (dsUnion ds ds2) (Box (RelSymbol r) f)) accessiblePrDs
@@ -655,11 +639,11 @@ addBoxConstraint clp br pr_ (RelSymbol r) f ds
          symApplications = if isSymmetric (relInfo br) (RelSymbol r) then [PrFormula pr ds $ box (InvRelSymbol r) f] else []
          boxApplications = map (\(p,ds2) -> PrFormula p (dsUnion ds ds2) f) accessiblePrDs
 
-addBoxConstraint clp br pr_ (InvRelSymbol r) f ds
+addBoxConstraint pr_ (InvRelSymbol r) f ds clp br
  = addFormulas clp newBr toAdd []
    where pr = getUrfather br (DS.Prefix pr_)
          newBr = br{boxConstrBwd = updateBoxConstr pr r f ds (boxConstrBwd br)}
-         accessiblePrDs        = getPredecessors (accStr br) pr r
+         accessiblePrDs        = predecessors (accStr br) pr r
          toAdd = transApplications ++ boxApplications
          transApplications = if isTransitive (relInfo br) (RelSymbol r)
                              then map (\(p,ds2) -> PrFormula p (dsUnion ds ds2) (Box (InvRelSymbol r) f)) accessiblePrDs
@@ -677,8 +661,8 @@ updateBoxConstr p1_ r_ f_ ds_ (DMap boxConstr_) =
 
 -- [*]phi --> phi & [][*]phi
 -- need not to do all that addBoxConstraint does
-addBoxXConstraint :: CmdLineParams -> Branch -> Prefix -> RelSymbol -> Formula -> DependencySet -> BranchInfo
-addBoxXConstraint clp br nonRepresentativePr r f ds
+addBoxXConstraint :: Prefix -> RelSymbol -> Formula -> DependencySet -> CmdLineParams ->  Branch -> BranchInfo
+addBoxXConstraint nonRepresentativePr r f ds clp br
  = if boxXAlreadyDone br pr (BoxX r f)
     then BranchOK br
     else addFormulas clp br2 [PrFormula pr ds f,
@@ -784,16 +768,14 @@ test2equal [] = False
 
 
 isInTheModel :: Branch -> Prefix -> Bool
-isInTheModel br pr
- = if isNominalUrfather br pr
-    then
-     case blockMode br of
-       InclusionBlockingGlobal ->  (getModelRepresentative br pr) == pr
-       InclusionBlockingChain  ->  (getModelRepresentative br pr) == pr
-       ChainBlocking           ->  case findModelRepresentativeChainBlocking br pr of
-                                    Nothing   -> False
-                                    Just repr -> repr == pr
-   else False
+isInTheModel br pr | isNominalUrfather br pr
+ = case blockMode br of
+    InclusionBlockingGlobal ->  (getModelRepresentative br pr) == pr
+    InclusionBlockingChain  ->  (getModelRepresentative br pr) == pr
+    ChainBlocking           ->  case findModelRepresentativeChainBlocking br pr of
+                                 Nothing   -> False
+                                 Just repr -> repr == pr
+isInTheModel _ _ = False
 
 relationIsInTheModel :: Branch -> (Prefix,Rel,Prefix) -> Bool
 relationIsInTheModel br (p1,_,p2)
@@ -947,14 +929,14 @@ addDiaRuleCheck br pr f =
   br{diaRlCh=Map.insertWith Set.union ur (Set.singleton f) (diaRlCh br)}
    where ur = getUrfather br (DS.Prefix pr)
 
-diaAlreadyDone :: Branch -> Prefix -> Formula -> Bool
-diaAlreadyDone b p f@(Dia _ _) =
+diaAlreadyDone :: Branch -> PrFormula -> Bool
+diaAlreadyDone b (PrFormula p _ f@(Dia _ _)) =
   case Map.lookup ur (diaRlCh b) of
      Nothing  -> False
      Just fset -> Set.member f fset
  where ur = getUrfather b (DS.Prefix p)
 
-diaAlreadyDone _ _ _ = error "dia already done : wrong formula kind"
+diaAlreadyDone _ _ = error "dia already done : wrong formula kind"
 --
 
 addDiaXRuleCheck :: Branch -> Prefix -> Formula -> Branch
@@ -962,14 +944,14 @@ addDiaXRuleCheck br pr f =
   br{diaXRlCh=Map.insertWith Set.union ur (Set.singleton f) (diaXRlCh br)}
    where ur = getUrfather br (DS.Prefix pr)
 
-diaXAlreadyDone :: Branch -> Prefix -> Formula -> Bool
-diaXAlreadyDone b p f@(DiaX _ _) =
+diaXAlreadyDone :: Branch -> PrFormula -> Bool
+diaXAlreadyDone b (PrFormula p _ f@(DiaX _ _)) =
   case Map.lookup ur (diaXRlCh b) of
      Nothing  -> False
      Just fset -> Set.member f fset
  where ur = getUrfather b (DS.Prefix p)
 
-diaXAlreadyDone _ _ _ = error "diaX already done : wrong formula kind"
+diaXAlreadyDone _ _ = error "diaX already done : wrong formula kind"
 
 -- for a given prefix and relation, add a formula and its branching prefixes to the
 -- set of uevs
@@ -1013,14 +995,14 @@ addDownRuleCheck br pr f =
   br{downRlCh=Map.insertWith Set.union ur (Set.singleton f) (downRlCh br)}
    where ur = getUrfather br (DS.Prefix pr)
 
-downAlreadyDone :: Branch -> Prefix -> Formula -> Bool
-downAlreadyDone b p f@(Down _ _) =
+downAlreadyDone :: Branch -> PrFormula -> Bool
+downAlreadyDone b (PrFormula p _ f@(Down _ _)) =
   case Map.lookup ur (downRlCh b) of
      Nothing  -> False
      Just fset -> Set.member f fset
  where ur = getUrfather b (DS.Prefix p)
 
-downAlreadyDone _ _ _ = error "down already done : wrong formula kind"
+downAlreadyDone _ _ = error "down already done : wrong formula kind"
 
 --
 
@@ -1036,8 +1018,8 @@ atAlreadyDone _ _ = error "at already done : wrong formula kind"
 
 --
 
-addUnivConstraint :: CmdLineParams -> Branch -> DependencySet -> Formula -> BranchInfo
-addUnivConstraint clp br ds f
+addUnivConstraint :: Formula -> DependencySet -> CmdLineParams -> Branch -> BranchInfo
+addUnivConstraint f ds clp br
  = addFormulas clp newBr
                ( map (\p -> PrFormula p ds f) urfathers )
                []
@@ -1047,8 +1029,8 @@ addUnivConstraint clp br ds f
 
 --
 
-addDiffUnivConstraint :: CmdLineParams -> Branch -> DependencySet -> Formula -> Prefix -> BranchInfo
-addDiffUnivConstraint clp br ds f pr
+addDiffUnivConstraint :: Prefix -> Formula -> DependencySet -> CmdLineParams -> Branch -> BranchInfo
+addDiffUnivConstraint pr f ds clp br
  = addFormulas clp newBr
                ( (PrFormula pr ds $ nom newNom)
                  :(map (\somePrefix -> PrFormula somePrefix ds (Dis $ set [f, nom newNom])) otherUrfathers)
@@ -1226,8 +1208,8 @@ initUnsatCache clp
 
 data UpdateResult = UpdateSuccess Clashable_info | UpdateFailure DependencySet
 
-addAndUpdateMap :: Branch -> Prefix -> DependencySet -> Literal -> BranchInfo
-addAndUpdateMap br pr ds l
+addAndUpdateMap :: Prefix -> DependencySet -> Literal -> Branch -> BranchInfo
+addAndUpdateMap pr ds l br
   = case ( case l of PosLit a -> updateMap (clashStr br) pr ds a True
                      NegLit a -> updateMap (clashStr br) pr ds a False ) of
      UpdateSuccess cs  -> BranchOK br{clashStr = cs}
@@ -1242,7 +1224,7 @@ updateMap _   _  ds Taut False = UpdateFailure ds
 updateMap (DMap cs) pre ds a bool
   = case Map.lookup pre cs of
        Nothing            -> UpdateSuccess $ DMap $ Map.insert pre (Map.singleton a (bool,ds)) cs
-       Just slot          -> case updateClashableInfoSlot slot a bool ds of
+       Just slot          -> case cisUpdate slot a bool ds of
                               Slot_UpdateSuccess updatedSlot -> UpdateSuccess $ DMap $ Map.insert pre updatedSlot cs
                               Slot_UpdateFailure failureDeps -> UpdateFailure failureDeps
 
@@ -1253,28 +1235,29 @@ data Slot_UpdateResult =   Slot_UpdateSuccess Clashable_info_slot
 
 
 -- Union a list of clashable info slots
-clashableInfoSlotsUnions :: [Clashable_info_slot] -> Slot_UpdateResult
-clashableInfoSlotsUnions []              = Slot_UpdateSuccess (Map.empty::Clashable_info_slot)
-clashableInfoSlotsUnions [cis]           = Slot_UpdateSuccess cis
-clashableInfoSlotsUnions (cis1:cis2:tl)
- = case unionClashableInfoSlots cis1 cis2 of
+cisUnions :: [Clashable_info_slot] -> Slot_UpdateResult
+cisUnions []              = Slot_UpdateSuccess (Map.empty::Clashable_info_slot)
+cisUnions [cis]           = Slot_UpdateSuccess cis
+cisUnions (cis1:cis2:tl)
+ = case cisUnion cis1 cis2 of
      failure@(Slot_UpdateFailure _) -> failure
-     Slot_UpdateSuccess newCis      -> clashableInfoSlotsUnions (newCis:tl)
+     Slot_UpdateSuccess newCis      -> cisUnions (newCis:tl)
 
 -- Union two clashable info slots
 
 -- if there is a clash, the result reports the set of dependencies whose earliest dependency is the earliest
 -- among all dependencies sets that caused the clash
-unionClashableInfoSlots :: Clashable_info_slot -> Clashable_info_slot -> Slot_UpdateResult
-unionClashableInfoSlots cis1 cis2
+cisUnion :: Clashable_info_slot -> Clashable_info_slot -> Slot_UpdateResult
+cisUnion cis1 cis2
  = ucis_helper cis1 (Map.assocs cis2)
     where ucis_helper :: Clashable_info_slot -> [(Atom,(Bool,DependencySet))] -> Slot_UpdateResult
           ucis_helper cis a_b_ds_s =
              let (updateStatus,clashing_ds_s)
                   = foldr (\(a,(bool,ds)) (upResult,clashingBps_s)
                            -> case upResult of
-                               Slot_UpdateSuccess cis_ ->  (updateClashableInfoSlot cis_ a bool ds, clashingBps_s     )
-                               Slot_UpdateFailure ds_s ->  (updateClashableInfoSlot cis a bool ds, ds_s:clashingBps_s)  -- we reuse the input Clashabe Info Slot
+                               Slot_UpdateSuccess cis_ ->  (cisUpdate cis_ a bool ds,      clashingBps_s)
+                               Slot_UpdateFailure ds_s ->  (cisUpdate cis  a bool ds, ds_s:clashingBps_s)
+                                                                 -- we reuse the input Clashabe Info Slot
                           )
                           (Slot_UpdateSuccess cis,[])   a_b_ds_s
                  result = case clashing_ds_s of
@@ -1288,10 +1271,10 @@ unionClashableInfoSlots cis1 cis2
 
 -- Insert a piece of information in a clashable info slot
 
-updateClashableInfoSlot :: Clashable_info_slot -> Atom -> Bool -> DependencySet -> Slot_UpdateResult
-updateClashableInfoSlot cis Taut True  _  = Slot_UpdateSuccess cis
-updateClashableInfoSlot  _  Taut False ds = Slot_UpdateFailure ds
-updateClashableInfoSlot cis a             bool  ds  -- nominals, propositional symbols
+cisUpdate :: Clashable_info_slot -> Atom -> Bool -> DependencySet -> Slot_UpdateResult
+cisUpdate cis Taut True  _  = Slot_UpdateSuccess cis
+cisUpdate  _  Taut False ds = Slot_UpdateFailure ds
+cisUpdate cis a             bool  ds  -- nominals, propositional symbols
  = case Map.lookup a cis of
     Nothing          -> Slot_UpdateSuccess $ Map.insert a (bool,ds) cis
     Just (bool2,ds2) -> if bool == bool2
@@ -1303,23 +1286,23 @@ updateClashableInfoSlot cis a             bool  ds  -- nominals, propositional s
 
 -- Other functions related to clashable information
 
-addDepsToClashableSlot :: DependencySet -> Slot_UpdateResult -> Slot_UpdateResult
-addDepsToClashableSlot ds res_cis =
+cisAddDeps :: DependencySet -> Slot_UpdateResult -> Slot_UpdateResult
+cisAddDeps ds res_cis =
  case res_cis of
   Slot_UpdateSuccess cis         ->  Slot_UpdateSuccess $ Map.map (\(a,currentDs) -> (a,dsUnion currentDs ds)) cis
   failure@(Slot_UpdateFailure _) -> failure
 
 
 
-queryClashableSlot :: Branch -> Prefix -> Literal -> Maybe (Bool,DependencySet)
+cisQuery :: Branch -> Prefix -> Literal -> Maybe (Bool,DependencySet)
 -- Output : Nothing = nevermind ; Just True = already there ; Just False = contrary there
-queryClashableSlot _ _ (PosLit Taut) = Just (True,dsEmpty)
-queryClashableSlot _ _ (NegLit Taut) = Just (False,dsEmpty)
-queryClashableSlot br pr (NegLit a)
+cisQuery _ _ (PosLit Taut) = Just (True,dsEmpty)
+cisQuery _ _ (NegLit Taut) = Just (False,dsEmpty)
+cisQuery br pr (NegLit a)
   = case DMap.lookup pr a (clashStr br) of
       Nothing           -> Nothing
       Just (bool,ds)    -> Just (not bool,ds)
-queryClashableSlot br pr (PosLit a)
+cisQuery br pr (PosLit a)
   = case DMap.lookup pr a (clashStr br) of
       Nothing           -> Nothing
       Just (bool,ds)    -> Just (bool,ds)
@@ -1343,7 +1326,7 @@ reduceDisjunctionAgainstBranch br pr fs =
            scanDisjunctAndTest :: Formula -> Maybe (Set Formula,DependencySet) -> Maybe (Set Formula,DependencySet)
            scanDisjunctAndTest       _                Nothing               =    Nothing
            scanDisjunctAndTest  l@(Lit current) (Just (disjuncts,ds_))    =
-             case queryClashableSlot br ur current of
+             case cisQuery br ur current of
                 Nothing          -> Just (Set.insert l disjuncts,ds_)
                 Just (True,_)    -> Nothing
                 Just (False,ds2) -> Just (disjuncts,dsUnion ds_ ds2)
@@ -1351,14 +1334,11 @@ reduceDisjunctionAgainstBranch br pr fs =
 
 
 {-     other functions     -}
-blockChain :: Branch -> Branch
-blockChain br = br{blockMode = ChainBlocking}
-
-hasTransClos :: Branch -> Bool
-hasTransClos br = languageTrans $ inputLanguage br
-
 prefixes :: Branch -> [Prefix]
 prefixes br = [0..(lastPref br)]
+
+oneIs :: RelInfo -> RelProperties -> Bool
+oneIs relI p = any ( (elem p) . snd) relI
 
 hasProperty :: RelInfo -> RelSymbol -> RelProperties -> Bool
 hasProperty relI r p = case List.lookup r relI of

@@ -39,7 +39,7 @@ isRoot n s = isNothing $ Map.lookup n s
 mkDSet :: Ord x => DisjSet x
 mkDSet = Map.empty::DisjSet x
 
-
+-- this should be outside of the module
 data Pointer = Prefix Int | Nominal String
  deriving (Eq)
 

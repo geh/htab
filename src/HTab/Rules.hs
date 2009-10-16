@@ -302,8 +302,8 @@ breakConj _ = error $ "breakConj error"
 
 -- dia (may create a discard rule)
 diaRule :: PrFormula -> Branch -> Rule
-diaRule f@(PrFormula pr ds f1@(Dia r f2)) br
-  = if (diaAlreadyDone br pr f1)
+diaRule f@(PrFormula pr ds (Dia r f2)) br
+  = if diaAlreadyDone br f
      then DiscardRule f
      else DiaRule f (AccFormula (dsUnion ds ds2) r ur newPr) (PrFormula newPr ds f2)
       where newPr      = getNewPref br
@@ -314,7 +314,7 @@ diaRule _ _ = error $ "diaRule"
 -- diaX (may create a discard rule)
 diaXRule :: PrFormula -> Branch -> Rule
 diaXRule f@(PrFormula pr bprs f1@(DiaX r f2)) br
-  = if (diaXAlreadyDone br pr f1)
+  = if diaXAlreadyDone br f
      then DiscardRule f
      else DiaXRule f (PrFormula pr bprs (Dis $ set [f2,  Con $ set [neg f2, Dia r f1]]))
 
@@ -403,8 +403,8 @@ atRule _ _ = error "atRule error"
 
 -- down
 downRule :: PrFormula -> Branch -> Rule
-downRule df@(PrFormula pr ds f1@(Down v f)) br
- = if (downAlreadyDone br pr f1)
+downRule df@(PrFormula pr ds (Down v f)) br
+ = if downAlreadyDone br df
     then DiscardRule df
     else DownRule df (PrFormula pr ds (replaceVar v newNom f)) (PrFormula pr ds $ nom newNom)
     where newNom = getNewNom br

@@ -157,9 +157,9 @@ get_index bmap f =
 lookupBimap :: UCMap -> [Formula] -> Maybe [Int]
 lookupBimap bmap fs =
  foldr  (\f mList
-            -> case mList of
-                Nothing -> Nothing
-                Just is -> case Bimap.lookup f bmap of { Just i -> Just (i:is) ; Nothing -> Nothing }
+            -> do is <- mList
+                  i <- Bimap.lookup f bmap
+                  return (i:is)
         )
         (Just []) fs
 

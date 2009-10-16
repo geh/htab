@@ -16,7 +16,7 @@ import HTab.Branch( Branch(..), prefixes, getUrfather,
                     isTransitive, isSymmetric )
 import qualified HTab.DisjSet as DS
 import HTab.DMap (flatten, DMap(..), toMap )
-import HTab.Relations ( getAllRels )
+import HTab.Relations ( allRels )
 
 type Model = M.Model NomSymbol NomSymbol PropSymbol RelSymbol
 
@@ -41,7 +41,7 @@ buildModel branch =
              | (pre,pro) <- prefixAndProps branch]
        rs = Set.fromList $ map toSimpSig
               $ map (\(p1,r,p2) -> ((getModelRepresentative branch p1) + bias, r, (getModelRepresentative branch p2) + bias))
-                    $ filter (relationIsInTheModel branch) $ getAllRels $ accStr branch
+                    $ filter (relationIsInTheModel branch) $ allRels $ accStr branch
 
 toSimpSig :: (Prefix,Rel,Prefix) -> (NomSymbol,RelSymbol,NomSymbol)
 toSimpSig (p1,r,p2) = (NomSymbol (show p1), RelSymbol r, NomSymbol (show p2))
