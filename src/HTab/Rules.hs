@@ -49,8 +49,7 @@ data BranchModification =    BM_AddFormulas   [PrFormula]
                            | BM_UpdateUBBookKeep Prefix Prefix
 
 -- each rule constructor contains exactly the needed data to know the effect of the rule
-data Rule =  ConjRule   PrFormula [PrFormula]
-           | DiaRule    PrFormula AccFormula PrFormula        -- creates a prefix
+data Rule =  DiaRule    PrFormula AccFormula PrFormula        -- creates a prefix
            | DiaXRule   PrFormula PrFormula
            | DisjRule   PrFormula [PrFormula]
            | SemBrRule  PrFormula [[PrFormula]]
@@ -67,10 +66,6 @@ data Rule =  ConjRule   PrFormula [PrFormula]
 
 getMods :: Branch -> Rule -> [[BranchModification]]
 getMods _ (ClashRule ds f) = [[BM_Clash ds f]]
-
-getMods _ (ConjRule todelete toadds) =
- [[BM_RemFormula todelete,
-   BM_AddFormulas toadds]]
 
 getMods _ (DiaRule todelete@(PrFormula pr _ f) acctoadd@(AccFormula _ _ p1 p2) toadd) =
  [[BM_RemFormula todelete,
@@ -158,7 +153,6 @@ getMods _ (DiscardRule todelete) =
 
 
 instance Show Rule where
-   show (ConjRule  todelete _ )    = "conjunction:        " ++ showLess todelete
    show (DiaRule   todelete _ _ )  = "diamond:            " ++ showLess todelete
    show (DiaXRule  todelete _ )    = "diamondX:           " ++ showLess todelete
    show (DisjRule  todelete _ )    = "disjunction:        " ++ showLess todelete
@@ -174,7 +168,6 @@ instance Show Rule where
 --
 ruleToId :: Rule -> RuleId
 ruleToId r = case r of
-              (ConjRule _ _)     -> R_Conj
               (DiaRule _ _ _)    -> R_Dia
               (DiaXRule _ _)     -> R_DiaX
               (DisjRule _ _)     -> R_Disj
@@ -198,7 +191,6 @@ applicableRules br clp d =
 scheduledRuleToRule :: Branch -> CmdLineParams -> Dependency -> ScheduledRule -> Rule
 scheduledRuleToRule br clp d (SR_Formula pf@(PrFormula _ _ f2)) =
  case f2 of
-  Con _     -> conjRule pf br
   Dis _     -> if semBranch clp then semBrRule clp pf br d else disjRule clp pf br d
   Dia _ _   -> diaRule pf br
   DiaX _ _  -> diaXRule pf br
@@ -214,7 +206,6 @@ scheduledRuleToRule _ _ d (SR_UBlocking p1 p2) = ubRule p1 p2 d
 rulesByChar :: Branch -> CmdLineParams -> Dependency -> Char -> [Rule]
 rulesByChar br clp d char =
  case char of
-  'a' -> applicableConjRules br
   'o' -> applicableDisjRules clp br d
   'd' -> applicableDiaRules br
   't' -> applicableDiaXRules br
@@ -224,9 +215,6 @@ rulesByChar br clp d char =
   'b' -> applicableDownRules br
   'u' -> if uBlocking clp then applicableUBlockRules br d else []
   _   -> error "ruleByChar"
-
-applicableConjRules :: Branch -> [Rule]
-applicableConjRules br = [conjRule f br | f <- Set.toAscList $ conjStr $ todoList br]
 
 applicableDiaRules :: Branch -> [Rule]
 applicableDiaRules br = [diaRule f br | f@(PrFormula pr _ _) <- Set.toAscList $ diaStr $ todoList br, isNotBlocked br pr]
@@ -289,16 +277,6 @@ applyMod  _  br (BM_Clash ds (PrFormula pr ds2 f)) = BranchClash br pr (dsUnion 
 applyMod  _  br (BM_UpdateUBBookKeep p1 p2)        = BranchOK $ updateUBBookKeep p1 p2 br
 
 -- the actual rules and their helper functions
-
--- conjunction
-
--- takes 1 argument, the formula to remove
-conjRule :: PrFormula -> Branch -> Rule
-conjRule f _ = ConjRule f (breakConj f)
-
-breakConj :: PrFormula -> [PrFormula]
-breakConj (PrFormula pr ds (Con fs)) = prefix pr ds fs
-breakConj _ = error $ "breakConj error"
 
 -- dia (may create a discard rule)
 diaRule :: PrFormula -> Branch -> Rule

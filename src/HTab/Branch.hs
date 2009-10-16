@@ -351,7 +351,7 @@ addFormulaBookKeep clp br_ pf_
 addFormulaPutAway :: PrFormula -> CmdLineParams -> Branch -> BranchInfo
 addFormulaPutAway pf@(PrFormula pr ds f2) clp br =
  case f2 of
-   Con _    -> addToTodo pf br
+   Con fs   -> addFormulas clp br (prefix pr ds fs) []
    Dis _    -> addToTodo pf br
    Dia _ _  -> addToTodo pf br
    DiaX _ _ -> addToTodo pf br
@@ -379,7 +379,6 @@ addToTodo pf@(PrFormula p ds f2) br =
       Fair srs -> Fair (srs ++ [SR_Formula pf])
       utodo    ->
        case f2 of
-         Con _    -> utodo{conjStr  = Set.insert pf (conjStr utodo)}
          Dis _    -> utodo{disjStr  = Set.insert pf (disjStr utodo)}
          Dia _ _  -> utodo{diaStr   = Set.insert pf (diaStr utodo)}
          DiaX _ _ -> utodo{diaXStr  = Set.insert pf (diaXStr utodo)}
@@ -396,7 +395,6 @@ addToTodo pf@(PrFormula p ds f2) br =
      Down _ _ -> downAlreadyDone br pf
      Dia  _ _ -> diaAlreadyDone br pf
      DiaX _ _ -> diaXAlreadyDone br pf
-     Con _    -> False
      Dis _    -> False
      _        -> error "alreadyDone"
    brWithSaturation =
@@ -405,7 +403,6 @@ addToTodo pf@(PrFormula p ds f2) br =
      At _ _   -> br{atRlCh    = Set.insert f2 (atRlCh br)}
      DiaX r g -> addDiaXUev br p ds r g -- soon to be removed, replaced by end-of-calculus model checking
      -- do-nothing cases
-     Con _    -> br
      Dis _    -> br
      D _      -> br
      Down _ _ -> br

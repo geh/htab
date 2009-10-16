@@ -130,7 +130,6 @@ options =
           "PAT configures the strategy of rules applications",
           "A valid PAT is a permutation of the following list",
           "of values (priority in PAT goes from left to right):",
-          "  a = and",
           "  o = or",
           "  d = diamond",
           "  t = transitive closure diamond",
@@ -141,7 +140,7 @@ options =
           "  u = unrestricted blocking",
           "",
           "The default is `" ++ strategyStr defaultParams ++ "'",
-          "The rules box, universal modality and converse difference",
+          "The rules conjunction, box, universal modality and converse difference",
           "modality are immediate, thus have the highest precedence.",
           ""]),
    Option ['U']
@@ -250,7 +249,7 @@ setStrategy = permutationOf strategyStrVal ?->
                    \s c -> return c{strategyStr = s}
 
 strategyStrVal :: String
-strategyStrVal = "asedtDbou"
+strategyStrVal = "sedtDbou"
 
 setStats :: String -> CLPModifier
 setStats = (isJust . parseStats) ?->
@@ -262,7 +261,7 @@ defaultParams = CLP {showHelp = False,
                      logState = False,
                      maxtimeout  = 0,
                      statsStr    = ":0:c",
-                     strategyStr = "asedtDbou",
+                     strategyStr = strategyStrVal,
                      fairStrategy = False,
                      semBranch   = True,
                      unitProp    = True,
