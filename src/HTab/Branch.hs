@@ -222,8 +222,10 @@ instance Show Branch where
               "\nClashable formulas:", showMap (\v -> "(" ++ showMap_lits v ++ ")") "\n " (toMap $ clashStr br),
               "\n", show (todoList br),
               showl "\nRelations: "       (accStr br),
-              ifNotEmpty (boxConstrFwd br) (\c -> "\nBox fwd: " ++ showMap (\v -> "(" ++ showMap_rel v ++ ")") "\n " (toMap c)),
-              ifNotEmpty (boxConstrBwd br) (\c -> "\nBox bwd: " ++ showMap (\v -> "(" ++ showMap_rel v ++ ")") "\n " (toMap c)),
+              ifNotEmpty (boxConstrFwd br)
+                         (\c -> "\nBox fwd: " ++ showMap (\v -> "(" ++ showMap_rel v ++ ")") "\n " (toMap c)),
+              ifNotEmpty (boxConstrBwd br)
+                         (\c -> "\nBox bwd: " ++ showMap (\v -> "(" ++ showMap_rel v ++ ")") "\n " (toMap c)),
               showl "\nDia rule chart: "  (diaRlCh br),
               showl "\nDown rule chart: " (downRlCh br),
               showl "\n@ rule chart: "     (list $ atRlCh br),
@@ -533,10 +535,10 @@ addToTrueForms clp (PrFormula pre dps f) br =
 
 
 addToPrefToForms :: PrFormula -> Branch -> Branch
-addToPrefToForms (PrFormula pre _ f) br | forInclusion br f =
+addToPrefToForms (PrFormula pr _ f) br | forInclusion br f =
   br{prefToForms = newMap}
  where currentPtf = prefToForms br
-       newMap = Map.insertWith Set.union pre (Set.singleton f) currentPtf
+       newMap = Map.insertWith Set.union pr (Set.singleton f) currentPtf
 addToPrefToForms _ br = br
 
 {-     handling nominal urfathers, equivalence classes and dependencies     -}
@@ -651,9 +653,10 @@ updateBoxConstr :: Prefix -> Rel -> Formula -> DependencySet -> Box_constraints 
 updateBoxConstr p1_ r_ f_ ds_ (DMap boxConstr_) =
   case Map.lookup p1_ boxConstr_ of
     Nothing       -> DMap $ Map.insert p1_ (Map.singleton r_ [(ds_,f_)]) boxConstr_
-    Just innerMap -> case Map.lookup r_ innerMap of
-                       Nothing             -> DMap $ Map.insert p1_ (Map.insert r_ [(ds_,f_)] innerMap)                boxConstr_
-                       Just innerInnerList -> DMap $ Map.insert p1_ (Map.insert r_ ((ds_,f_):innerInnerList) innerMap) boxConstr_
+    Just innerMap ->
+       case Map.lookup r_ innerMap of
+        Nothing             -> DMap $ Map.insert p1_ (Map.insert r_ [(ds_,f_)] innerMap)                boxConstr_
+        Just innerInnerList -> DMap $ Map.insert p1_ (Map.insert r_ ((ds_,f_):innerInnerList) innerMap) boxConstr_
 
 
 -- [*]phi --> phi & [][*]phi
@@ -702,8 +705,8 @@ addAccFormula clp br (AccFormula ds (RelSymbol r) p1_ p2_)
          p1 = getUrfather br (DS.Prefix p1_)
          p2 = getUrfather br (DS.Prefix p2_)
          newBr    = insertRelationBranch br p1 r p2 ds
-         toSendFwd = Map.findWithDefault [] r $ Map.findWithDefault Map.empty p1 (toMap $ boxConstrFwd br) -- [(DependencySet,Prefix)]
-         toSendBwd = Map.findWithDefault [] r $ Map.findWithDefault Map.empty p2 (toMap $ boxConstrBwd br) -- [(DependencySet,Prefix)]
+         toSendFwd = Map.findWithDefault [] r $ Map.findWithDefault Map.empty p1 (toMap $ boxConstrFwd br)
+         toSendBwd = Map.findWithDefault [] r $ Map.findWithDefault Map.empty p2 (toMap $ boxConstrBwd br)
 
 addAccFormula clp br (AccFormula ds (InvRelSymbol r) p1_ p2_ ) -- so, create p2<>p1
  = addAccFormula clp br (AccFormula ds (RelSymbol r) p2_ p1_)
@@ -841,7 +844,7 @@ calculateInclusionUrfathersMap :: Branch -> InclusionUrfathersMap
 calculateInclusionUrfathersMap br = 
   case inclUrMap br of
    Just previousM -> if null $ incrPrs br
-                      then fromScratchInclUrMap        -- this case is reached if we applied the (A) rule  -- does it happen ??
+                      then fromScratchInclUrMap       -- this case is reached if we applied the (A) rule  -- does it happen ??
                       else updateInclUrMap previousM  -- works, provided that the augmented prefixes list is correctly filled
    Nothing        -> fromScratchInclUrMap
 
@@ -860,10 +863,10 @@ calculateInclusionUrfathersMap br =
 
 
 condFoldr :: (a -> b -> (b,Bool)) -> b -> [a] -> b
-condFoldr _ lastB    []      = lastB
-condFoldr f initialB (hd:tl)
-   = let (newB,continue) = f hd initialB in
-      if continue then condFoldr f newB tl else newB
+condFoldr _ accum    []      = accum
+condFoldr f accum (hd:tl)
+   = let (newAcc,continue) = f hd accum in
+      if continue then condFoldr f newAcc tl else newAcc
 
 formulasIncluded :: Branch -> Prefix -> Prefix-> Bool
 formulasIncluded br p1 p2 = (formulasOf br p1) `Set.isSubsetOf` (formulasOf br p2)
@@ -914,10 +917,6 @@ addToAugmentedPrefixes pr br = br{incrPrs = (pr:incrPrs br)}
 --To keep the prefixes true at b-b1, where b is the current branch, and b1 is prev(b)
 setPrevPref :: Branch -> Branch
 setPrevPref br = br{prevPref = prefixes br}
-
--- addToNotPrevPref :: Prefix -> Branch -> Branch
--- addToNotPrevPref pr br = br{notPrevPref = (pr:notPrevPref  br)}
-
 
 {-     modifications done by rule application     -}
 
