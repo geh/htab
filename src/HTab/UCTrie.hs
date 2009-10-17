@@ -18,6 +18,19 @@ instance Show UCTrie where
                                            Just t2 -> acc ++ " " ++ show k ++ " -> (" ++ show t2 ++")" )
                            "" (IntMap.toList uct)
 
+-- This structure is designed to store UNSAT cache information
+-- Its only operations are update (= insert) and query
+--
+-- query returns True when a set stored in UCTrie is subset
+-- if a given set
+--
+-- insert just inserts sets, but in certain cases, does not insert
+-- supersets of sets already present (if the ordered list representing the
+-- already present set is the prefix if the ordered list representing the
+-- new set). This optimisation works because we know we only look for
+-- subset querying
+
+
 -- UCTrie stores sets as a prefix tree
 -- Each branch is a set.
 -- Updating (=inserting a set) the tree involves adding a branch, and if that branch
