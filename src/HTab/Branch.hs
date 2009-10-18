@@ -31,7 +31,7 @@ delNonAncestors, del_level_disjunctPrefixes, search_disjunctPrefixes,DisjunctPre
 --import Debug.Trace
 
 import Control.Monad.State(StateT, MonadState)
-import Data.List(delete, minimumBy)
+import Data.List(minimumBy)
 import Data.Char ( isNumber )
 
 import HTab.UCList ( UCList )
@@ -94,8 +94,6 @@ type Diff_Dia_rule_chart  = Map.Map Formula (PropSymbol,Bool)
        -- different world has already been created
 type DownVarRelevant_chart = Map.Map Formula Bool
 
-type Diff_Box_constraints = [(DependencySet,Formula,NomSymbol)]
-
 type Univ_constraints  = [(DependencySet,Formula)]
 
 type PrefToFormulas   = Map.Map Prefix (Set.Set Formula)
@@ -125,7 +123,6 @@ data Branch = Branch {clashStr :: Clashable_info,
                   boxConstrFwd :: Box_constraints,
                   boxConstrBwd :: Box_constraints,
                       univCons :: Univ_constraints,
-                      dBoxCons :: Diff_Box_constraints, -- constraints of the (B) modality
                  -- saturation of rules
                        diaRlCh :: Dia_rule_chart,       -- saturation of the diamond rule
                       diaXRlCh :: DiaX_rule_chart,      -- saturation of the diamondX rule
@@ -183,7 +180,6 @@ emptyBranch clp fLang relInfo_ =
                   existRlCh=Set.empty::Exist_rule_chart,
                   dDiaRlCh = Map.empty::Diff_Dia_rule_chart,
                   downVarRelevantCh = Map.empty::DownVarRelevant_chart,
-                  dBoxCons = [],
                   univCons=[],
                   lastPref = 0,
                   lastNom  = Nothing,
@@ -234,7 +230,6 @@ instance Show Branch where
               showl "\nDown var relevant chart: " (downVarRelevantCh br),
               "\nUnrestricted blocking book-keep:", show (bookKeepUB br), ", ",
               showl "\nUniv constraints: " (univCons br),
-              showl "\nDiff box constraints: " (dBoxCons br),
               ifNotEmpty (prToDepSet br) (\m -> "\nPrefix to dependency set:" ++ showMap  dsShow "\n " m),
               ifNotEmpty (prefToForms br) (\m -> "\nPrefix to formulas:"       ++ showMap  (show . Set.toList) "\n " m),
               showl "\nPrefix to unfulfilled <*>: "  (DMap.flatten $ prefToUevFwd br),
@@ -360,7 +355,7 @@ addFormulaPutAway pf@(PrFormula pr ds f2) clp br =
    Box r f  -> addBoxConstraint      pr r f ds clp br
    BoxX r f -> addBoxXConstraint     pr r f ds clp br
    A f      -> addUnivConstraint          f ds clp br
-   B f      -> addDiffUnivConstraint pr   f ds clp br
+   B f      -> b_rule                pr   f ds clp br
    E _      -> addToTodo pf br
    D _      -> addToTodo pf br
    At _ _   -> addToTodo pf br
@@ -1025,19 +1020,10 @@ addUnivConstraint f ds clp br
 
 --
 
-addDiffUnivConstraint :: Prefix -> Formula -> DependencySet -> CmdLineParams -> Branch -> BranchInfo
-addDiffUnivConstraint pr f ds clp br
- = addFormulas clp newBr
-               ( (PrFormula pr ds $ nom newNom)
-                 :(map (\somePrefix -> PrFormula somePrefix ds (Dis $ set [f, nom newNom])) otherUrfathers)
-               )
-               []
-   where currentUrfather = getUrfather br (DS.Prefix pr)
-         prefs = [0..(lastPref br)]
-         otherUrfathers = delete currentUrfather $ filter (isNominalUrfather br) prefs
-         (updatedBr, newNom) = createNewNom br
-         newBr = updatedBr{dBoxCons = (ds,f,newNom):(dBoxCons updatedBr)}
-
+b_rule :: Prefix -> Formula -> DependencySet -> CmdLineParams -> Branch -> BranchInfo
+b_rule  pr f ds clp br
+ = addFormula clp br (PrFormula pr ds $ downArrow x $ univMod $ ((nom x) `disj` f)) []
+    where x = NomSymbol "x"
 --
 
 addDiffRuleCheck :: Branch -> Formula -> PropSymbol -> Bool -> Branch
@@ -1070,8 +1056,7 @@ updateUBBookKeep p1 p2 br
 createNewPref :: CmdLineParams -> Branch -> BranchInfo
 createNewPref clp br
  = addFormulas clp newBrWithRefl
-                         (   map (\(ds,f) -> PrFormula newPr ds f) univConstraints
-                          ++ map (\(ds,f,newNom) -> PrFormula newPr ds (Dis $ set [f, nom newNom])) diffBoxConstraints)
+                         ( map (\(ds,f) -> PrFormula newPr ds f) univConstraints )
                          []
    where newPr = lastPref br + 1
          newBr_ = br{lastPref = newPr}
@@ -1079,7 +1064,6 @@ createNewPref clp br
                     Fair _ -> addUBlockingSchedule newBr_
                     _      -> newBr_
          univConstraints = univCons br
-         diffBoxConstraints = dBoxCons br
          newBrWithRefl = addReflexiveLinks newPr newBr
 
 
@@ -1115,12 +1099,6 @@ createNewProp br
 
 incNomSymbol :: NomSymbol -> NomSymbol
 incNomSymbol (NomSymbol n) = NomSymbol (nextName n)
-
-createNewNom :: Branch -> (Branch, NomSymbol)
-createNewNom br
- = (br{lastNom = Just newNom}, newNom)
-    where newNom =  maybe (NomSymbol newNomBaseName) incNomSymbol (lastNom br)
-
 
 createNewNomTestRelevance :: Branch -> Formula -> Branch
 createNewNomTestRelevance br f
