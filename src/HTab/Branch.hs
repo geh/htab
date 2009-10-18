@@ -28,8 +28,6 @@ isReflexive, isSymmetric, isTransitive,
 delNonAncestors, del_level_disjunctPrefixes, search_disjunctPrefixes,DisjunctPrefixes
 ) where
 
---import Debug.Trace
-
 import Control.Monad.State(StateT, MonadState)
 import Data.List(minimumBy)
 import Data.Char ( isNumber )
@@ -1293,9 +1291,9 @@ reduceDisjunctionAgainstBranch br pr fs =
           Just  (  disjuncts , ds ) | Set.null disjuncts -> Contradiction ds
                                     | otherwise          -> Reduced       ds disjuncts
 
-         where -- for each removed literal of the disjunction, we have to add the dependencies of the literal that got it removed to the re-created formula
-               -- and if the recreated formula is empty, then there is a clash, with all the branching dependencies
-               -- if the formula is "trivial" (= one disjunct is already there) we just remove the formula, i guess...
+         where -- for each removed literal of the disjunction, add dependencies of the removed literal
+               -- if the resulting is empty -> clash
+               -- if the formula is "trivial" (= one disjunct is already there) we just remove the formula
            ur = getUrfather br (DS.Prefix pr)
            scanDisjunctAndTest :: Formula -> Maybe (Set Formula,DependencySet) -> Maybe (Set Formula,DependencySet)
            scanDisjunctAndTest       _                Nothing               =    Nothing

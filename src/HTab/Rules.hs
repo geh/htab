@@ -14,7 +14,7 @@ import HTab.Formula( Formula(..), PrFormula(..), showLess, neg, Atom(..),
                      Dependency, DependencySet, dsUnion, dsInsert, dsEmpty,
                      prefix, AccFormula(..),
                      Prefix, NomSymbol(..), PropSymbol(..),
-                     nom, prop, replaceVar )
+                     disj, nom, prop, replaceVar )
 import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewNomTestRelevance,
                     BranchInfo(..),
                     addFormulas, addAccFormula, remFormula,
@@ -123,7 +123,7 @@ getMods br (DiffRule (pr, ds , f2)) =
           -> -- the "different place" for this D-formula has already been created
                    case DMap.lookup pr (P diffProp) (clashStr br) of -- are we already at the "different place" ?
                     Nothing -> [[BM_RemFormula  (PrFormula pr ds (D f2)),
-                                 BM_AddFormulas [PrFormula pr ds (Dis $ set [neg $ prop diffProp, D f2])]
+                                 BM_AddFormulas [PrFormula pr ds (disj (neg $ prop diffProp) (D f2))]
                                  -- no, so mark oneself as different from the "different place"; and when it is no longer true,
                                  -- we will generate another different world
                                ]]
@@ -218,7 +218,6 @@ rulesByChar br clp d char =
 
 applicableDiaRules :: Branch -> [Rule]
 applicableDiaRules br = [diaRule f br | f@(PrFormula pr _ _) <- Set.toAscList $ diaStr $ todoList br, isNotBlocked br pr]
-                        -- TODO memoization for the isNotBlocked call
 
 applicableDiaXRules :: Branch -> [Rule]
 applicableDiaXRules br = [diaXRule f br | f <- Set.toAscList $ diaXStr $ todoList br]
@@ -344,7 +343,6 @@ disjRule _ _ _ _ = error "disjRule"
 -- semantic branching
 semBrRule :: CmdLineParams -> PrFormula -> Branch -> Dependency -> Rule    -- todo : unit propagation, part 2 (b)
 semBrRule clp df@(PrFormula pr ds (Dis fs)) br d
--- = SemBrRule df (sbModList disjointed) where disjointed = breakDisj df d
  = if not $ unitProp clp
     then SemBrRule df (sbModList $ breakDisj df d)
     else case reduceDisjunctionAgainstBranch br pr fs of
