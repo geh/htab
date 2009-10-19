@@ -23,9 +23,10 @@ calculateStepInfo, BlockingMode(..), diaAlreadyDone, diaXAlreadyDone,
 downAlreadyDone, incPropSymbol, incNomSymbol,
 UCache(..),CacheStructure(..),
 Univ_constraints,AugmentedPrefixes,UCMap,TrueForms,initUnsatCache,setPrevPref,
-collectUevBprs, ReducedDisjunct(..), newNomBaseName, newPropBaseName, getUnappliedUBPairs,
+unfulfilledEventualities, ReducedDisjunct(..), newNomBaseName, newPropBaseName, getUnappliedUBPairs,
 isReflexive, isSymmetric, isTransitive,
-delNonAncestors, del_level_disjunctPrefixes, search_disjunctPrefixes,DisjunctPrefixes
+delNonAncestors, del_level_disjunctPrefixes, search_disjunctPrefixes,DisjunctPrefixes,
+deleteUEV, insertUEV_addFormula
 ) where
 
 import Control.Monad.State(StateT, MonadState)
@@ -81,7 +82,7 @@ type Diff_structure   = Set.Set PrFormula
 type Box_constraints  = DMap Prefix Rel [(DependencySet,Formula)]
 
 type Dia_rule_chart    = Map.Map Prefix (Set.Set Formula)
-type DiaX_rule_chart   = Map.Map Prefix (Set.Set Formula)
+type DiaX_rule_chart   = Map.Map Prefix (Set.Set (RelSymbol,Formula))
 type BoxX_rule_chart   = Map.Map Prefix (Set.Set Formula)
 type Down_rule_chart   = Map.Map Prefix (Set.Set Formula)
 type At_rule_chart     = Set.Set Formula
@@ -96,7 +97,7 @@ type Univ_constraints  = [(DependencySet,Formula)]
 
 type PrefToFormulas   = Map.Map Prefix (Set.Set Formula)
 type PrefToDepSet     = Map.Map Prefix DependencySet
-type PrefToUev        = DMap Prefix (Formula,Rel) DependencySet
+type Eventualities    = Map.Map Int DependencySet
 
 type EquivClasses = DS.DisjSet DS.Pointer
 type InclusionUrfathersMap = Map.Map Prefix Prefix
@@ -146,8 +147,7 @@ data Branch = Branch {clashStr :: Clashable_info,
                        lastNom :: Maybe NomSymbol,
                       lastProp :: Maybe PropSymbol,
                        incrPrs :: AugmentedPrefixes,
-                  prefToUevFwd :: PrefToUev,
-                  prefToUevBwd :: PrefToUev,
+                 eventualities :: Eventualities,
                     bookKeepUB :: (Prefix,Prefix),
                  -- caching / memoisation data
              downVarRelevantCh :: DownVarRelevant_chart,
@@ -185,8 +185,7 @@ emptyBranch clp fLang relInfo_ =
                   prefToForms= Map.empty::PrefToFormulas,
                   trueForms=DMap.empty :: TrueForms,
                   prToDepSet= Map.empty::PrefToDepSet,
-                  prefToUevFwd= DMap.empty::PrefToUev,
-                  prefToUevBwd= DMap.empty::PrefToUev,
+                  eventualities = Map.empty::Eventualities,
                   bookKeepUB=(0,0),
                   nomPrefClasses= DS.mkDSet::EquivClasses,
                   inputLanguage = fLang,
@@ -230,8 +229,7 @@ instance Show Branch where
               showl "\nUniv constraints: " (univCons br),
               ifNotEmpty (prToDepSet br) (\m -> "\nPrefix to dependency set:" ++ showMap  dsShow "\n " m),
               ifNotEmpty (prefToForms br) (\m -> "\nPrefix to formulas:"       ++ showMap  (show . Set.toList) "\n " m),
-              showl "\nPrefix to unfulfilled <*>: "  (DMap.flatten $ prefToUevFwd br),
-              showl "\nPrefix to unfulfilled <-*>: " (DMap.flatten $ prefToUevBwd br),
+              showl "\nEventualities: "  (eventualities br),
               ifNotEmpty (trueForms br) (\m -> "\nTrue formulas: " ++ show (DMap.flatten m)),
               showl "\nParent: " (prefParent br),
               "\nInclusion urfather map: ", show (inclUrMap br),
@@ -337,33 +335,32 @@ addFormulaBookKeep clp br_ pf_
  =   addFormulaPutAway        pf clp
    -- book keep follows
    $ addToAugmentedPrefixes   pr
-   $ updatePrefToUev        f pr
    $ addToPrefToForms         pf
    $ addToTrueForms       clp pf br
   where
-   (br, pf@(PrFormula pr _ f)  ) = vId br_ pf_
+   (br, pf@(PrFormula pr _ _)  ) = vId br_ pf_
 
 addFormulaPutAway :: PrFormula -> CmdLineParams -> Branch -> BranchInfo
 addFormulaPutAway pf@(PrFormula pr ds f2) clp br =
  case f2 of
-   Con fs   -> addFormulas clp br (prefix pr ds fs) []
-   Dis _    -> addToTodo pf br
-   Dia _ _  -> addToTodo pf br
-   DiaX _ _ -> addToTodo pf br
-   Box r f  -> addBoxConstraint      pr r f ds clp br
-   BoxX r f -> addBoxXConstraint     pr r f ds clp br
-   A f      -> addUnivConstraint          f ds clp br
-   B f      -> b_rule                pr   f ds clp br
-   E _      -> addToTodo pf br
-   D _      -> addToTodo pf br
-   At _ _   -> addToTodo pf br
-   Down _ _ -> addToTodo pf br
-   Lit l    -> addAndUpdateMap pr ds l br
+   Con fs     -> addFormulas clp br (prefix pr ds fs) []
+   Dis _      -> addToTodo pf br
+   Dia _ _    -> addToTodo pf br
+   DiaX _ _ _ -> addToTodo pf br
+   Box r f    -> addBoxConstraint      pr r f ds clp br
+   BoxX r f   -> addBoxXConstraint     pr r f ds clp br
+   A f        -> addUnivConstraint          f ds clp br
+   B f        -> b_rule                pr   f ds clp br
+   E _        -> addToTodo pf br
+   D _        -> addToTodo pf br
+   At _ _     -> addToTodo pf br
+   Down _ _   -> addToTodo pf br
+   Lit l      -> addAndUpdateMap pr ds l br
 
 {- todo list functions -}
 
 addToTodo :: PrFormula -> Branch -> BranchInfo
-addToTodo pf@(PrFormula p ds f2) br =
+addToTodo pf@(PrFormula p _ f2) br =
  BranchOK $
   if alreadyDone
    then br
@@ -374,36 +371,36 @@ addToTodo pf@(PrFormula p ds f2) br =
       Fair srs -> Fair (srs ++ [SR_Formula pf])
       utodo    ->
        case f2 of
-         Dis _    -> utodo{disjStr  = Set.insert pf (disjStr utodo)}
-         Dia _ _  -> utodo{diaStr   = Set.insert pf (diaStr utodo)}
-         DiaX _ _ -> utodo{diaXStr  = Set.insert pf (diaXStr utodo)}
-         E _      -> utodo{existStr = Set.insert pf (existStr utodo)}
-         D _      -> utodo{diffStr  = Set.insert pf (diffStr utodo)}
-         At _ _   -> utodo{atStr    = Set.insert pf (atStr utodo)}
-         Down _ _ -> utodo{downStr  = Set.insert pf (downStr utodo)}
-         _        -> error "addToTodo"
+         Dis _      -> utodo{disjStr  = Set.insert pf (disjStr utodo)}
+         Dia _ _    -> utodo{diaStr   = Set.insert pf (diaStr utodo)}
+         DiaX _ _ _ -> utodo{diaXStr  = Set.insert pf (diaXStr utodo)}
+         E _        -> utodo{existStr = Set.insert pf (existStr utodo)}
+         D _        -> utodo{diffStr  = Set.insert pf (diffStr utodo)}
+         At _ _     -> utodo{atStr    = Set.insert pf (atStr utodo)}
+         Down _ _   -> utodo{downStr  = Set.insert pf (downStr utodo)}
+         _          -> error "addToTodo"
    alreadyDone =
     case f2 of
-     E  _     -> existAlreadyDone br f2
-     D _      -> False
-     At _ _   -> atAlreadyDone br f2
-     Down _ _ -> downAlreadyDone br pf
-     Dia  _ _ -> diaAlreadyDone br pf
-     DiaX _ _ -> diaXAlreadyDone br pf
-     Dis _    -> False
-     _        -> error "alreadyDone"
+     E  _       -> existAlreadyDone br f2
+     D _        -> False
+     At _ _     -> atAlreadyDone br f2
+     Down _ _   -> downAlreadyDone br pf
+     Dia  _ _   -> diaAlreadyDone br pf
+     DiaX _ r ev-> diaXAlreadyDone br p (r,ev)
+     Dis _      -> False
+     _          -> error "alreadyDone"
    brWithSaturation =
     case f2 of
-     E _      -> br{existRlCh = Set.insert f2 (existRlCh br)}
-     At _ _   -> br{atRlCh    = Set.insert f2 (atRlCh br)}
-     DiaX r g -> addDiaXUev br p ds r g -- soon to be removed, replaced by end-of-calculus model checking
+     E _         -> br{existRlCh = Set.insert f2 (existRlCh br)}
+     At _ _      -> br{atRlCh    = Set.insert f2 (atRlCh br)}
+     DiaX _ r g  -> addDiaXRuleCheck br p (r,g)
      -- do-nothing cases
-     Dis _    -> br
-     D _      -> br
-     Down _ _ -> br
-     Dia _ _  -> br
+     Dis _       -> br
+     D _         -> br
+     Down _ _    -> br
+     Dia _ _     -> br
      -- error cases
-     _        -> error "writeSaturation"
+     _           -> error "writeSaturation"
 
 {-    helper functions for equivalence class merge     -}
 
@@ -451,8 +448,6 @@ merge clp br pr fDs ns@(NomSymbol n) history
                       newDiaRlCh      = moveInMap (diaRlCh br)  oldUr newUr Set.union
                       newDiaXRlCh     = moveInMap (diaXRlCh br) oldUr newUr Set.union
                       newBoxXRlCh     = moveInMap (boxXRlCh br) oldUr newUr Set.union
-                      newPrefToUevFwd = DMap $ moveInMap (toMap $ prefToUevFwd br) oldUr newUr ( Map.unionWith dsUnion )
-                      newPrefToUevBwd = DMap $ moveInMap (toMap $ prefToUevBwd br) oldUr newUr ( Map.unionWith dsUnion )
 
                       -- structures that combine
                       mapBoxFwd = map (\idx -> Map.findWithDefault Map.empty idx (toMap $ boxConstrFwd br) ) [ur1,ur2]
@@ -484,8 +479,6 @@ merge clp br pr fDs ns@(NomSymbol n) history
                                            prToDepSet     = newPrToDepSet,
                                            prefToForms    = newPrefToForms,
                                            trueForms      = newTrueForms,
-                                           prefToUevFwd   = newPrefToUevFwd,
-                                           prefToUevBwd   = newPrefToUevBwd,
                                            diaRlCh        = newDiaRlCh,
                                            diaXRlCh       = newDiaXRlCh,
                                            boxXRlCh       = newBoxXRlCh,
@@ -561,52 +554,22 @@ findDeps br pr = Map.findWithDefault dsEmpty pr (prToDepSet br)
 addClassDeps :: Prefix -> DependencySet -> Branch -> Branch
 addClassDeps pr ds br = br { prToDepSet = Map.insertWith dsUnion pr ds (prToDepSet br) }
 
+-- <*>-related functions
 
--- check if the added formula removes an unfulfilled eventuality
--- if yes, propagate to the previous prefixes
-updatePrefToUev :: Formula -> Prefix -> Branch -> Branch
-updatePrefToUev f pr = (updatePrefToUevBwd f pr) . (updatePrefToUevFwd f pr)
+deleteUEV :: Branch -> Int -> Branch
+deleteUEV br idx = br{eventualities = Map.delete idx (eventualities br)}
 
-updatePrefToUevFwd :: Formula -> Prefix -> Branch -> Branch
-updatePrefToUevFwd f pr' br =
- case DMap.lookup1 pr $ prefToUevFwd br of
-   Nothing     -> br
-   Just uevs   -> let (toRemove,toKeep) = Map.partitionWithKey (\(f2,_) _ -> f2==f) uevs
-                      newUevs = toKeep
-                      relsToCrawl = map snd $ Map.keys toRemove
-                      newPrefToUev = if Map.null newUevs -- not sure if we need to separate the two cases
-                                      then DMap.delete pr          $ prefToUevFwd br
-                                      else DMap.insert1 pr newUevs $ prefToUevFwd br
-                      previousPrefixes = concatMap (findPreviousPrefixes br pr) relsToCrawl
-                  in
-                      foldr (updatePrefToUev f)
-                            br{prefToUevFwd = newPrefToUev}
-                            previousPrefixes
- where pr = getUrfather br (DS.Prefix pr')
-
-updatePrefToUevBwd :: Formula -> Prefix -> Branch -> Branch
-updatePrefToUevBwd f pr' br =
- case DMap.lookup1 pr $ prefToUevBwd br of
-   Nothing     -> br
-   Just uevs   -> let (toRemove,toKeep) = Map.partitionWithKey (\(f2,_) _ -> f2==f) uevs
-                      newUevs = toKeep
-                      relsToCrawl = map snd $ Map.keys toRemove
-                      newPrefToUev = if Map.null newUevs -- not sure if we need to separate the two cases
-                                      then DMap.delete pr          $ prefToUevBwd br
-                                      else DMap.insert1 pr newUevs $ prefToUevBwd br
-                      followingPrefixes = concatMap (findFollowingPrefixes br pr) relsToCrawl
-                  in
-                      foldr (updatePrefToUev f)
-                            br{prefToUevBwd = newPrefToUev}
-                            followingPrefixes
- where pr = getUrfather br (DS.Prefix pr')
-
-
-findPreviousPrefixes :: Branch -> Prefix -> Rel -> [Prefix]
-findPreviousPrefixes br p r = map fst $ predecessors (accStr br) p r
-
-findFollowingPrefixes :: Branch -> Prefix -> Rel -> [Prefix]
-findFollowingPrefixes br p r = map fst $ successors (accStr br) p r
+insertUEV_addFormula :: Branch -> CmdLineParams -> (Maybe Int) -> DependencySet -> (Int -> PrFormula) -> BranchInfo
+insertUEV_addFormula br clp mi ds ff
+ = addFormula clp br2 f []
+  where idxToUse = case mi of
+                    Nothing   -> case Map.maxViewWithKey $ eventualities br of
+                                   Nothing        -> 0
+                                   Just ((i,_),_) -> i+1
+                    Just idx  -> idx
+        newEvs = Map.insertWith dsUnion idxToUse ds $ eventualities br
+        br2 = br{eventualities= newEvs}
+        f = ff idxToUse
 
 {-     box-related constraints     -}
 
@@ -882,7 +845,7 @@ forInclusion _ (Down _ _) = False
 forInclusion _ (Box _ _) = True
 forInclusion _ (Dia _ _) = True
 forInclusion _ (BoxX _ _) = True
-forInclusion _ (DiaX _ _) = True
+forInclusion _ (DiaX _ _ _) = True
 forInclusion _ (A _) = False
 forInclusion _ (E _) = False
 forInclusion _ (D _) = False
@@ -928,54 +891,25 @@ diaAlreadyDone b (PrFormula p _ f@(Dia _ _)) =
 diaAlreadyDone _ _ = error "dia already done : wrong formula kind"
 --
 
-addDiaXRuleCheck :: Branch -> Prefix -> Formula -> Branch
+addDiaXRuleCheck :: Branch -> Prefix -> (RelSymbol, Formula) -> Branch
 addDiaXRuleCheck br pr f =
   br{diaXRlCh=Map.insertWith Set.union ur (Set.singleton f) (diaXRlCh br)}
    where ur = getUrfather br (DS.Prefix pr)
 
-diaXAlreadyDone :: Branch -> PrFormula -> Bool
-diaXAlreadyDone b (PrFormula p _ f@(DiaX _ _)) =
+diaXAlreadyDone :: Branch -> Prefix -> (RelSymbol,Formula) -> Bool
+diaXAlreadyDone b p f =
   case Map.lookup ur (diaXRlCh b) of
      Nothing  -> False
      Just fset -> Set.member f fset
  where ur = getUrfather b (DS.Prefix p)
 
-diaXAlreadyDone _ _ = error "diaX already done : wrong formula kind"
-
--- for a given prefix and relation, add a formula and its branching prefixes to the
--- set of uevs
--- if the same formula is already here, merge branching prefixes
-addDiaXUev :: Branch -> Prefix -> DependencySet -> RelSymbol -> Formula -> Branch
-addDiaXUev br pr' ds (RelSymbol r) f
- = case DMap.lookup1 pr $ prefToUevFwd br of
-    Nothing      -> let ptu = DMap.insert1 pr (Map.singleton (f,r) ds) (prefToUevFwd br) in
-                       br{prefToUevFwd = ptu}
-    Just uevs    -> case Map.lookup (f,r) uevs of
-                     Nothing      -> let newUevs = Map.insert (f,r) ds uevs in
-                                       br{prefToUevFwd = DMap.insert1 pr newUevs $ prefToUevFwd br}
-                     Just ds2     -> let newUevs = Map.insert (f,r) (dsUnion ds ds2) uevs in
-                                       br{prefToUevFwd = DMap.insert1 pr newUevs $ prefToUevFwd br}
-  where pr = getUrfather br (DS.Prefix pr')
-
-addDiaXUev br pr' ds (InvRelSymbol r) f -- inverse modality
- = case DMap.lookup1 pr $ prefToUevBwd br of
-    Nothing      -> let ptu = DMap.insert1 pr (Map.singleton (f,r) ds) (prefToUevBwd br) in
-                       br{prefToUevBwd = ptu}
-    Just uevs    -> case Map.lookup (f,r) uevs of
-                     Nothing      -> let newUevs = Map.insert (f,r) ds uevs in
-                                       br{prefToUevBwd = DMap.insert1 pr newUevs $ prefToUevBwd br}
-                     Just ds2     -> let newUevs = Map.insert (f,r) (dsUnion ds ds2) uevs in
-                                       br{prefToUevBwd = DMap.insert1 pr newUevs $ prefToUevBwd br}
-  where pr = getUrfather br (DS.Prefix pr')
--- TODO ^ ^ ^ ^ code redondant
 
 
-collectUevBprs :: Branch -> DependencySet
-collectUevBprs br
- =  dsUnion ( Map.fold getAndMergeDs dsEmpty (toMap $ prefToUevFwd br) )
-            ( Map.fold getAndMergeDs dsEmpty (toMap $ prefToUevBwd br) )
-   where getAndMergeDs :: Map.Map (Formula,Rel) DependencySet -> DependencySet -> DependencySet
-         getAndMergeDs m ds = dsUnions (ds:Map.elems m)
+unfulfilledEventualities :: Branch -> Maybe DependencySet
+unfulfilledEventualities br
+ = if Map.null $ eventualities br
+    then Nothing
+    else Just $ dsUnions $ Map.elems $ eventualities br
 
 --
 
@@ -1142,15 +1076,15 @@ remFormula br pf@(PrFormula _ _ f2)
       f@(Fair _) -> f
       utodo ->
        case f2 of
-        Con _    -> utodo{conjStr =(Set.delete pf (conjStr  utodo))}
-        Dis _    -> utodo{disjStr =(Set.delete pf (disjStr  utodo))}
-        Dia _ _  -> utodo{diaStr  =(Set.delete pf (diaStr   utodo))}
-        DiaX _ _ -> utodo{diaXStr =(Set.delete pf (diaXStr  utodo))}
-        At _ _   -> utodo{atStr   =(Set.delete pf (atStr    utodo))}
-        E _      -> utodo{existStr=(Set.delete pf (existStr utodo))}
-        D _      -> utodo{diffStr =(Set.delete pf (diffStr  utodo))}
-        Down _ _ -> utodo{downStr =(Set.delete pf (downStr  utodo))}
-        _        -> error "remFormula unfair strategy"
+        Con _      -> utodo{conjStr =(Set.delete pf (conjStr  utodo))}
+        Dis _      -> utodo{disjStr =(Set.delete pf (disjStr  utodo))}
+        Dia _ _    -> utodo{diaStr  =(Set.delete pf (diaStr   utodo))}
+        DiaX _ _ _ -> utodo{diaXStr =(Set.delete pf (diaXStr  utodo))}
+        At _ _     -> utodo{atStr   =(Set.delete pf (atStr    utodo))}
+        E _        -> utodo{existStr=(Set.delete pf (existStr utodo))}
+        D _        -> utodo{diffStr =(Set.delete pf (diffStr  utodo))}
+        Down _ _   -> utodo{downStr =(Set.delete pf (downStr  utodo))}
+        _          -> error "remFormula unfair strategy"
 
 -- preparation of the branch at the beginning of the calculus:
 --  - add the input formula at prefix 0

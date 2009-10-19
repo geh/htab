@@ -83,7 +83,7 @@ data Formula
      | Dia    RelSymbol     Formula
      | Down   NomSymbol Formula
      | BoxX   RelSymbol Formula
-     | DiaX   RelSymbol Formula
+     | DiaX   (Maybe Int) RelSymbol Formula
      | A      Formula
      | E      Formula
      | D      Formula
@@ -98,7 +98,7 @@ instance Show Formula where
  show (Box r f)  = "[" ++ showRel r ++ "]" ++ show f
  show (Dia r f)  = "<" ++ showRel r ++ ">" ++ show f
  show (BoxX r f) = "[" ++ showRel r ++ "*]" ++ show f
- show (DiaX r f) = "<" ++ showRel r ++ "*>" ++ show f
+ show (DiaX i r f) = "<" ++ showRel r ++ "*>(" ++ show i ++ ")" ++ show f
  show (A f)      = "A" ++ show f
  show (E f)      = "E" ++ show f
  show (D f)      = "D" ++ show f
@@ -387,7 +387,7 @@ univMod, existMod, dUnivMod, dExistMod :: Formula -> Formula
 box        = Box
 diamond    = Dia
 boxX       = BoxX
-diamondX   = DiaX
+diamondX   = DiaX Nothing
 univMod    = A
 existMod   = E
 dUnivMod   = B
@@ -448,6 +448,8 @@ isTrue  _                   = False
 isFalse (Lit (NegLit Taut)) = True
 isFalse  _                  = False
 
+-- invariant : neg is only called on literals during
+-- the run of the algorithm
 neg :: Formula -> Formula
 neg (Con l)          = Dis (Set.map neg l)
 neg (Dis l)          = Con (Set.map neg l)
@@ -455,8 +457,8 @@ neg (At n f)         = At   n (neg f)
 neg (Down v f)       = Down v (neg f)
 neg (Box r f)        = Dia  r (neg f)
 neg (Dia r f)        = Box  r (neg f)
-neg (BoxX r f)       = DiaX r (neg f)
-neg (DiaX r f)       = BoxX r (neg f)
+neg (BoxX r f)       = DiaX Nothing r (neg f)
+neg (DiaX _ r f)     = BoxX r (neg f)
 neg (A f)            = E (neg f)
 neg (E f)            = A (neg f)
 neg (D f)            = B (neg f)
@@ -542,7 +544,7 @@ composeFold zero combine g e = case e of
     Dis fs     -> foldr1 combine $ map g $ list fs
     Dia _ f    -> g f
     Box _ f    -> g f
-    DiaX _ f   -> g f
+    DiaX _ _ f -> g f
     BoxX _ f   -> g f
     At  _ f    -> g f
     Down _ f   -> g f
@@ -558,9 +560,9 @@ composeMap :: (Formula -> Formula)
 composeMap baseCase g e = case e of
     Con fs     -> Con $ Set.map g fs
     Dis fs     -> Dis $ Set.map g fs
-    Dia r f    -> Dia r (g f)
+    Dia r f  -> Dia r (g f)
     Box r f    -> Box r (g f)
-    DiaX r f   -> DiaX r (g f)
+    DiaX i r f -> DiaX i r (g f)
     BoxX r f   -> BoxX r (g f)
     At   i f   -> At  i (g f)
     A f        -> A (g f)
@@ -600,9 +602,9 @@ hasDiffModality (B _)     = True
 hasDiffModality f         = composeFold False (||) hasDiffModality f
 
 hasTransClosure :: Formula -> Bool
-hasTransClosure (BoxX _ _) = True
-hasTransClosure (DiaX _ _) = True
-hasTransClosure f          = composeFold False (||) hasTransClosure f
+hasTransClosure (BoxX _ _)   = True
+hasTransClosure (DiaX _ _ _) = True
+hasTransClosure f            = composeFold False (||) hasTransClosure f
 
 hasDownArrow :: Formula -> Bool
 hasDownArrow (Down _ _ ) = True

@@ -1,13 +1,11 @@
 module HTab.Tableau where
 
 import Control.Monad.State(StateT,lift,modify, put, get)
-import qualified Data.Map as Map
-import qualified HTab.DMap as DMap
 import HTab.Base(vPutStrLn)
 import HTab.Statistics(updateStep,printOutInspectionMetrics,
                        recordClosedBranch, recordCacheHit, recordFiredRule)
 import HTab.Branch(BranchInfo(..),Branch(..),BranchMonad, BranchData(..),
-                   calculateStepInfo, collectUevBprs, getBranch, setPrevPref,
+                   calculateStepInfo, unfulfilledEventualities, getBranch, setPrevPref,
                    delNonAncestors, del_level_disjunctPrefixes)
 import HTab.CommandLine(logState,backJumping,caching,CmdLineParams)
 import HTab.Rules(Rule,applyRule,
@@ -51,9 +49,9 @@ tableau path =
                                   case applicableRules br clp currentBranchingDepth of
                                     []   ->
                                         do debugMsg_BranchOK_saturated
-                                           return $ if existUnsatisfiedEventualities br
-                                                     then CLOSED $ collectUevBprs br
-                                                     else OPEN   $ buildModel br
+                                           return $ case unfulfilledEventualities br of
+                                                     Just ds -> CLOSED ds
+                                                     Nothing -> OPEN   $ buildModel br
                                     (rule:_) ->
                                         do debugMsg_BranchOK_applicableRule rule
                                            liftStats $ recordFiredRule $ ruleToId rule
@@ -74,9 +72,9 @@ tableau path =
                                            debugMsg_BranchOK br1_
                                            case applicableRules br clp currentBranchingDepth of
                                                 [] ->   do debugMsg_BranchOK_saturated
-                                                           return $ if existUnsatisfiedEventualities br
-                                                                      then CLOSED $ collectUevBprs br
-                                                                      else OPEN   $ buildModel br
+                                                           return $ case unfulfilledEventualities br of
+                                                                      Just ds -> CLOSED ds
+                                                                      Nothing -> OPEN   $ buildModel br
                                                 (rule:_) ->
                                                         do debugMsg_BranchOK_applicableRule rule
                                                            liftStats $ recordFiredRule $ ruleToId rule
@@ -185,9 +183,6 @@ debugMsg_BranchOK_saturated =
     let showState = logState $ branch_clp bd
     let traceMsg = "Saturated open branch"
     liftIO $ vPutStrLn ("\n>> " ++ traceMsg) showState
-
-existUnsatisfiedEventualities :: Branch -> Bool
-existUnsatisfiedEventualities br = not ((Map.null $ DMap.toMap $ prefToUevFwd br) && (Map.null $ DMap.toMap $ prefToUevBwd br))
 
 setPrevPrefInBranch :: [BranchInfo] -> [BranchInfo]
 setPrevPrefInBranch
