@@ -62,7 +62,7 @@ data Rule =  DiaRule    PrFormula AccFormula PrFormula        -- creates a prefi
            | ExistModRule PrFormula PrFormula                 -- creates a prefix
            | DiscardRule PrFormula
            | ClashRule DependencySet PrFormula
-           | UBlockRule Prefix Prefix [PrFormula] [PrFormula]
+           | UBlockRule Prefix Prefix Dependency
            | MergeRule Prefix DS.Pointer DependencySet
 
 -- from the description of a rule application, creates the list of lists of modifications to the branch
@@ -101,10 +101,17 @@ getMods _ (ExistModRule _ toadd) =
  [[BM_AddFormulas [toadd],
    BM_CreateNewPref]]
 
-getMods _ (UBlockRule p1 p2 choiceEqual choiceDisequal) =
- [[BM_UpdateUBBookKeep p1 p2, BM_AddFormulas choiceEqual],
-  [BM_UpdateUBBookKeep p1 p2, BM_AddFormulas choiceDisequal]
+getMods _ (UBlockRule p1 p2 d) =
+ [[BM_UpdateUBBookKeep p1 p2,
+   BM_Merge p1 (DS.Prefix p2) deps],
+  [BM_UpdateUBBookKeep p1 p2,
+   BM_AddFormulas choiceDisequal]
  ]
+   where
+     choiceDisequal = [PrFormula p1 deps      nequalNom,
+                       PrFormula p2 deps (neg nequalNom)]
+     nequalNom = nom $ NomSymbol $ "0n_neq_" ++ show p1 ++ "_" ++ show p2
+     deps = dsInsert d dsEmpty
 
 getMods _ (DisjRule _ toadds) =
  [[BM_AddFormulas [toadd]] | toadd <- toadds]
@@ -168,7 +175,7 @@ instance Show Rule where
    show (DiffRule (pr,_,f) )       = "D:                  " ++ show pr ++ ":" ++ show f
    show (DiscardRule todelete)     = "Discard:            " ++ showLess todelete
    show (ClashRule bprs f)         = "Clash:              " ++ show bprs ++ " " ++ show f
-   show (UBlockRule p1 p2 _ _ )    = "Unrestricted blocking " ++ show (p1,p2)
+   show (UBlockRule p1 p2 _ )      = "Unrestricted blocking " ++ show (p1,p2)
 
 --
 ruleToId :: Rule -> RuleId
@@ -184,7 +191,7 @@ ruleToId r = case r of
               (DiffRule _ )      -> R_Diff
               (DiscardRule _)    -> R_Discard
               (ClashRule _ _)    -> R_Clash
-              (UBlockRule _ _ _ _) -> R_UBlocking
+              (UBlockRule _ _ _) -> R_UBlocking
 
 -- the rules application strategy is defined here:
 -- the first rule is the one that will be applied at the next tableau step
@@ -196,7 +203,7 @@ applicableRule br clp d =
   _        ->  listToMaybe $ catMaybes $ map (ruleByChar br clp d) (strategyStr clp)
 
 scheduledRuleToRule :: Branch -> CmdLineParams -> Dependency -> ScheduledRule -> Rule
-scheduledRuleToRule _ _ d (SR_UBlocking p1 p2) = ubRule p1 p2 d
+scheduledRuleToRule _ _ d (SR_UBlocking p1 p2) = UBlockRule p1 p2 d
 scheduledRuleToRule _ _ _ (SR_Merge pr po ds)  = MergeRule pr po ds
 scheduledRuleToRule br clp d (SR_Formula pf@(PrFormula _ _ f2)) =
  case f2 of
@@ -246,7 +253,7 @@ ruleByChar br clp d char =
 
   applicableUBlockRule = case getUnappliedUBPairs br of
                             []          -> Nothing
-                            ((p1,p2):_) -> Just (ubRule p1 p2 d, todos)
+                            ((p1,p2):_) -> Just (UBlockRule p1 p2 d, todos)
 
   applicableMergeRule  = do ((ds,p,po),new) <- Set.minView $ mergeStr todos
                             return (MergeRule p po ds, todos{mergeStr = new})
@@ -400,10 +407,3 @@ get_pr_disjunt_rule (SemBrRule (PrFormula pr _ _) _) = Just pr
 get_pr_disjunt_rule (DiaXRule  (PrFormula pr _ _) _) = Just pr
 get_pr_disjunt_rule _                                = Nothing
 
-ubRule :: Prefix -> Prefix -> Dependency -> Rule
-ubRule p1 p2 d = UBlockRule p1 p2 [PrFormula p1 deps equalNom,  PrFormula p2 deps equalNom]
-                                  [PrFormula p1 deps nequalNom, PrFormula p2 deps (neg nequalNom)]
- where equalNom  = nom $ NomSymbol $ "0n_eq_"  ++ show p1 ++ "_" ++ show p2
-       nequalNom = nom $ NomSymbol $ "0n_neq_" ++ show p1 ++ "_" ++ show p2
-       -- the nominals above start with a 0 so that no input nominal can have the same name
-       deps = dsInsert d dsEmpty
