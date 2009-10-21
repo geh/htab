@@ -130,6 +130,7 @@ options =
           "PAT configures the strategy of rules applications",
           "A valid PAT is a permutation of the following list",
           "of values (priority in PAT goes from left to right):",
+          "  m = merge",
           "  o = or",
           "  d = diamond",
           "  t = transitive closure diamond",
@@ -249,7 +250,7 @@ setStrategy = permutationOf strategyStrVal ?->
                    \s c -> return c{strategyStr = s}
 
 strategyStrVal :: String
-strategyStrVal = "sedtDbou"
+strategyStrVal = "msedtDbou"
 
 setStats :: String -> CLPModifier
 setStats = (isJust . parseStats) ?->

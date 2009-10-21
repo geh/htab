@@ -9,7 +9,7 @@ import HTab.Branch(BranchInfo(..),Branch(..),BranchMonad, BranchData(..),
                    delNonAncestors, del_level_disjunctPrefixes)
 import HTab.CommandLine(logState,backJumping,caching,CmdLineParams)
 import HTab.Rules(Rule,applyRule,
-                  applicableRules,ruleToId,
+                  applicableRule,ruleToId,
                   get_pr_disjunt_rule)
 import HTab.Statistics(Statistics)
 import HTab.Formula(Prefix,DependencySet,Formula,dsEmpty,dsMember,dsUnion,languageTrans)
@@ -46,16 +46,16 @@ tableau path =
                          case caching clp of
                           Nothing
                             -> do debugMsg_BranchOK br_
-                                  case applicableRules br clp currentBranchingDepth of
-                                    []   ->
+                                  case applicableRule br clp currentBranchingDepth of
+                                    Nothing  ->
                                         do debugMsg_BranchOK_saturated
                                            return $ case unfulfilledEventualities br of
                                                      Just ds -> CLOSED ds
                                                      Nothing -> OPEN   $ buildModel br
-                                    (rule:_) ->
+                                    Just (rule,newTodo) ->
                                         do debugMsg_BranchOK_applicableRule rule
                                            liftStats $ recordFiredRule $ ruleToId rule
-                                           let possibleBranches = applyRule clp rule br
+                                           let possibleBranches = applyRule clp rule br newTodo
                                            chooseBranch possibleBranches path
 
                           _
@@ -70,15 +70,15 @@ tableau path =
                                      BranchOK br1_ ->
                                         do -- no cache hit: go on working with the branch
                                            debugMsg_BranchOK br1_
-                                           case applicableRules br clp currentBranchingDepth of
-                                                [] ->   do debugMsg_BranchOK_saturated
-                                                           return $ case unfulfilledEventualities br of
-                                                                      Just ds -> CLOSED ds
-                                                                      Nothing -> OPEN   $ buildModel br
-                                                (rule:_) ->
+                                           case applicableRule br clp currentBranchingDepth of
+                                                Nothing  -> do debugMsg_BranchOK_saturated
+                                                               return $ case unfulfilledEventualities br of
+                                                                          Just ds -> CLOSED ds
+                                                                          Nothing -> OPEN   $ buildModel br
+                                                Just (rule,newTodo) ->
                                                         do debugMsg_BranchOK_applicableRule rule
                                                            liftStats $ recordFiredRule $ ruleToId rule
-                                                           let possibleBranches' = applyRule clp rule br
+                                                           let possibleBranches' = applyRule clp rule br newTodo
                                                            --to avoid entering in the rules.hs code, clean the
                                                            --notPrevPref here...
                                                            let pref_dis_rule = get_pr_disjunt_rule rule

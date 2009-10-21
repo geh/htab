@@ -47,4 +47,5 @@ data RuleId = R_Dia     -- Diamond <r>
             | R_Discard -- Discarding a formula
             | R_Clash   -- Branch clash
             | R_UBlocking -- Unrestricted Blocking
+            | R_Merge   -- Equivalence classes merge
         deriving(Eq, Ord, Ix, Show)
