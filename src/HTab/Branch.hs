@@ -427,14 +427,14 @@ merge clp br pr fDs pointer -- pointer is a nominal or a prefix
                oldUr                    = max ur1 ur2
                newUr                    = min ur1 ur2
                clashableInfoSlots       = catMaybes $ map (\ur -> DMap.lookup1 ur (clashStr br))  [ur1,ur2]
-               currentDependencies      = dsUnions $ fDs:(map (findDeps br) [ur1,ur2])
-               newPrToDepSet            = Map.insert newUr currentDependencies (prToDepSet br)
-               newClashableSlotUrfather = cisAddDeps currentDependencies $ cisUnions clashableInfoSlots
+               currentDeps              = dsUnions $ fDs:(map (findDeps br) [ur1,ur2])
+               newPrToDepSet            = Map.insert newUr currentDeps (prToDepSet br)
+               newClashableSlotUrfather = cisAddDeps currentDeps $ cisUnions clashableInfoSlots
             in
              case newClashableSlotUrfather of
               Slot_UpdateFailure clashingDeps ->
                   let newBr = br{nomPrefClasses = classes3} in
-                  BranchClash newBr pr (dsUnion clashingDeps currentDependencies) (neg taut) -- TODO not ideal
+                  BranchClash newBr pr (dsUnion clashingDeps currentDeps) (neg taut)
 
               Slot_UpdateSuccess urfatherSlot ->
                   let newClashStr     = DMap $ Map.delete oldUr $ Map.insert newUr urfatherSlot (toMap $ clashStr br)
@@ -452,11 +452,11 @@ merge clp br pr fDs pointer -- pointer is a nominal or a prefix
                       -- structures that combine
                       mapBoxFwd = map (\idx -> Map.findWithDefault Map.empty idx (toMap $ boxConstrFwd br) ) [ur1,ur2]
                       mapAccFwd = map (Map.fromList . (outgoingLinks (accStr br))) [ur1,ur2]
-                      formulasToSend1 = concatMap (boxRule fDs) $ almostCartesianProduct mapBoxFwd mapAccFwd
+                      formulasToSend1 = concatMap (boxRule currentDeps) $ almostCartesianProduct mapBoxFwd mapAccFwd
 
                       mapBoxBwd = map (\idx -> Map.findWithDefault Map.empty idx (toMap $ boxConstrBwd br) ) [ur1,ur2]
                       mapAccBwd = map (Map.fromList . (incomingLinks (accStr br))) [ur1,ur2]
-                      formulasToSend2 = concatMap (boxRule fDs) $ almostCartesianProduct mapBoxBwd mapAccBwd
+                      formulasToSend2 = concatMap (boxRule currentDeps) $ almostCartesianProduct mapBoxBwd mapAccBwd
 
                       funNomsToSend = addFNom $ filter ((isFunctional (relInfo br)) . fst) $ outgoingLinks (accStr br) oldUr
                        where addFNom :: [(Rel, [(Prefix,DependencySet)])] -> [PrFormula]
