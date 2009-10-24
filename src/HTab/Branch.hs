@@ -397,8 +397,8 @@ addToTodo pf@(PrFormula p ds f2) br =
     case f2 of
      E _         -> br{existRlCh = Set.insert f2 (existRlCh br)}
      At _ _      -> br{atRlCh    = Set.insert f2 (atRlCh br)}
-     DiaX _ r g  -> addDiaXRuleCheck br p (r,g)
      -- do-nothing cases
+     DiaX _ _ _  -> br
      Dis _       -> br
      D _         -> br
      Down _ _    -> br
@@ -851,8 +851,8 @@ forInclusion _ (At _ _) = False
 forInclusion _ (Down _ _) = False
 forInclusion _ (Box _ _) = True
 forInclusion _ (Dia _ _) = True
-forInclusion _ (BoxX _ _) = True
-forInclusion _ (DiaX _ _ _) = True
+forInclusion _ (BoxX _ _)   = False
+forInclusion _ (DiaX _ _ _) = False
 forInclusion _ (A _) = False
 forInclusion _ (E _) = False
 forInclusion _ (D _) = False
