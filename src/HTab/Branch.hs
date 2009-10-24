@@ -397,15 +397,7 @@ addToTodo pf@(PrFormula p ds f2) br =
     case f2 of
      E _         -> br{existRlCh = Set.insert f2 (existRlCh br)}
      At _ _      -> br{atRlCh    = Set.insert f2 (atRlCh br)}
-     -- do-nothing cases
-     DiaX _ _ _  -> br
-     Dis _       -> br
-     D _         -> br
-     Down _ _    -> br
-     Dia _ _     -> br
-     Lit _       -> br
-     -- error cases
-     _           -> error "writeSaturation"
+     _           -> br
 
 {-    helper functions for equivalence class merge     -}
 
