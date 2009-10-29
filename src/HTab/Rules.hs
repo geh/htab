@@ -14,7 +14,7 @@ import qualified HTab.DMap as DMap
 
 import HTab.Formula( Formula(..), PrFormula(..), showLess, neg, Atom(..),
                      Dependency, DependencySet, dsUnion, dsInsert, dsEmpty,
-                     prefix, AccFormula(..),
+                     prefix, AccFormula(..), Rel,
                      Prefix, NomSymbol(..), PropSymbol(..), RelSymbol(..),
                      disj, conj, nom, prop, replaceVar )
 import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewNomTestRelevance,
@@ -64,6 +64,7 @@ data Rule =  DiaRule    PrFormula AccFormula PrFormula        -- creates a prefi
            | ClashRule DependencySet PrFormula
            | UBlockRule Prefix Prefix Dependency
            | MergeRule Prefix DS.Pointer DependencySet
+           | RoleIncRule Prefix [Rel] Prefix DependencySet
 
 -- from the description of a rule application, creates the list of lists of modifications to the branch
 -- for certain rules, we need to look in the branch to see what modifications we do
@@ -71,6 +72,7 @@ data Rule =  DiaRule    PrFormula AccFormula PrFormula        -- creates a prefi
 getMods :: Branch -> Rule -> [[BranchModification]]
 getMods _ (ClashRule ds f) = [[BM_Clash ds f]]
 
+getMods _ (RoleIncRule p1 ss p2 ds) = [[BM_AddAccFormula (AccFormula ds (RelSymbol s) p1 p2)] | s <- ss]
 
 getMods _ (MergeRule p n ds)=
  [[BM_Merge p n ds]]
@@ -176,6 +178,7 @@ instance Show Rule where
    show (DiscardRule todelete)     = "Discard:            " ++ showLess todelete
    show (ClashRule bprs f)         = "Clash:              " ++ show bprs ++ " " ++ show f
    show (UBlockRule p1 p2 _ )      = "Unrestricted blocking " ++ show (p1,p2)
+   show (RoleIncRule p1 ss p2 _)   = "Role inclusion      " ++ show (p1,ss,p2)
 
 --
 ruleToId :: Rule -> RuleId
@@ -192,6 +195,7 @@ ruleToId r = case r of
               (DiscardRule _)    -> R_Discard
               (ClashRule _ _)    -> R_Clash
               (UBlockRule _ _ _) -> R_UBlocking
+              (RoleIncRule _ _ _ _) -> R_RoleInc
 
 -- the rules application strategy is defined here:
 -- the first rule is the one that will be applied at the next tableau step
@@ -203,6 +207,7 @@ applicableRule br clp d =
   _        ->  listToMaybe $ catMaybes $ map (ruleByChar br clp d) (strategyStr clp)
 
 scheduledRuleToRule :: Branch -> CmdLineParams -> Dependency -> ScheduledRule -> Rule
+scheduledRuleToRule _ _ d (SR_Inclusion p1 ss p2 ds) = RoleIncRule p1 ss p2 (dsInsert d ds)
 scheduledRuleToRule _ _ d (SR_UBlocking p1 p2) = UBlockRule p1 p2 d
 scheduledRuleToRule _ _ _ (SR_Merge pr po ds)  = MergeRule pr po ds
 scheduledRuleToRule br clp d (SR_Formula pf@(PrFormula _ _ f2)) =
@@ -228,6 +233,7 @@ ruleByChar br clp d char =
   'D' -> applicableDiffRule
   'b' -> applicableDownRule
   'u' -> if uBlocking clp then applicableUBlockRule else Nothing
+  'r' -> applicableRoleIncRule
   _   -> error "ruleByChar"
  where
   todos  = todoList br
@@ -250,6 +256,9 @@ ruleByChar br clp d char =
 
   applicableDiffRule  = do (f,new) <- Set.minView $ diffStr todos
                            return (diffRule f, todos{diffStr = new})
+
+  applicableRoleIncRule = do ((ds, p1, p2, ss),new) <- Set.minView $ roleIncStr todos
+                             return (RoleIncRule p1 ss p2 (dsInsert d ds), todos{roleIncStr = new})
 
   applicableUBlockRule = case getUnappliedUBPairs br of
                             []          -> Nothing

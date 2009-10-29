@@ -138,6 +138,7 @@ options =
           "  e = existential modality",
           "  D = difference modality",
           "  b = down-arrow binder",
+          "  r = role inclusion",
           "  u = unrestricted blocking",
           "",
           "The default is `" ++ strategyStr defaultParams ++ "'",
@@ -250,7 +251,7 @@ setStrategy = permutationOf strategyStrVal ?->
                    \s c -> return c{strategyStr = s}
 
 strategyStrVal :: String
-strategyStrVal = "msedtDbou"
+strategyStrVal = "mrsedtDbou"
 
 setStats :: String -> CLPModifier
 setStats = (isJust . parseStats) ?->

@@ -24,7 +24,7 @@ checkIfVariableNegatedOnce, replaceVar,
 firstPrefixedFormula,
 parse, simpleParse, Theory, RelInfo, Task,
 encodeValidityTest, encodeSatTest,
-HyLoFormula, extractNominals,showNom,RelProperties(..)
+HyLoFormula, extractNominals,showNom,RelProperty(..)
 )
 
  where
@@ -32,6 +32,7 @@ HyLoFormula, extractNominals,showNom,RelProperties(..)
 import qualified Data.Set as Set
 import Data.Set ( Set )
 import qualified Data.Map as Map
+import Data.Map ( Map )
 import qualified Data.IntSet as IntSet
 import Data.List ( delete, nub )
 
@@ -111,17 +112,18 @@ type Theory  = Formula
 type Task    = P.InferenceTask
 type PRelInfo = [P.RelInfo]
 
-type RelInfo = [(RelSymbol,[RelProperties])]
-data RelProperties = Reflexive |
-                     Symmetric |
-                     Transitive |
-                     Functional |
-                     Injective | -- new!
-                     Universal |
-                     Difference |
+type RelInfo = Map Rel [RelProperty]
+data RelProperty   =   Reflexive
+                     | Symmetric
+                     | Transitive
+                     | Functional
+                     | Injective
+                     | Universal
+                     | Difference
                      --
-                     InverseOf RelSymbol |
-                     TRClosureOf RelSymbol
+                     | InverseOf Rel
+                     | TRClosureOf Rel
+                     | SubsetOf [Rel]
                      deriving (Eq, Show, Ord)
 
 parse :: CmdLineParams -> String -> (Theory,RelInfo,[Task])
@@ -140,12 +142,10 @@ parse clp s
 -- the list of RelSymbol present in the formula
 
 forceProperties :: CmdLineParams -> [RelSymbol] -> RelInfo -> RelInfo
-forceProperties clp rels relI
- = Map.toList $ foldr addToAll mRelI conds
-   where mRelI_ = Map.fromList relI
-         map2 = Map.fromList $ map (\r -> (r,[])) rels
-         mRelI = Map.union mRelI_ map2 -- mRelI_ is preferred when there is a key duplication
-         addToAll cond m = Map.map (\li -> nub (cond:li)) m
+forceProperties clp relsymbols relI
+ = foldr addToAll relI rels
+   where rels = [ rel | RelSymbol rel <- relsymbols]
+         addToAll r = Map.insertWith (\c1 c2 -> nub $ c1 ++ c2) r conds
          conds = map snd $
                    filter fst $ [(allTransitive clp, Transitive),
                                  (allReflexive  clp, Reflexive ),
@@ -154,19 +154,20 @@ forceProperties clp rels relI
                                  (allInjective  clp, Injective )]
 
 convertToOurType :: PRelInfo -> RelInfo -- and add for each relation in the formula, the relevant key
-convertToOurType prelI = map convertOne prelI
- where convertOne :: (RelSymbol,[P.RelProperties]) -> (RelSymbol,[RelProperties])
-       convertOne (rs,pprops) = (rs, map c pprops)
-       c P.Reflexive       = Reflexive
-       c P.Symmetric       = Symmetric
-       c P.Transitive      = Transitive
-       c P.Functional      = Functional
-       c P.Universal       = Universal
-       c P.Difference      = Difference
-       c (P.InverseOf r)   = InverseOf r
-       c (P.TRClosureOf r) = TRClosureOf r
-       c (P.SubsetOf _)    = error "SubsetOf not handled"
-       c (P.TClosureOf _)  = error "TClosureOf not handled"
+convertToOurType prelI = foldr insertRelProp (Map.empty) (concatMap convertOne prelI)
+ where insertRelProp (rs,pr) = Map.insertWith (++) rs [pr]
+       convertOne (r,props)  = concatMap (c r) props
+       c r P.Reflexive       = [(r,Reflexive    )]
+       c r P.Symmetric       = [(r,Symmetric    )]
+       c r P.Transitive      = [(r,Transitive   )]
+       c r P.Functional      = [(r,Functional   )]
+       c r P.Universal       = [(r,Universal    )]
+       c r P.Difference      = [(r,Difference   )]
+       c r (P.InverseOf s)   = [(r,InverseOf s  )]
+       c r (P.TRClosureOf s) = [(r,TRClosureOf s)]
+       c r (P.SubsetOf ss)   = [(r,SubsetOf [ s | s <- ss])]
+       c r (P.Equals ss)     = [(r,SubsetOf [ s | s <- ss])] ++ [(s,SubsetOf [r]) | s <- ss]
+       c _ (P.TClosureOf _)  = error "TClosureOf not handled"
 
 simpleParse :: CmdLineParams -> String -> (Theory,RelInfo,[Task])
 simpleParse clp s = parse clp $ "signature { automatic } theory { " ++ removeBeginEnd s ++ "}"
@@ -203,80 +204,82 @@ specialiseBox :: RelSymbol -> RelInfo -> Connector
 specialiseBox r relI = specialise r relI (box, boxX, dUnivMod, univMod)
 
 specialise :: RelSymbol -> RelInfo -> (RelSymbol -> Connector, RelSymbol -> Connector, Connector, Connector) -> Connector
-specialise r relI (relational, rtclosure, difference, global)
- = case filter interesting (propsOf relI r) of
+specialise (InvRelSymbol r) _ (relational, _ , _ , _) -- assume it is the simple input
+ = relational $ InvRelSymbol r
+
+specialise (RelSymbol r) relI (relational, rtclosure, difference, global)
+ = case filter interesting (propsOf r) of
     (Difference:_) -> difference
     (Universal:_)  -> global
-    []             -> relational r
+    []             -> relational $ RelSymbol r
     _              -> case specialise2 r relI of
-                         Just_ rs                   -> relational rs
-                         Inverse (RelSymbol s)      -> relational $ invertRel s relI
-                         RTClosure rs               -> rtclosure rs
-                         RTClosureInv (RelSymbol s) -> rtclosure $ invertRel s relI
-                         _                          -> error "specialise: InvRelSymbol not handled"
+                         Just_ r2        -> relational $ RelSymbol r2
+                         Inverse r2      -> relational $ invertRel r2 relI
+                         RTClosure r2    -> rtclosure  $ RelSymbol r2
+                         RTClosureInv r2 -> rtclosure  $ invertRel r2 relI
     where
       interesting Difference      = True
       interesting Universal       = True
       interesting (InverseOf _)   = True
       interesting (TRClosureOf _) = True
       interesting _               = False
-      propsOf relI__ rs__         = maybe [] id (lookup rs__ relI__)
+      propsOf r_                  = Map.findWithDefault [] r_ relI
 
-data ModType = Just_ RelSymbol | Inverse RelSymbol | RTClosure RelSymbol | RTClosureInv RelSymbol
+data ModType = Just_ Rel | Inverse Rel | RTClosure Rel | RTClosureInv Rel
 
-specialise2 :: RelSymbol -> RelInfo -> ModType
-specialise2 rs_ relI_
- = go (Just_ rs_) relI_
+specialise2 :: Rel -> RelInfo -> ModType
+specialise2 r_ relI
+ = go (Just_ r_)
     where
-     go j@(Just_ rs) relI =
-       case filter interesting (propsOf relI rs) of
-        (InverseOf rs2:_)   -> go (Inverse rs2) relI
-        (TRClosureOf rs2:_) -> go (RTClosure  rs2) relI
-        _                   -> j
+     go j@(Just_ r) =
+       case filter interesting (propsOf r) of
+        (InverseOf r2:_)   -> go (Inverse r2)
+        (TRClosureOf r2:_) -> go (RTClosure r2)
+        _                  -> j
 
-     go io@(Inverse rs) relI =
-       case filter interesting (propsOf relI rs) of
-        (InverseOf rs2:_)   -> go (Just_ rs2) relI
-        (TRClosureOf rs2:_) -> RTClosureInv rs2
-        _                   -> io
+     go io@(Inverse r) =
+       case filter interesting (propsOf r) of
+        (InverseOf r2:_)   -> go (Just_ r2)
+        (TRClosureOf r2:_) -> RTClosureInv r2
+        _                  -> io
 
-     go rtc@(RTClosure rs) relI =
-       case filter interesting (propsOf relI rs) of
-        (InverseOf rs2:_)   -> RTClosureInv rs2
-        (TRClosureOf rs2:_) -> go (RTClosure rs2) relI
-        _                   -> rtc
+     go rtc@(RTClosure r) =
+       case filter interesting (propsOf r) of
+        (InverseOf r2:_)   -> RTClosureInv r2
+        (TRClosureOf r2:_) -> go (RTClosure r2)
+        _                  -> rtc
 
-     go rtci@(RTClosureInv rs) relI =
-       case filter interesting (propsOf relI rs) of
-        (InverseOf rs2:_)   -> RTClosure rs2
-        _                   -> rtci
+     go rtci@(RTClosureInv r) =
+       case filter interesting (propsOf r) of
+        (InverseOf r2:_)   -> RTClosure r2
+        _                  -> rtci
 
      interesting (InverseOf _)   = True
      interesting (TRClosureOf _) = True
      interesting _               = False
-     propsOf relI__ rs__         = maybe [] id (lookup rs__ relI__)
+     propsOf r__                 = Map.findWithDefault [] r__ relI
 
-invertRel :: String -> RelInfo -> RelSymbol
-invertRel s relI
- = case lookup (RelSymbol s) relI of
-    Nothing         -> RelSymbol s
-    Just properties -> if Symmetric `elem` properties then RelSymbol s else InvRelSymbol s
+invertRel :: Rel -> RelInfo -> RelSymbol
+invertRel r relI
+ = case Map.lookup r relI of
+    Nothing         -> RelSymbol r
+    Just properties -> if Symmetric `elem` properties then RelSymbol r else InvRelSymbol r
 
 type HyLoFormula = F.Formula NomSymbol PropSymbol RelSymbol
 
 -- saturate RelInfo with hierarchy information : Reflexive, Symmetric, Transitive, Universal, Difference
 
 saturate :: RelInfo -> RelInfo
-saturate relI = map saturateOne relI
-   where saturateOne (rs,props) = let ancestorProps = concatMap (getProperties relI) $ getAncestors rs relI
-                                      newProps = list $ Set.union (set ancestorProps) (set props)
-                                  in
-                                   (rs, newProps )
+saturate relI = Map.mapWithKey saturateOne relI
+   where saturateOne r props = let ancestorProps = concatMap (getProperties relI) $ getAncestors r relI
+                                   newProps = list $ Set.union (set ancestorProps) (set props)
+                               in
+                                 newProps
 
-getProperties :: RelInfo -> RelSymbol -> [RelProperties]
-getProperties ri rs
+getProperties :: RelInfo -> Rel -> [RelProperty]
+getProperties ri r
  = getOnlyProps $ filter isProp props
-    where Just props        = lookup rs ri
+    where Just props        = Map.lookup r ri
           getOnlyProps      = filter isProp
           isProp Reflexive  = True
           isProp Symmetric  = True
@@ -285,12 +288,12 @@ getProperties ri rs
           isProp Difference = True
           isProp _          = False
 
-getAncestors :: RelSymbol -> RelInfo -> [RelSymbol]
-getAncestors rs_ ri_ =
- list $ go rs_ ri_ (Set.singleton rs_)
+getAncestors :: Rel -> RelInfo -> [Rel]
+getAncestors r_ ri_ =
+ list $ go r_ ri_ (Set.singleton r_)
  where
-  go rs ri seen =
-   let Just props = lookup rs ri
+  go r ri seen =
+   let props = ri Map.! r
        parents = concatMap extractParent props
        extractParent (InverseOf rp)   = [rp]
        extractParent (TRClosureOf rp) = [rp]
@@ -299,8 +302,8 @@ getAncestors rs_ ri_ =
        newSeen = Set.union seen $ set parents
    in
      case todo of
-      [] -> Set.singleton rs
-      _  -> Set.insert rs $ Set.unions $ map (\pa -> go pa ri newSeen) todo
+      [] -> Set.singleton r
+      _  -> Set.insert r $ Set.unions $ map (\pa -> go pa ri newSeen) todo
 
 -- ==========================================================================
 --
@@ -318,17 +321,17 @@ handleFunInj :: RelInfo -> RelInfo
 handleFunInj relI =
 -- explore the hierarchy of relations starting by the leaves and ending at the top
 -- taking into account the alternations "inverseof" to enforce functionality and/or injectivity
-  foldr startFromLeaf relI relI
- where startFromLeaf (rs,props) currentRelI = follow (rs,props) currentRelI Not
+  Map.foldWithKey startFromLeaf relI relI
+ where startFromLeaf rs props currentRelI = follow rs props currentRelI Not
 
-       follow rsp@(rs,props) currentRelI currentStatus
+       follow rs props currentRelI currentStatus
          = case parentsWithInv props status of
-            Just (parent,newStatus) -> let parentProps = maybe [] id (lookup parent currentRelI) in
-                                       follow (parent,parentProps) currentRelI newStatus
+            Just (parent,newStatus) -> let parentProps = Map.findWithDefault [] parent currentRelI in
+                                       follow parent parentProps currentRelI newStatus
             Nothing
               -> case currentStatus of
                    Not -> currentRelI
-                   _   -> (rs, nub (toProps status ++ props)):(delete rsp currentRelI)
+                   _   -> Map.insertWith (++) rs (toProps status) currentRelI
            where
                  status = if Functional `elem` props
                            then case currentStatus of

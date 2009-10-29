@@ -59,14 +59,16 @@ completeModel :: RelInfo -> Model -> Model
 completeModel relI m = completeTransitivity relI $ completeSymmetry relI m
 
 completeTransitivity :: RelInfo -> Model -> Model
-completeTransitivity relI m = m{M.succs = \r w -> if isTransitive relI r
-                                                   then getTransClos (M.succs m) r w
-                                                   else M.succs m r w}
+completeTransitivity relI m = m{M.succs = \rs@(RelSymbol r) w
+                                               -> if isTransitive relI r
+                                                    then getTransClos (M.succs m) rs w
+                                                    else M.succs m rs w}
 
 completeSymmetry :: RelInfo -> Model -> Model
-completeSymmetry relI m = m{M.succs = \r w -> if isSymmetric relI r
-                                               then getSymClos (M.worlds m) (M.succs m) r w
-                                               else M.succs m r w}
+completeSymmetry relI m = m{M.succs = \rs@(RelSymbol r) w
+                                           -> if isSymmetric relI r
+                                                then getSymClos (M.worlds m) (M.succs m) rs w
+                                                else M.succs m rs w}
 
 getTransClos :: (Ord w) => (r -> w -> Set w) -> r -> w -> Set w
 getTransClos succs_ r_ w_

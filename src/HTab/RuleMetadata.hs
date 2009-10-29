@@ -48,4 +48,5 @@ data RuleId = R_Dia     -- Diamond <r>
             | R_Clash   -- Branch clash
             | R_UBlocking -- Unrestricted Blocking
             | R_Merge   -- Equivalence classes merge
+            | R_RoleInc -- Role inclusion
         deriving(Eq, Ord, Ix, Show)

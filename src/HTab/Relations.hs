@@ -2,7 +2,7 @@ module HTab.Relations
 
 ( Relations(..), emptyRels, insertRelation, mergePrefixWith,
   successors, predecessors, incomingLinks, outgoingLinks,
-  allRels, null )
+  allRels, null, linksFromTo )
 
 where
 
@@ -162,3 +162,8 @@ incomingLinks rels p
                                  let p_ds_s = [(pred,ds) | pred <- Set.toList preds, let ds = (Map.!) (idToData rels) (pred,r,p)]
                   ]
 
+
+linksFromTo :: Relations -> Prefix -> Prefix -> [Rel]
+linksFromTo rels p1 p2
+ = map fst $ filter (\(_,p_d_s) -> p2 `elem` (map fst p_d_s) ) outs
+    where outs = outgoingLinks rels p1

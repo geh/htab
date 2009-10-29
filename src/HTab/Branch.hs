@@ -59,7 +59,8 @@ import qualified HTab.DMap as DMap
 import HTab.Base(moveInMap, almostCartesianProduct, doMemoize, set, list)
 
 import HTab.Relations ( Relations, emptyRels, insertRelation, mergePrefixWith,
-                        successors, predecessors, incomingLinks, outgoingLinks)
+                        successors, predecessors, incomingLinks, outgoingLinks,
+                        linksFromTo)
 import qualified HTab.Relations as Relations
 import qualified Data.Bimap as Bimap
 
@@ -80,6 +81,7 @@ type Down_structure   = Set.Set PrFormula
 type Exist_structure  = Set.Set PrFormula
 type Diff_structure   = Set.Set PrFormula
 type Merge_structure  = Set.Set (DependencySet, Prefix, DS.Pointer)
+type RoleInc_structure= Set.Set (DependencySet, Prefix, Prefix, [Rel])
 type Box_constraints  = DMap Prefix Rel [(DependencySet,Formula)]
 
 type Dia_rule_chart    = Map.Map Prefix (Set.Set Formula)
@@ -277,23 +279,27 @@ data TodoList =  Unfair{conjStr :: Conj_structure,
                           atStr :: At_structure,
                         downStr :: Down_structure,
                         diffStr :: Diff_structure,
-                       mergeStr :: Merge_structure }
+                       mergeStr :: Merge_structure,
+                     roleIncStr :: RoleInc_structure }
                | Fair [ScheduledRule]
 
 instance Show TodoList where
  show (Fair srs) = "Todo list: " ++ show srs
- show (Unfair conjs disjs dias diaxs es ars downs diffs merges)
+ show (Unfair conjs disjs dias diaxs es ars downs diffs merges rolein)
    = "Todo lists:" ++ concatMap (\el -> "\n" ++ show (list el)) [conjs, disjs, dias, diaxs, es, ars, downs, diffs]
                    ++ "\n" ++ show (list merges)
+                   ++ "\n" ++ show (list rolein)
 
 data ScheduledRule =   SR_Formula PrFormula
                      | SR_UBlocking Prefix Prefix
                      | SR_Merge Prefix DS.Pointer DependencySet
+                     | SR_Inclusion Prefix [Rel] Prefix DependencySet
 
 instance Show ScheduledRule where
  show (SR_Formula pf)    = show pf
  show (SR_UBlocking i j) = "SR " ++ show (i,j)
- show (SR_Merge pr po _) = "SR Merge" ++ show (pr,po)
+ show (SR_Merge pr po _) = "SR Merge " ++ show (pr,po)
+ show (SR_Inclusion p1 ss p2 _) = "SR role inclusion " ++ show p1 ++ "<" ++ show ss ++ ">" ++ show p2
 
 emptyTodoList :: CmdLineParams -> TodoList
 emptyTodoList clp =
@@ -308,7 +314,8 @@ emptyTodoList clp =
                   atStr = Set.empty::At_structure,
                   downStr = Set.empty::Down_structure,
                   diffStr = Set.empty::Diff_structure,
-                  mergeStr = Set.empty::Merge_structure
+                  mergeStr = Set.empty::Merge_structure,
+                  roleIncStr = Set.empty::RoleInc_structure
                }
 
 {-
@@ -588,10 +595,10 @@ addBoxConstraint pr_ (RelSymbol r) f ds clp br
          newBr = br{boxConstrFwd = updateBoxConstr pr r f ds (boxConstrFwd br)}
          accessiblePrDs   = successors (accStr br) pr r
          toAdd = symApplications ++ transApplications ++ boxApplications
-         transApplications = if isTransitive (relInfo br) (RelSymbol r)
+         transApplications = if isTransitive (relInfo br) r
                              then map (\(p,ds2) -> PrFormula p (dsUnion ds ds2) (Box (RelSymbol r) f)) accessiblePrDs
                              else []
-         symApplications = if isSymmetric (relInfo br) (RelSymbol r) then [PrFormula pr ds $ box (InvRelSymbol r) f] else []
+         symApplications = if isSymmetric (relInfo br) r then [PrFormula pr ds $ box (InvRelSymbol r) f] else []
          boxApplications = map (\(p,ds2) -> PrFormula p (dsUnion ds ds2) f) accessiblePrDs
 
 addBoxConstraint pr_ (InvRelSymbol r) f ds clp br
@@ -600,7 +607,7 @@ addBoxConstraint pr_ (InvRelSymbol r) f ds clp br
          newBr = br{boxConstrBwd = updateBoxConstr pr r f ds (boxConstrBwd br)}
          accessiblePrDs        = predecessors (accStr br) pr r
          toAdd = transApplications ++ boxApplications
-         transApplications = if isTransitive (relInfo br) (RelSymbol r)
+         transApplications = if isTransitive (relInfo br) r
                              then map (\(p,ds2) -> PrFormula p (dsUnion ds ds2) (Box (InvRelSymbol r) f)) accessiblePrDs
                              else []
          boxApplications = map (\(p,ds2) -> PrFormula p (dsUnion ds ds2) f) accessiblePrDs
@@ -644,7 +651,7 @@ addAccFormula :: CmdLineParams -> Branch -> AccFormula -> BranchInfo
 addAccFormula clp br (AccFormula ds (RelSymbol r) p1_ p2_)
  = addFormulas clp newBr toAdd
    where toAdd = transApplications ++ funcApplications ++ injApplications ++ boxApplications
-         transApplications = if isTransitive (relInfo br) (RelSymbol r)
+         transApplications = if isTransitive (relInfo br) r
                               then
                                (  ( map (\(ds2,f) -> PrFormula p2 (dsUnion ds ds2) (Box (RelSymbol r) f)) toSendFwd )
                                ++ ( map (\(ds2,f) -> PrFormula p1 (dsUnion ds ds2) (Box (RelSymbol r) f)) toSendBwd )  )
@@ -659,12 +666,27 @@ addAccFormula clp br (AccFormula ds (RelSymbol r) p1_ p2_)
                             ++ ( map (\(ds2,f) -> PrFormula p1 (dsUnion ds ds2) f) toSendBwd )  )
          p1 = getUrfather br (DS.Prefix p1_)
          p2 = getUrfather br (DS.Prefix p2_)
-         newBr    = insertRelationBranch br p1 r p2 ds
          toSendFwd = Map.findWithDefault [] r $ Map.findWithDefault Map.empty p1 (toMap $ boxConstrFwd br)
          toSendBwd = Map.findWithDefault [] r $ Map.findWithDefault Map.empty p2 (toMap $ boxConstrBwd br)
+         newBr = scheduleInclusionRule p1 p2 r ds $ insertRelationBranch br p1 r p2 ds
 
 addAccFormula clp br (AccFormula ds (InvRelSymbol r) p1_ p2_ ) -- so, create p2<>p1
  = addAccFormula clp br (AccFormula ds (RelSymbol r) p2_ p1_)
+
+scheduleInclusionRule :: Prefix -> Prefix -> Rel -> DependencySet -> Branch -> Branch
+scheduleInclusionRule p1 p2 r ds br -- todo get all included
+ = if null toschedule
+    then br
+    else br{todoList = newTodoList}
+   where parentss = case Map.lookup r (relInfo br) of
+                      Nothing -> []
+                      Just props -> [ rs | SubsetOf rs <- props]
+         toschedule = map (\parents -> (ds,p1,p2,parents)) $ filter (not . alreadyDone) parentss
+         alreadyDone = any (`elem` linksFromTo (accStr br) p1 p2)
+         newTodoList =
+          case todoList br of
+           Fair srs -> Fair (srs ++ map (\(ds_,p1_,p2_,parents_) -> SR_Inclusion p1_ parents_ p2_ ds_) toschedule )
+           utodo    -> utodo{roleIncStr  = Set.union (Set.fromList toschedule) (roleIncStr utodo)}
 
 insertRelationBranch :: Branch -> Prefix -> Rel -> Prefix -> DependencySet -> Branch
 insertRelationBranch br p1 r p2 ds
@@ -1010,7 +1032,7 @@ addUBlockingSchedule br
 addReflexiveLinks :: Prefix -> Branch -> Branch
 addReflexiveLinks pr br
  = foldr (\rel_ br_ -> insertRelationBranch br_ pr rel_ pr dsEmpty) br reflRels
-   where reflRels = map ((\(RelSymbol r) -> r) . fst) $ filter (\(_,props) -> Reflexive `elem` props) (relInfo br)
+   where reflRels = Map.keys $ Map.filter (elem Reflexive) (relInfo br)
 
 
 --
@@ -1219,28 +1241,28 @@ reduceDisjunctionAgainstBranch br pr fs =
 prefixes :: Branch -> [Prefix]
 prefixes br = [0..(lastPref br)]
 
-oneIs :: RelInfo -> RelProperties -> Bool
-oneIs relI p = any ( (elem p) . snd) relI
+oneIs :: RelInfo -> RelProperty -> Bool
+oneIs relI p = any ( (elem p) . snd) $ Map.toList relI
 
-hasProperty :: RelInfo -> RelSymbol -> RelProperties -> Bool
-hasProperty relI r p = case List.lookup r relI of
+hasProperty :: RelProperty -> RelInfo -> Rel -> Bool
+hasProperty p relI r = case Map.lookup r relI of
                         Nothing         -> False
                         Just properties -> p `elem` properties
 
-isReflexive :: RelInfo -> RelSymbol -> Bool
-isReflexive relI r = hasProperty relI r Reflexive
+isReflexive :: RelInfo -> Rel -> Bool
+isReflexive = hasProperty Reflexive
 
-isSymmetric :: RelInfo -> RelSymbol -> Bool
-isSymmetric relI r = hasProperty relI r Symmetric
+isSymmetric :: RelInfo -> Rel -> Bool
+isSymmetric = hasProperty Symmetric
 
-isTransitive :: RelInfo -> RelSymbol -> Bool
-isTransitive relI r = hasProperty relI r Transitive
+isTransitive :: RelInfo -> Rel -> Bool
+isTransitive = hasProperty Transitive
 
 isFunctional :: RelInfo -> Rel -> Bool
-isFunctional relI r = hasProperty relI (RelSymbol r) Functional
+isFunctional = hasProperty Functional
 
 isInjective :: RelInfo -> Rel -> Bool
-isInjective relI r = hasProperty relI (RelSymbol r) Injective
+isInjective = hasProperty Injective
 
 {-      Monad related stuff      -}
 
