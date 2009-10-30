@@ -22,22 +22,23 @@ import HTab.Main
 
 main :: IO ()
 main =
-  do (sat_dir, unsat_dir) <- parseArgs
+  do (sat_dir, sat_no_mod_dir, unsat_dir) <- parseArgs
      --
-     sat_tests   <- map (runExpecting Sat)   <$> frmFiles sat_dir
-     unsat_tests <- map (runExpecting Unsat) <$> frmFiles unsat_dir
+     sat_tests        <- map (runExpecting Sat)      <$> frmFiles sat_dir
+     sat_no_mod_tests <- map (runExpecting SatNoMod) <$> frmFiles sat_no_mod_dir
+     unsat_tests      <- map (runExpecting Unsat)    <$> frmFiles unsat_dir
      --
-     success <- and <$> sequenceUntil not (sat_tests ++ unsat_tests)
+     success <- and <$> sequenceUntil not (sat_tests ++ sat_no_mod_tests ++ unsat_tests)
      if success
        then putStrLn "SUCCESS"
        else putStrLn "FAILURE" >> exitFailure
 
-data Expected = Sat | Unsat deriving (Eq, Show)
+data Expected = Sat | SatNoMod | Unsat deriving (Eq, Show)
 
-parseArgs :: IO (FilePath, FilePath)
+parseArgs :: IO (FilePath, FilePath, FilePath)
 parseArgs = go =<< getArgs
-    where go [sd, ud] = return (sd, ud)
-          go _        = fail "Required args: <sat dir> <unsat dir>"
+    where go [sd, snmd, ud] = return (sd, snmd, ud)
+          go _              = fail "Required args: <sat dir> <sat no model dir> <unsat dir>"
 
 frmFiles :: FilePath -> IO [FilePath]
 frmFiles dir = map (dir </>) . filter (endsWith ".frm") <$>
@@ -61,16 +62,17 @@ runExpecting exp_result file =
     do putStr (file ++ "......... ")
        r <- runHTab file
        case (r, exp_result) of
-         (FAILURE, Unsat) -> putStrLn "OK!" >> return True
-         (FAILURE, Sat)   -> putStrLn "FAILED! (unsat)" >> return False
-         (SUCCESS, Sat)   -> do b <- isASatisfyingModel
-                                if b
-                                  then do putStrLn "OK!"
-                                          return True
-                                  else do putStrLn "MODELCHECK FAILED"
-                                          return False
-         (SUCCESS, Unsat) -> putStrLn "FAILED! (sat)" >> return False
-         (TIMEOUT_ , _)   -> putStrLn "FAILED! (timeout)" >> return False
+         (FAILURE, Unsat)    -> putStrLn "OK!" >> return True
+         (FAILURE, _)        -> putStrLn "FAILED! (unsat)" >> return False
+         (SUCCESS, SatNoMod) -> putStrLn "OK!" >> return True
+         (SUCCESS, Sat)      -> do b <- isASatisfyingModel
+                                   if b
+                                     then do putStrLn "OK!"
+                                             return True
+                                     else do putStrLn "MODELCHECK FAILED"
+                                             return False
+         (SUCCESS, Unsat)    -> putStrLn "FAILED! (sat)" >> return False
+         (TIMEOUT_ , _)      -> putStrLn "FAILED! (timeout)" >> return False
     --
 
     where isASatisfyingModel =
