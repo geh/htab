@@ -14,7 +14,6 @@ import qualified Data.Map as Map
 import Data.Map ( Map )
 import qualified Data.Set as Set
 import Data.Set ( Set )
-import qualified Data.IntSet as IntSet
 
 import qualified HTab.DMap as DMap
 import HTab.DMap ( DMap(..) )
@@ -30,12 +29,12 @@ data Relations = Relations { idToData :: IdToData,
                              inOutRel :: InOutRel }
 
 instance Show Relations where
-  show rels = concat  [ show p1 ++ "-R" ++ show rel ++ "->" ++ show (p2,bprs) ++ " "
+  show rels = concat  [ show p1 ++ "-R" ++ show rel ++ "->" ++ show (p2,ds) ++ " "
                                         | ((p1,rel),(_,outs))  <- DMap.flatten $ inOutRel rels,
                                            not $ Set.null outs,
                                            let outs_l = Set.toList outs,
                                            p2 <- outs_l,
-                                           let bprs = IntSet.toList $ (Map.!) (idToData rels) (p1,rel,p2) ]
+                                           let ds = (Map.!) (idToData rels) (p1,rel,p2) ]
 
 emptyRels :: Relations
 emptyRels = Relations { idToData = Map.empty,
