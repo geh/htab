@@ -279,7 +279,7 @@ saturate relI = Map.mapWithKey saturateOne relI
 getProperties :: RelInfo -> Rel -> [RelProperty]
 getProperties ri r
  = getOnlyProps $ filter isProp props
-    where Just props        = Map.lookup r ri
+    where props             = Map.findWithDefault [] r ri
           getOnlyProps      = filter isProp
           isProp Reflexive  = True
           isProp Symmetric  = True
@@ -289,11 +289,11 @@ getProperties ri r
           isProp _          = False
 
 getAncestors :: Rel -> RelInfo -> [Rel]
-getAncestors r_ ri_ =
- list $ go r_ ri_ (Set.singleton r_)
+getAncestors r_ relI =
+ list $ go r_ (Set.singleton r_)
  where
-  go r ri seen =
-   let props = ri Map.! r
+  go r seen =
+   let props = Map.findWithDefault [] r relI
        parents = concatMap extractParent props
        extractParent (InverseOf rp)   = [rp]
        extractParent (TRClosureOf rp) = [rp]
@@ -303,7 +303,7 @@ getAncestors r_ ri_ =
    in
      case todo of
       [] -> Set.singleton r
-      _  -> Set.insert r $ Set.unions $ map (\pa -> go pa ri newSeen) todo
+      _  -> Set.insert r $ Set.unions $ map (\pa -> go pa newSeen) todo
 
 -- ==========================================================================
 --
