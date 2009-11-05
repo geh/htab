@@ -251,7 +251,7 @@ setStrategy = permutationOf strategyStrVal ?->
                    \s c -> return c{strategyStr = s}
 
 strategyStrVal :: String
-strategyStrVal = "mrsedtDbou"
+strategyStrVal = "msedDbotru"
 
 setStats :: String -> CLPModifier
 setStats = (isJust . parseStats) ?->
