@@ -1,168 +1,89 @@
 module HTab.Relations
 
-( Relations(..), emptyRels, insertRelation, mergePrefixWith,
-  successors, predecessors, incomingLinks, outgoingLinks,
-  allRels, null, linksFromTo )
+( Relations(..), emptyRels, insertRelation, mergePrefixes,
+  successors, predecessors, allRels, null, linksFromTo )
 
 where
 
---
--- enable quick access to outgoing and incoming links of a prefix
---
-
 import qualified Data.Map as Map
 import Data.Map ( Map )
-import qualified Data.Set as Set
-import Data.Set ( Set )
+import qualified Data.List as List
 
 import qualified HTab.DMap as DMap
 import HTab.DMap ( DMap(..) )
 
-import HTab.Formula (Prefix, Rel, DependencySet, dsUnion )
+import HTab.Formula (Prefix, Rel, DependencySet, dsShow )
 import Prelude hiding (id, pred, succ, null)
 
-type Id = (Prefix,Rel,Prefix)
-type IdToData = Map Id DependencySet
-type InOutRel = DMap Prefix Rel (Set Prefix, Set Prefix)
+type InRel  = DMap Prefix Rel [(Prefix,DependencySet)]
+type OutRel = DMap Prefix Rel [(Prefix,DependencySet)]
 
-data Relations = Relations { idToData :: IdToData,
-                             inOutRel :: InOutRel }
-
-instance Show Relations where
-  show rels = concat  [ show p1 ++ "-R" ++ show rel ++ "->" ++ show (p2,ds) ++ " "
-                                        | ((p1,rel),(_,outs))  <- DMap.flatten $ inOutRel rels,
-                                           not $ Set.null outs,
-                                           let outs_l = Set.toList outs,
-                                           p2 <- outs_l,
-                                           let ds = (Map.!) (idToData rels) (p1,rel,p2) ]
+data Relations =  Relations {  inRel :: InRel ,
+                              outRel :: OutRel }
 
 emptyRels :: Relations
-emptyRels = Relations { idToData = Map.empty,
-                        inOutRel = DMap.empty }
+emptyRels = Relations { inRel = DMap.empty, outRel = DMap.empty }
 
 null :: Relations -> Bool
-null r = Map.null (idToData r)
+null = Map.null . DMap.toMap . outRel
 
 allRels :: Relations -> [(Prefix,Rel,Prefix)]
-allRels rels = Map.keys (idToData rels)
-
-tMap2 :: (a -> b -> c) -> (a,a) -> (b,b) -> (c,c)
-tMap2 f (a1,a2) (b1,b2) = (f a1 b1, f a2 b2)
-
-insertRelation :: Relations -> Prefix -> Rel -> Prefix -> DependencySet -> Relations
-insertRelation rels p1 r p2 ds =
- let id = (p1,r,p2) in
-  case Map.lookup id (idToData rels) of
-   Nothing -> let inOutRel'  = DMap.insertWith (tMap2 Set.union) p1 r (Set.empty, Set.singleton p2) (inOutRel rels)
-                  inOutRel'' = DMap.insertWith (tMap2 Set.union) p2 r (Set.singleton p1, Set.empty) inOutRel'
-              in
-              rels{idToData = Map.insert id ds (idToData rels),
-                   inOutRel = inOutRel''  }
-   Just _  -> rels{idToData = Map.adjust (\ds_ -> dsUnion ds ds_) id (idToData rels)}
-
-mergePrefixWith :: Relations -> Prefix -> Prefix -> DependencySet ->Relations
-mergePrefixWith rels pr ur newDs =
- if ur == pr then rels
-   else 
-    case DMap.lookup1 pr (inOutRel rels) of
-     Nothing                       -> rels
-     Just inner_pr                 -> updateRtiItr rels pr inner_pr pr ur newDs
-
-updateRtiItr :: Relations -> Prefix -> Map Rel (Set Prefix, Set Prefix) -> Prefix -> Prefix -> DependencySet -> Relations
-updateRtiItr rels p1 p1_inOutMap pr ur newDs =
- let out_ids = concatMap ( \(r,(_,outs)) -> map (\o -> (r,o)) $ Set.toList outs) $ Map.assocs p1_inOutMap
-
-     adjust_out :: (Rel,Prefix) -> (IdToData,InOutRel) -> (IdToData,InOutRel)
-     adjust_out (r,p2) input@(idToData_,inOutRels_)
-        = case Map.lookup id idToData_ of
-           Nothing -> input
-           Just ds ->
-            let itd'  = Map.delete id idToData_
-                itd'' = Map.insertWith dsUnion (ur,r,p2) (dsUnion ds newDs) itd'
-                ior'  = replaceIn inOutRels_ p2 r p1 ur
-                ior'' = addNewOut ior'     ur r p2
-            in
-                (itd'', ior'')
-          where id = (p1,r,p2)
-
-     in_ids  = concatMap ( \(r,(ins,_)) -> map (\i -> (i,r)) $ Set.toList ins) $ Map.assocs p1_inOutMap
-
-     adjust_in :: (Prefix,Rel) -> (IdToData,InOutRel) -> (IdToData,InOutRel)
-     adjust_in (p0,r) input@(idToData_,inOutRels_)
-        = case Map.lookup id idToData_ of
-           Nothing -> input
-           Just ds ->
-            let itd'  = Map.delete id idToData_
-                itd'' = Map.insertWith dsUnion (p0,r,ur) (dsUnion ds newDs) itd'
-                ior'  = replaceOut inOutRels_ p0 r p1 ur
-                ior'' = addNewIn ior'      ur r p0
-            in
-              (itd'',ior'')
-           where id = (p0,r,p1)
-
-     (idToData' , inOutRels')  = foldr adjust_out (idToData rels, inOutRel rels)  out_ids
-     (idToData'', inOutRels'') = foldr adjust_in  (idToData',        inOutRels')  in_ids
-
-     inOutRels''' = DMap.delete pr inOutRels''
-
-     in 
-
-     rels{idToData = idToData'',
-          inOutRel = inOutRels''' }
+allRels rels = [ (p1,r,p2) | ((p1,r),ds_out_s) <-  DMap.flatten $ outRel rels,
+                             (p2,_) <- ds_out_s ]
 
 
-addNewOut :: InOutRel -> Prefix -> Rel -> Prefix -> InOutRel
-addNewOut ior pr rel pOut
- = DMap.insertWith (tMap2 Set.union) pr rel (Set.empty,Set.singleton pOut) ior
+successors :: Relations -> Prefix -> Map Rel [(Prefix,DependencySet)]
+successors rels p = Map.findWithDefault (Map.empty) p (DMap.toMap $ outRel rels)
 
-addNewIn :: InOutRel -> Prefix -> Rel -> Prefix -> InOutRel
-addNewIn ior pr rel pIn
- = DMap.insertWith (tMap2 Set.union) pr rel (Set.singleton pIn,Set.empty) ior
-
-replaceIn :: InOutRel -> Prefix -> Rel -> Prefix -> Prefix -> InOutRel
-replaceIn ior p r pRemove pAdd
-  = let (ins,outs) = (DMap.!) ior p r
-        ins_ = Set.insert pAdd $ Set.delete pRemove ins in
-   DMap.insert p r (ins_,outs) ior
-
-replaceOut :: InOutRel -> Prefix -> Rel -> Prefix -> Prefix -> InOutRel
-replaceOut ior p r pRemove pAdd
-  = let (ins,outs) = (DMap.!) ior p r
-        outs_ = Set.insert pAdd $ Set.delete pRemove outs in
-   DMap.insert p r (ins,outs_) ior
-
-
-successors :: Relations -> Prefix -> Rel -> [(Prefix, DependencySet)]
-successors rels p r
- = case DMap.lookup p r (inOutRel rels) of
-    Nothing        -> []
-    Just (_,succs) -> (`map` Set.toList succs) $ \succ -> let ds = (Map.!) (idToData rels) (p,r,succ) in (succ, ds)
-
-outgoingLinks :: Relations -> Prefix -> [(Rel, [(Prefix, DependencySet)])]
-outgoingLinks rels p
- = case Map.lookup p (DMap.toMap $ inOutRel rels) of
-    Nothing    -> []
-    Just rToId -> [ (r,p_ds_s) | (r,(_,succs)) <- Map.assocs rToId,
-                                 let p_ds_s = [(succ,ds) | succ <- Set.toList succs, let ds = (Map.!) (idToData rels) (p,r,succ)]
-                  ]
-
-predecessors :: Relations -> Prefix -> Rel -> [(Prefix, DependencySet)]
-predecessors rels p r
- = case DMap.lookup p r (inOutRel rels) of
-    Nothing        -> []
-    Just (preds,_) -> (`map` Set.toList preds) $ \pred -> let ds = (Map.!) (idToData rels) (pred,r,p) in (pred, ds)
-
-
-incomingLinks :: Relations -> Prefix -> [(Rel,[( Prefix, DependencySet)])]
-incomingLinks rels p
- = case Map.lookup p (DMap.toMap $ inOutRel rels) of
-    Nothing     -> []
-    Just rToId -> [ (r,p_ds_s) | (r,(preds,_)) <- Map.assocs rToId,
-                                 let p_ds_s = [(pred,ds) | pred <- Set.toList preds, let ds = (Map.!) (idToData rels) (pred,r,p)]
-                  ]
-
+predecessors :: Relations -> Prefix -> Map Rel [(Prefix,DependencySet)]
+predecessors rels p = Map.findWithDefault (Map.empty) p (DMap.toMap $ inRel rels)
 
 linksFromTo :: Relations -> Prefix -> Prefix -> [Rel]
 linksFromTo rels p1 p2
- = map fst $ filter (\(_,p_d_s) -> p2 `elem` (map fst p_d_s) ) outs
-    where outs = outgoingLinks rels p1
+  = map fst $ filter (\(_,p_d_s) -> p2 `elem` (map fst p_d_s) ) outs  where outs = Map.toList $ successors rels p1
+
+-- assumes you never add twice the same relation
+insertRelation :: Relations -> Prefix -> Rel -> Prefix -> DependencySet -> Relations
+insertRelation rels p1 r p2 ds =
+ let
+  outRelMap = DMap.toMap $ outRel rels
+  inRelMap = DMap.toMap $ inRel rels
+  outRel_
+   = case Map.lookup p1 outRelMap of
+      Nothing       -> DMap $ Map.insert p1 (Map.singleton r [(p2,ds)]) outRelMap
+      Just innerMap
+        -> case Map.lookup r innerMap of
+             Nothing             -> DMap $ Map.insert p1 (Map.insert r [(p2,ds)] innerMap)                outRelMap
+             Just innerInnerList -> DMap $ Map.insert p1 (Map.insert r ((p2,ds):innerInnerList) innerMap) outRelMap
+  inRel_
+   = case Map.lookup p2 inRelMap of
+      Nothing       -> DMap $ Map.insert p2 (Map.singleton r [(p1,ds)]) inRelMap
+      Just innerMap
+        -> case Map.lookup r innerMap of
+            Nothing             -> DMap $ Map.insert p2 (Map.insert r [(p1,ds)] innerMap)                inRelMap
+            Just innerInnerList -> DMap $ Map.insert p2 (Map.insert r ((p1,ds):innerInnerList) innerMap) inRelMap
+ in
+   Relations {outRel = outRel_ , inRel = inRel_ }
+
+
+mergePrefixes :: Relations -> Prefix -> Prefix -> DependencySet -> Relations
+mergePrefixes r pr ur _ | pr == ur = r
+mergePrefixes r pr ur ds
+ = let outRel_ = DMap.moveInnerDataDMapPlusDeps ds (outRel r) pr ur
+       inRel_  = DMap.moveInnerDataDMapPlusDeps ds (inRel  r) pr ur
+   in Relations { outRel = outRel_ , inRel = inRel_ }
+
+instance Show Relations where
+ show r  = "\nAccesibility: " ++ prettyShowMap_ (DMap.toMap $ outRel r) (\v -> "(" ++ prettyShowMap_rel_bps_x v ++ ")") "\n "
+
+prettyShowMap_ :: (Show x, Show y) => Map.Map x y -> (y -> String) -> String -> String
+prettyShowMap_ dasMap valueShow separator
+ = concat $ List.intersperse separator $ map (\(k,v) -> show k ++ " -> " ++ valueShow v)
+          $ Map.toList dasMap
+
+prettyShowMap_rel_bps_x :: (Show a) => Map.Map Rel [(a,DependencySet)] -> String
+prettyShowMap_rel_bps_x dasMap
+ = concat $ List.intersperse ", " $ map (\(r,x_bp_s) -> (++) ("-" ++ show r ++ "-> ") $ concat $ List.intersperse ", "
+                                           $ map (\(x,bp) -> show x ++ " " ++ dsShow bp) x_bp_s
+                                        )
+          $ Map.toList dasMap

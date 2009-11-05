@@ -25,7 +25,6 @@ toMap (DMap m) = m
 empty :: DMap a b c
 empty = DMap $ Map.empty
 
-
 insert1 :: (Ord a, Ord b) => a -> (Map b c) -> DMap a b c -> DMap a b c
 insert1 k1 v (DMap m) = DMap $ Map.insert k1 v m
 
@@ -85,26 +84,18 @@ moveInnerDataDMap (DMap m) origKey destKey innerInnerMergeF
                                 Map.insert destKey mergedInnerMap prunedM
 
 
--- a specialised version of the previous function, that handles dependencies merging and adding
-moveInnerDataDMapPlusDeps :: (Ord a, Ord b) => DependencySet -> DMap a b [(DependencySet,c)] -> a -> a -> DMap a b [(DependencySet,c)]
+moveInnerDataDMapPlusDeps :: (Ord a, Ord b) => DependencySet -> DMap a b [(c,DependencySet)] -> a -> a -> DMap a b [(c,DependencySet)]
 moveInnerDataDMapPlusDeps newDeps (DMap m) origKey destKey
- = DMap result
-   where mOrigInnerMap = Map.lookup origKey m
-         mDestInnerMap = Map.lookup destKey m
-         innerInnerMergeF = (++)
-         prunedM = Map.delete origKey m
-         addDepsToMap :: DependencySet -> Map.Map k [(DependencySet,c)] -> Map.Map k [(DependencySet,c)]
-         addDepsToMap newBps = Map.map (addDeps newBps)
-         addDeps :: DependencySet -> [(DependencySet,k)] -> [(DependencySet,k)]
-         addDeps newBps = map (\(oldBps,el) -> (dsUnion oldBps newBps,el))
-         result = case (mOrigInnerMap, mDestInnerMap) of
-                      (Nothing, _) -> m
-                      (Just origInnerMap, Nothing) -> let origInnerMapPlusDeps = addDepsToMap newDeps origInnerMap
-                                                      in
-                                                       Map.insert destKey origInnerMapPlusDeps prunedM
-                      (Just origInnerMap, Just destInnerMap)
-                            -> let origInnerMapPlusDeps = addDepsToMap newDeps origInnerMap
-                                   mergedInnerMap       = Map.unionWith innerInnerMergeF origInnerMapPlusDeps destInnerMap
-                               in
-                                Map.insert destKey mergedInnerMap prunedM
+ = DMap
+    $ case Map.lookup origKey m of
+        Nothing  -> m
+        Just origInnerMap
+            -> let origInnerMapPlusDeps = Map.map (addDeps newDeps) origInnerMap
+                   prunedM = Map.delete origKey m
+                   addDeps newBps = map (\(el,oldBps) -> (el,dsUnion newBps oldBps))
+               in case Map.lookup destKey m of
+                    Nothing -> Map.insert destKey origInnerMapPlusDeps prunedM
+                    Just destInnerMap
+                       -> let mergedInnerMap = Map.unionWith (++) origInnerMapPlusDeps destInnerMap
+                          in  Map.insert destKey mergedInnerMap prunedM
 

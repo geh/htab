@@ -58,9 +58,8 @@ import HTab.DMap ( DMap(..), toMap )
 import qualified HTab.DMap as DMap
 import HTab.Base(moveInMap, almostCartesianProduct, doMemoize, set, list)
 
-import HTab.Relations ( Relations, emptyRels, insertRelation, mergePrefixWith,
-                        successors, predecessors, incomingLinks, outgoingLinks,
-                        linksFromTo)
+import HTab.Relations ( Relations(..), emptyRels, insertRelation, mergePrefixes,
+                        successors, predecessors, linksFromTo )
 import qualified HTab.Relations as Relations
 import qualified Data.Bimap as Bimap
 
@@ -82,7 +81,7 @@ type Exist_structure  = Set.Set PrFormula
 type Diff_structure   = Set.Set PrFormula
 type Merge_structure  = Set.Set (DependencySet, Prefix, DS.Pointer)
 type RoleInc_structure= Set.Set (DependencySet, Prefix, Prefix, [Rel])
-type Box_constraints  = DMap Prefix Rel [(DependencySet,Formula)]
+type Box_constraints  = DMap Prefix Rel [(Formula,DependencySet)]
 
 type Dia_rule_chart    = Map.Map Prefix (Set.Set Formula)
 type DiaX_rule_chart   = Map.Map Prefix (Set.Set (RelSymbol,Formula))
@@ -118,7 +117,8 @@ data BlockingMode = InclusionBlockingGlobal | InclusionBlockingChain | ChainBloc
 
 type TrueForms = DMap Prefix Formula DependencySet
 
-data Branch = Branch {clashStr :: Clashable_info,
+data Branch =
+              Branch {clashStr :: Clashable_info,
                  -- pending formulas / todo lists
                       todoList :: TodoList,
                  -- immediate rules constraints
@@ -170,7 +170,7 @@ emptyBranch clp fLang relInfo_ =
                 Branch
                 { clashStr = DMap.empty::Clashable_info,
                   todoList = emptyTodoList clp,
-                  accStr   =emptyRels,
+                  accStr   = emptyRels,
                   boxConstrBwd=DMap.empty::Box_constraints,
                   boxConstrFwd=DMap.empty::Box_constraints,
                   diaRlCh=Map.empty::Dia_rule_chart,
@@ -442,7 +442,7 @@ merge clp br pr fDs pointer -- pointer is a nominal or a prefix
                       newPrefToForms  = moveInMap (prefToForms br) oldUr newUr Set.union
                       newBoxConstrFwd = DMap.moveInnerDataDMapPlusDeps fDs (boxConstrFwd br) oldUr newUr
                       newBoxConstrBwd = DMap.moveInnerDataDMapPlusDeps fDs (boxConstrBwd br) oldUr newUr
-                      newAccStr       = mergePrefixWith (accStr br) oldUr newUr fDs
+                      newAccStr       = mergePrefixes (accStr br) oldUr newUr fDs
                       newTrueForms    = DMap.moveInnerDataDMap (trueForms br) oldUr newUr dsUnion
                       newDiaRlCh      = moveInMap (diaRlCh br)  oldUr newUr Set.union
                       newDiaXRlCh     = moveInMap (diaXRlCh br) oldUr newUr Set.union
@@ -450,23 +450,23 @@ merge clp br pr fDs pointer -- pointer is a nominal or a prefix
 
                       -- structures that combine
                       mapBoxFwd = map (\idx -> Map.findWithDefault Map.empty idx (toMap $ boxConstrFwd br) ) [ur1,ur2]
-                      mapAccFwd = map (Map.fromList . (outgoingLinks (accStr br))) [ur1,ur2]
+                      mapAccFwd = map (successors (accStr br)) [ur1,ur2]
                       formulasToSend1 = concatMap (boxRule currentDeps) $ almostCartesianProduct mapBoxFwd mapAccFwd
 
                       mapBoxBwd = map (\idx -> Map.findWithDefault Map.empty idx (toMap $ boxConstrBwd br) ) [ur1,ur2]
-                      mapAccBwd = map (Map.fromList . (incomingLinks (accStr br))) [ur1,ur2]
+                      mapAccBwd = map (predecessors (accStr br)) [ur1,ur2]
                       formulasToSend2 = concatMap (boxRule currentDeps) $ almostCartesianProduct mapBoxBwd mapAccBwd
 
-                      funNomsToSend = addFNom $ filter ((isFunctional (relInfo br)) . fst) $ outgoingLinks (accStr br) oldUr
-                       where addFNom :: [(Rel, [(Prefix,DependencySet)])] -> [PrFormula]
+                      funNomsToSend = addFNom $ Map.filterWithKey (\r _ -> isFunctional (relInfo br) r) $ successors (accStr br) oldUr
+                       where addFNom :: Map Rel [(Prefix,DependencySet)] -> [PrFormula]
                              addFNom = concatMap (\(r,pds) ->
                                                     map (\(p,ds) -> PrFormula p (dsUnion ds fDs) (funcNominal r newUr)) pds
-                                                 )
-                      injNomsToSend  = addINom $ filter ((isInjective (relInfo br)) . fst) $ incomingLinks (accStr br) oldUr
-                       where addINom :: [(Rel, [(Prefix,DependencySet)])] -> [PrFormula]
+                                                 ) . Map.toList
+                      injNomsToSend  = addINom $ Map.filterWithKey (\r _ -> isInjective (relInfo br) r) $ predecessors (accStr br) oldUr
+                       where addINom :: Map Rel [(Prefix,DependencySet)] -> [PrFormula]
                              addINom = concatMap (\(r,pds) ->
                                                     map (\(p,ds) -> PrFormula p (dsUnion ds fDs) (injNominal r newUr)) pds
-                                                 )
+                                                 ) . Map.toList
 
                       formulasToAdd   = nubAndMergeDeps $     formulasToSend1
                                                            ++ formulasToSend2
@@ -580,12 +580,12 @@ insertUEV_addFormula br clp mi ds ff
 
 {-     box-related constraints     -}
 
-boxRule :: DependencySet -> (Map.Map Rel [(DependencySet,Formula)], Map.Map Rel [(Prefix,DependencySet)]) -> [PrFormula]
+boxRule :: DependencySet -> (Map.Map Rel [(Formula,DependencySet)], Map.Map Rel [(Prefix,DependencySet)]) -> [PrFormula]
 boxRule deps (mapBox, mapAcc)
  = [PrFormula p (dsUnions [deps,ds1,ds2]) f |
                       r1 <- Map.keys mapBox,
                       r2 <- Map.keys mapAcc,    r1 == r2,
-                      (ds1,f) <- (Map.!) mapBox r1,
+                      (f,ds1) <- (Map.!) mapBox r1,
                       (p,ds2) <- (Map.!) mapAcc r2     ]
 
 addBoxConstraint :: Prefix -> RelSymbol -> Formula -> DependencySet -> CmdLineParams -> Branch -> BranchInfo
@@ -593,7 +593,7 @@ addBoxConstraint pr_ (RelSymbol r) f ds clp br
  = addFormulas clp newBr toAdd
    where pr = getUrfather br (DS.Prefix pr_)
          newBr = br{boxConstrFwd = updateBoxConstr pr r f ds (boxConstrFwd br)}
-         accessiblePrDs   = successors (accStr br) pr r
+         accessiblePrDs   = Map.findWithDefault [] r $ successors (accStr br) pr
          toAdd = symApplications ++ transApplications ++ boxApplications
          transApplications = if isTransitive (relInfo br) r
                              then map (\(p,ds2) -> PrFormula p (dsUnion ds ds2) (Box (RelSymbol r) f)) accessiblePrDs
@@ -605,7 +605,7 @@ addBoxConstraint pr_ (InvRelSymbol r) f ds clp br
  = addFormulas clp newBr toAdd
    where pr = getUrfather br (DS.Prefix pr_)
          newBr = br{boxConstrBwd = updateBoxConstr pr r f ds (boxConstrBwd br)}
-         accessiblePrDs        = predecessors (accStr br) pr r
+         accessiblePrDs          = Map.findWithDefault [] r $ predecessors (accStr br) pr
          toAdd = transApplications ++ boxApplications
          transApplications = if isTransitive (relInfo br) r
                              then map (\(p,ds2) -> PrFormula p (dsUnion ds ds2) (Box (InvRelSymbol r) f)) accessiblePrDs
@@ -615,11 +615,11 @@ addBoxConstraint pr_ (InvRelSymbol r) f ds clp br
 updateBoxConstr :: Prefix -> Rel -> Formula -> DependencySet -> Box_constraints -> Box_constraints
 updateBoxConstr p1_ r_ f_ ds_ (DMap boxConstr_) =
   case Map.lookup p1_ boxConstr_ of
-    Nothing       -> DMap $ Map.insert p1_ (Map.singleton r_ [(ds_,f_)]) boxConstr_
+    Nothing       -> DMap $ Map.insert p1_ (Map.singleton r_ [(f_,ds_)]) boxConstr_
     Just innerMap ->
        case Map.lookup r_ innerMap of
-        Nothing             -> DMap $ Map.insert p1_ (Map.insert r_ [(ds_,f_)] innerMap)                boxConstr_
-        Just innerInnerList -> DMap $ Map.insert p1_ (Map.insert r_ ((ds_,f_):innerInnerList) innerMap) boxConstr_
+        Nothing             -> DMap $ Map.insert p1_ (Map.insert r_ [(f_,ds_)] innerMap)                boxConstr_
+        Just innerInnerList -> DMap $ Map.insert p1_ (Map.insert r_ ((f_,ds_):innerInnerList) innerMap) boxConstr_
 
 
 -- [*]phi --> phi & [][*]phi
@@ -653,8 +653,8 @@ addAccFormula clp br (AccFormula ds (RelSymbol r) p1_ p2_)
    where toAdd = transApplications ++ funcApplications ++ injApplications ++ boxApplications
          transApplications = if isTransitive (relInfo br) r
                               then
-                               (  ( map (\(ds2,f) -> PrFormula p2 (dsUnion ds ds2) (Box (RelSymbol r) f)) toSendFwd )
-                               ++ ( map (\(ds2,f) -> PrFormula p1 (dsUnion ds ds2) (Box (RelSymbol r) f)) toSendBwd )  )
+                               (  ( map (\(f,ds2) -> PrFormula p2 (dsUnion ds ds2) (Box (RelSymbol r) f)) toSendFwd )
+                               ++ ( map (\(f,ds2) -> PrFormula p1 (dsUnion ds ds2) (Box (RelSymbol r) f)) toSendBwd )  )
                               else []
          funcApplications = if isFunctional (relInfo br) r
                              then [PrFormula p2 ds (funcNominal r p1)] -- add nominal to destination
@@ -662,8 +662,8 @@ addAccFormula clp br (AccFormula ds (RelSymbol r) p1_ p2_)
          injApplications = if isInjective (relInfo br) r
                             then [PrFormula p1 ds (injNominal r p1)] -- add nominal to origin
                             else []
-         boxApplications =  (  ( map (\(ds2,f) -> PrFormula p2 (dsUnion ds ds2) f) toSendFwd )
-                            ++ ( map (\(ds2,f) -> PrFormula p1 (dsUnion ds ds2) f) toSendBwd )  )
+         boxApplications =  (  ( map (\(f,ds2) -> PrFormula p2 (dsUnion ds ds2) f) toSendFwd )
+                            ++ ( map (\(f,ds2) -> PrFormula p1 (dsUnion ds ds2) f) toSendBwd )  )
          p1 = getUrfather br (DS.Prefix p1_)
          p2 = getUrfather br (DS.Prefix p2_)
          toSendFwd = Map.findWithDefault [] r $ Map.findWithDefault Map.empty p1 (toMap $ boxConstrFwd br)
