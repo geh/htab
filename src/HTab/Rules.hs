@@ -112,7 +112,7 @@ getMods _ (UBlockRule p1 p2 d) =
    where
      choiceDisequal = [PrFormula p1 deps      nequalNom,
                        PrFormula p2 deps (neg nequalNom)]
-     nequalNom = nom $ NomSymbol $ "0n_neq_" ++ show p1 ++ "_" ++ show p2
+     nequalNom = nom $ NomSymbol $ show p1 ++ "/" ++ show p2
      deps = dsInsert d dsEmpty
 
 getMods _ (DisjRule _ toadds) =
