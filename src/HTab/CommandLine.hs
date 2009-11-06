@@ -42,6 +42,7 @@ data CmdLineParams = CLP {
            unitProp        :: Bool,
            backJumping     :: Bool,
            uBlocking       :: Bool,
+           noLoopCheck     :: Bool,
            genModel        :: Maybe FilePath,
            quietMode       :: Bool,
            showFormula     :: Bool,
@@ -149,6 +150,10 @@ options =
           ["unrestricted-blocking"]
           (NoArg $ \c -> return c{uBlocking = True})
           "enable unrestricted blocking (disabled by default)",
+   Option ['N']
+          ["no-loop-check"]
+          (NoArg $ \c -> return c{noLoopCheck = True})
+          "disable all loop checks",
    Option ['F']
           ["fair-strategy"]
           (NoArg $ \c -> return c{fairStrategy = True})
@@ -269,6 +274,7 @@ defaultParams = CLP {showHelp = False,
                      unitProp    = True,
                      backJumping = True,
                      uBlocking   = False,
+                     noLoopCheck = False,
                      genModel    = Nothing,
                      quietMode   = False,
                      showFormula = False,

@@ -29,7 +29,7 @@ import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewNomTestRe
                     ReducedDisjunct(..), newPropBaseName, newNomBaseName,
                     ScheduledRule(..), TodoList(..),
                     deleteUEV, insertUEV_addFormula )
-import HTab.CommandLine(CmdLineParams, semBranch, unitProp, strategyStr, uBlocking)
+import HTab.CommandLine(CmdLineParams, semBranch, unitProp, strategyStr, uBlocking, noLoopCheck)
 import HTab.RuleMetadata(RuleId(..))
 import qualified HTab.DisjSet as DS
 
@@ -238,7 +238,7 @@ ruleByChar br clp d char =
  where
   todos  = todoList br
   applicableDiaRule   = case [ f | f@(PrFormula pr _ _) <- Set.toAscList $ diaStr todos,
-                                    isNotBlocked br pr] of
+                                    noLoopCheck clp || isNotBlocked br pr] of
                            []    -> Nothing
                            (f:_) -> Just (diaRule f br, todos{diaStr = Set.delete f $ diaStr todos})
 
