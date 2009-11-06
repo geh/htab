@@ -297,9 +297,9 @@ data ScheduledRule =   SR_Formula PrFormula
 
 instance Show ScheduledRule where
  show (SR_Formula pf)    = show pf
- show (SR_UBlocking i j) = "SR " ++ show (i,j)
- show (SR_Merge pr po _) = "SR Merge " ++ show (pr,po)
- show (SR_Inclusion p1 ss p2 _) = "SR role inclusion " ++ show p1 ++ "<" ++ show ss ++ ">" ++ show p2
+ show (SR_UBlocking i j) = "UB " ++ show (i,j)
+ show (SR_Merge pr po _) = "Merge " ++ show (pr,po)
+ show (SR_Inclusion p1 ss p2 _) = "Role inclusion " ++ show p1 ++ "<" ++ show ss ++ ">" ++ show p2
 
 emptyTodoList :: CmdLineParams -> TodoList
 emptyTodoList clp =
@@ -377,7 +377,10 @@ addToTodo pf@(PrFormula p ds f2) br =
   where
    newTodoList =
      case todoList br of
-      Fair srs -> Fair (srs ++ [SR_Formula pf])
+      Fair srs -> case f2 of
+                   Lit (PosLit(N(NomSymbol n)))
+                       -> Fair ( srs ++ [SR_Merge p (DS.Nominal n) ds] )
+                   _   -> Fair ( srs ++ [SR_Formula pf])
       utodo    ->
        case f2 of
          Dis _      -> utodo{disjStr  = Set.insert pf (disjStr utodo)}
