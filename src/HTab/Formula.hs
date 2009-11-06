@@ -23,6 +23,7 @@ prop, nom, formulaLanguageInfo, prefix,
 checkIfVariableNegatedOnce, replaceVar,
 firstPrefixedFormula,
 parse, simpleParse, Theory, RelInfo, Task,
+showRelInfo,
 encodeValidityTest, encodeSatTest,
 HyLoFormula, extractNominals,showNom,RelProperty(..)
 )
@@ -125,6 +126,9 @@ data RelProperty   =   Reflexive
                      | TRClosureOf Rel
                      | SubsetOf [Rel]
                      deriving (Eq, Show, Ord)
+
+showRelInfo :: RelInfo -> String
+showRelInfo = Map.foldWithKey (\rel v -> (++ " " ++ rel ++ " -> " ++ show v )) ""
 
 parse :: CmdLineParams -> String -> (Theory,RelInfo,[Task])
 parse clp s

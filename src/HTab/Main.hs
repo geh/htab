@@ -20,7 +20,7 @@ import HTab.Statistics( Statistics, initialStatisticsStateFor, printOutAllMetric
 import HTab.Base( vPutStrLn )
 import HTab.Tableau( liftStats, tableau, OpenFlag(..) )
 import HTab.Formula( formulaLanguageInfo, Theory, RelInfo, Task,
-                     Formula, encodeValidityTest, encodeSatTest )
+                     Formula, encodeValidityTest, encodeSatTest, showRelInfo )
 import qualified HTab.Formula as F
 import HTab.ModelGen ( Model )
 
@@ -95,8 +95,12 @@ runOneTask (query,mOutFile,fs) relInfo theory clp ts=
      --
      let f = case query of { Valid -> encodeValidityTest relInfo theory fs ; Satisfiable -> encodeSatTest relInfo theory fs}
      --
-     f `seq` when (showFormula clp) $ myPutStrLn ("\nInput for SAT test:\n{ " ++ show f ++ " }\nEnd of input\n")
-     when (showFormula clp) $ myPutStrLn $ "Relations properties :" ++ show relInfo
+     f `seq` when (showFormula clp)
+              $ myPutStrLn
+               $ unlines ["Input for SAT test:",
+                          "{ " ++ show f ++ " }",
+                          "End of input",
+                          "Relations properties :" ++ showRelInfo relInfo ]
      --
      let fLang         = formulaLanguageInfo f
      let initialBranch = emptyBranch clp fLang relInfo
