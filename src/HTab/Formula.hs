@@ -24,7 +24,7 @@ checkIfVariableNegatedOnce, replaceVar,
 firstPrefixedFormula,
 parse, simpleParse, Theory, RelInfo, Task,
 showRelInfo,
-encodeValidityTest, encodeSatTest,
+encodeValidityTest, encodeSatTest, encodeRetrieveTask,
 HyLoFormula, extractNominals,showNom,RelProperty(..)
 )
 
@@ -376,6 +376,11 @@ encodeValidityTest relI th fs
 encodeSatTest :: RelInfo -> Formula -> [HyLoFormula] -> Formula
 encodeSatTest relI th fs
  = conj th (convert relI fs)
+
+encodeRetrieveTask :: RelInfo -> LanguageInfo -> Formula -> [HyLoFormula] -> ([NomSymbol],[Formula])
+encodeRetrieveTask relI fLang theory fs
+ = (noms , map (\n -> conj theory (At n (neg $ convert relI fs))) noms)
+   where noms = languageNoms fLang
 
 -- CONSTRUCTORS
 

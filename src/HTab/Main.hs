@@ -20,7 +20,8 @@ import HTab.Statistics( Statistics, initialStatisticsStateFor, printOutAllMetric
 import HTab.Base( vPutStrLn )
 import HTab.Tableau( liftStats, tableau, OpenFlag(..) )
 import HTab.Formula( formulaLanguageInfo, Theory, RelInfo, Task,
-                     Formula, encodeValidityTest, encodeSatTest, showRelInfo )
+                     Formula, encodeValidityTest, encodeSatTest, encodeRetrieveTask,
+                     showRelInfo )
 import qualified HTab.Formula as F
 import HTab.ModelGen ( Model )
 
@@ -93,47 +94,81 @@ runOneTask (query,mOutFile,fs) relInfo theory clp ts=
  $ do
      let myPutStrLn str = vPutStrLn str (not $ quietMode clp)
      --
-     myPutStrLn $ "\n* " ++ case query of {Valid -> "Validity task"; Satisfiable -> "Satisfiability task"}
+     myPutStrLn $ "\n* " ++ case query of {Valid       -> "Validity task";
+                                           Satisfiable -> "Satisfiability task";
+                                           Retrieve    -> "Instance retrieval task"}
      --
-     let f = case query of { Valid -> encodeValidityTest relInfo theory fs ; Satisfiable -> encodeSatTest relInfo theory fs}
+     result <-
+      case query of
+        Retrieve
+          ->
+            do let fLang = formulaLanguageInfo theory
+               let initialBranch = emptyBranch clp fLang relInfo
+               let (noms,encfs) = encodeRetrieveTask relInfo fLang theory fs
+               --
+               myPutStrLn $ "Instances making true: " ++ show fs
+               --
+               results <- mapM (tableauInit clp ts . addFirstFormulas clp initialBranch fLang) encfs
+               if not $ null [ TIMEOUT | (TIMEOUT,_)  <- results]
+                 then do myPutStrLn "TIMEOUT"
+                         return TIMEOUT_
+                 else do let goodnoms = [ n | (n,(CLOSED _ ,_))  <- zip noms results]
+                         myPutStrLn $ show goodnoms
+                         let doWrite f = do writeFile f (show goodnoms ++ "\n")
+                                            unless (quietMode clp) $ vPutStrLn ("Nominals saved as " ++ f) (logState clp)
+                         maybe (return ()) doWrite mOutFile
+                         return SUCCESS
+
+        valOrSat
+          ->
+            do let f = case valOrSat of
+                        Valid       -> encodeValidityTest relInfo theory fs
+                        Satisfiable -> encodeSatTest      relInfo theory fs
+                        _           -> error "never happens"
+               --
+               f `seq` when (showFormula clp)
+                        $ myPutStrLn
+                         $ unlines ["Input for SAT test:",
+                                    "{ " ++ show f ++ " }",
+                                    "End of input",
+                                    "Relations properties :" ++ showRelInfo relInfo ]
+               --
+               let fLang         = formulaLanguageInfo f
+               let initialBranch = emptyBranch clp fLang relInfo
+               let branchInfo    = addFirstFormulas clp initialBranch fLang f
+               --
+               result <- tableauInit clp ts branchInfo 
+               --
+               case result of
+                  (OPEN m, stats)   -> do myPutStrLn $
+                                            case query of
+                                                Valid       -> "The formula is not valid."
+                                                Satisfiable -> "The formula is satisfiable."
+                                                _           -> error "never happens"
+                                          saveGenModel clp mOutFile m
+                                          unless (quietMode clp) $
+                                             printOutAllMetrics' stats
+                                          return SUCCESS
+                  (CLOSED _, stats) -> do myPutStrLn $
+                                            case query of
+                                                Valid       -> "The formula is valid."
+                                                Satisfiable -> "The formula is unsatisfiable."
+                                                _           -> error "never happens"
+                                          unless (quietMode clp) $
+                                             printOutAllMetrics' stats
+                                          return FAILURE
+                  (TIMEOUT, stats)  -> do myPutStrLn "TIMEOUT"
+                                          unless (quietMode clp) $
+                                             printOutAllMetrics' stats
+                                          return TIMEOUT_
      --
-     f `seq` when (showFormula clp)
-              $ myPutStrLn
-               $ unlines ["Input for SAT test:",
-                          "{ " ++ show f ++ " }",
-                          "End of input",
-                          "Relations properties :" ++ showRelInfo relInfo ]
-     --
-     let fLang         = formulaLanguageInfo f
-     let initialBranch = emptyBranch clp fLang relInfo
-     let branchInfo    = addFirstFormulas clp initialBranch f fLang
-     --
-     result <- tableauInit branchInfo clp ts
-     --
-     case result of
-        (OPEN m, stats)   -> do myPutStrLn $
-                                  case query of
-                                      Valid       -> "The formula is not valid."
-                                      Satisfiable -> "The formula is satisfiable."
-                                saveGenModel clp mOutFile m
-                                unless (quietMode clp) $
-                                   printOutAllMetrics' stats
-        (CLOSED _, stats) -> do myPutStrLn $
-                                  case query of
-                                      Valid       -> "The formula is valid."
-                                      Satisfiable -> "The formula is unsatisfiable."
-                                unless (quietMode clp) $
-                                   printOutAllMetrics' stats
-        (TIMEOUT, stats)  -> do myPutStrLn "TIMEOUT"
-                                unless (quietMode clp) $
-                                   printOutAllMetrics' stats
-     --
-     return $ case (query, fst result) of
-               (     _     , TIMEOUT ) -> TIMEOUT_
-               (Satisfiable, OPEN   _) -> SUCCESS
-               (Satisfiable, CLOSED _) -> FAILURE
-               (Valid      , OPEN   _) -> FAILURE
-               (Valid      , CLOSED _) -> SUCCESS
+     return $ case (query, result) of
+               (     _     , TIMEOUT_) -> TIMEOUT_
+               (Satisfiable, SUCCESS ) -> SUCCESS
+               (Satisfiable, FAILURE ) -> FAILURE
+               (Valid      , SUCCESS ) -> FAILURE
+               (Valid      , FAILURE ) -> SUCCESS
+               (Retrieve   , _       ) -> SUCCESS
 
 --
 
@@ -142,8 +177,8 @@ saveGenModel clp mOutFile m = maybe (return ()) doWrite mOutFile
     where doWrite f = do writeFile f (show m)
                          unless (quietMode clp) $ vPutStrLn ("Model saved as " ++ f) (logState clp)
 
-tableauInit :: BranchInfo -> CmdLineParams -> TimeoutSignal -> IO (OpenFlag,Statistics)
-tableauInit bi clp ts =
+tableauInit :: CmdLineParams -> TimeoutSignal -> BranchInfo -> IO (OpenFlag,Statistics)
+tableauInit clp ts bi =
         do vPutStrLn ">> Starting rules application" (logState clp)
            ((openflag,_),stats) <- initStatsState $ initBranchState bd $ tableauStart clp
            return (openflag,stats)

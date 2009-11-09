@@ -1076,8 +1076,8 @@ nextName name
 -- preparation of the branch at the beginning of the calculus:
 --  - add the input formula at prefix 0
 --  - add a nominal formula at a fresh prefix for each nominal of the input formula
-addFirstFormulas :: CmdLineParams -> Branch -> Formula -> LanguageInfo -> BranchInfo
-addFirstFormulas clp br_ f fLang
+addFirstFormulas :: CmdLineParams -> Branch -> LanguageInfo -> Formula -> BranchInfo
+addFirstFormulas clp br_ fLang f
  = addFormula clp br3 pf
     where ns = languageNoms fLang
           nbNs = length ns
