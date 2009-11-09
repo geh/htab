@@ -89,10 +89,7 @@ type BoxX_rule_chart   = Map.Map Prefix (Set.Set Formula)
 type Down_rule_chart   = Map.Map Prefix (Set.Set Formula)
 type At_rule_chart     = Set.Set Formula
 type Exist_rule_chart  = Set.Set Formula
-type Diff_Dia_rule_chart  = Map.Map Formula (PropSymbol,Bool)
-       -- maps D(phi) formulas to the prop symbol used to differentiate
-       -- the current prefix from the one used to contain (phi) , and to a boolean indicating if a second
-       -- different world has already been created
+type Diff_Dia_rule_chart = Map.Map Formula (Maybe PropSymbol)
 type DownVarRelevant_chart = Map.Map Formula Bool
 
 type Univ_constraints  = [(DependencySet,Formula)]
@@ -981,9 +978,8 @@ b_rule  pr f ds clp br
     where x = NomSymbol "x"
 --
 
-addDiffRuleCheck :: Branch -> Formula -> PropSymbol -> Bool -> Branch
-addDiffRuleCheck br f propsym b =
-  br{dDiaRlCh=Map.insert f (propsym,b) (dDiaRlCh br)}
+addDiffRuleCheck :: Branch -> Formula -> Maybe PropSymbol -> Branch
+addDiffRuleCheck br f mp = br{dDiaRlCh=Map.insert f mp (dDiaRlCh br)}
 
 --
 

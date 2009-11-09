@@ -10,13 +10,11 @@ import qualified Data.Set as Set
 import qualified Data.Map as Map
 import Data.Maybe ( listToMaybe, catMaybes )
 
-import qualified HTab.DMap as DMap
-
-import HTab.Formula( Formula(..), PrFormula(..), showLess, neg, Atom(..),
+import HTab.Formula( Formula(..), PrFormula(..), showLess, neg,
                      Dependency, DependencySet, dsUnion, dsInsert, dsEmpty,
                      prefix, AccFormula(..), Rel,
                      Prefix, NomSymbol(..), PropSymbol(..), RelSymbol(..),
-                     disj, conj, nom, prop, replaceVar )
+                     conj, nom, prop, replaceVar )
 import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewNomTestRelevance,
                     BranchInfo(..),
                     addFormulas, addAccFormula,
@@ -40,7 +38,7 @@ data BranchModification =    BM_AddFormulas   [PrFormula]
                            | BM_AddDiaRuleCheck Prefix Formula
                            | BM_AddDiaXRuleCheck Prefix (RelSymbol,Formula)
                            | BM_AddDownRuleCheck Prefix Formula
-                           | BM_AddDiffRuleCheck Formula PropSymbol Bool
+                           | BM_AddDiffRuleCheck Formula (Maybe PropSymbol)
                            | BM_CreateNewPref
                            | BM_CreateNewProp
                            | BM_CreateNewNomTestRelevance Formula
@@ -132,35 +130,28 @@ getMods _ (DownRule (PrFormula pr _ f) toadd1 toadd2) =
 
 getMods br (DiffRule (pr, ds , f2)) =
  case Map.lookup f2 (dDiaRlCh br) of
-  Nothing -> [[BM_CreateNewPref, BM_CreateNewProp,
-               BM_AddFormulas [PrFormula newPref ds f2,
-                               PrFormula newPref ds (prop newProp),
-                               PrFormula pr      ds (neg $ prop newProp)],
-               BM_AddDiffRuleCheck f2 newProp False
-             ]]
-              where newPref = getNewPref br
-                    newProp = getNewProp br
-
-  Just (diffProp,doneTwiceBool)
-          -> -- the "different place" for this D-formula has already been created
-                   case DMap.lookup pr (P diffProp) (clashStr br) of -- are we already at the "different place" ?
-                    Nothing -> [[BM_AddFormulas [PrFormula pr ds (disj (neg $ prop diffProp) (D f2))]
-                                 -- no, so mark oneself as different from the "different place"; and when it is no longer true,
-                                 -- we will generate another different world
-                               ]]
-                    Just (bool_,ds_) ->
-                     if bool_ && not doneTwiceBool -- we need to create a "second different place"
-                      then
-                        let newPref = getNewPref br
-                            newProp = getNewProp br
-                        in
-                        [[BM_CreateNewPref, BM_CreateNewProp,
-                          BM_AddFormulas [PrFormula newPref (dsUnion ds ds_) f2,
-                                          PrFormula newPref (dsUnion ds ds_) (prop newProp),
-                                          PrFormula pr      (dsUnion ds ds_) (neg $ prop newProp)],
-                          BM_AddDiffRuleCheck f2 newProp True
-                        ]]
-                      else [[]]
+  Nothing -> [[BM_AddDiffRuleCheck f2 Nothing,
+               BM_CreateNewPref, BM_CreateNewPref,
+               BM_CreateNewProp,
+               BM_AddFormulas [PrFormula newPref1 ds f2,
+                               PrFormula newPref2 ds f2,
+                               PrFormula newPref1 ds (      prop newProp),
+                               PrFormula newPref2 ds (neg $ prop newProp),
+                               PrFormula pr       ds (neg $ prop newProp)]
+               ],
+              [BM_AddDiffRuleCheck f2 (Just newProp),
+               BM_CreateNewPref,
+               BM_CreateNewProp,
+               BM_AddFormulas [PrFormula newPref1 ds f2,
+                               PrFormula newPref1 ds (      prop newProp),
+                               PrFormula pr       ds (neg $ prop newProp)]
+               ]
+             ]
+              where newPref1 = getNewPref br
+                    newPref2 = newPref1 + 1
+                    newProp  = getNewProp br
+  Just Nothing          -> [[]]
+  Just (Just diffProp)  -> [[BM_AddFormulas [PrFormula pr ds (neg $ prop diffProp)]]]
 
 getMods _ (DiscardRule _) = [[]]
 
@@ -218,7 +209,7 @@ scheduledRuleToRule br clp d (SR_Formula pf@(PrFormula _ _ f2)) =
   At _ _    -> atRule pf br
   Down _ _  -> downRule pf br
   E _       -> existRule pf br
-  D _       -> diffRule pf
+  D _       -> diffRule pf d
   _         -> error "scheduledRuleToRule, incorrect formula kind"
 
 ruleByChar :: Branch -> CmdLineParams -> Dependency -> Char -> Maybe (Rule,TodoList)
@@ -255,7 +246,7 @@ ruleByChar br clp d char =
                            return (existRule f br, todos{existStr = new})
 
   applicableDiffRule  = do (f,new) <- Set.minView $ diffStr todos
-                           return (diffRule f, todos{diffStr = new})
+                           return (diffRule f d, todos{diffStr = new})
 
   applicableRoleIncRule = do ((ds, p1, p2, ss),new) <- Set.minView $ roleIncStr todos
                              return (RoleIncRule p1 ss p2 (dsInsert d ds), todos{roleIncStr = new})
@@ -295,7 +286,7 @@ applyMod  _  br (BM_AddDownRuleCheck pr f)         = BranchOK $ addDownRuleCheck
 applyMod clp br (BM_CreateNewPref)                 = createNewPref clp br
 applyMod  _  br (BM_CreateNewProp)                 = BranchOK $ createNewProp br
 applyMod  _  br (BM_CreateNewNomTestRelevance f)   = BranchOK $ createNewNomTestRelevance br f
-applyMod  _  br (BM_AddDiffRuleCheck f pr b)       = BranchOK $ addDiffRuleCheck br f pr b
+applyMod  _  br (BM_AddDiffRuleCheck f mp)         = BranchOK $ addDiffRuleCheck br f mp
 applyMod  _  br (BM_AddParentPrefix son father)    = BranchOK $ addParentPrefix br son father
 applyMod  _  br (BM_Clash ds (PrFormula pr ds2 f)) = BranchClash br pr (dsUnion ds ds2) f
 applyMod  _  br (BM_UpdateUBBookKeep p1 p2)        = BranchOK $ updateUBBookKeep p1 p2 br
@@ -345,11 +336,11 @@ existRule f@(PrFormula _ ds (E f2)) br
 existRule _ _ = error $ "existRule"
 
 -- D
-diffRule :: PrFormula -> Rule
-diffRule (PrFormula pr ds (D f2))
-  = DiffRule (pr, ds, f2)
+diffRule :: PrFormula -> Dependency -> Rule
+diffRule (PrFormula pr ds (D f2)) d
+  = DiffRule (pr, dsInsert d ds, f2)
 
-diffRule _ = error $ "diffRule"
+diffRule _ _ = error $ "diffRule"
 
 -- disjunction
 disjRule :: CmdLineParams -> PrFormula -> Branch -> Dependency -> Rule
