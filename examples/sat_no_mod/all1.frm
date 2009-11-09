@@ -45,3 +45,7 @@ query (satisfiable? , "out2") {
  unknown:<parentOf>jean
 }
 
+query (retrieve , "retrieve1") {
+ <youngerThan>jean
+}
+
