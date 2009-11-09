@@ -81,8 +81,9 @@ runTasks2 (theory,relInfo,(hd:tl)) clp ts =
  do res <- runOneTask hd relInfo theory clp ts
     case res of
       SUCCESS | length tl == 0 -> return SUCCESS
-              | otherwise      -> runTasks2  (theory,relInfo,tl) clp ts
-      failOrTimeout            -> return failOrTimeout
+              | otherwise      -> runTasks2 (theory,relInfo,tl) clp ts
+      failOrTimeout            -> do runTasks2 (theory,relInfo,tl) clp ts
+                                     return failOrTimeout
 
 --
 
