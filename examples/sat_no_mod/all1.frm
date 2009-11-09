@@ -14,7 +14,8 @@ relations    { love,
                fatherOf,
                motherOf,
                parentOf : {equals {fatherOf,motherOf}},
-               youngerThan : {transitive, subsetof parentOf}
+               childOf : {inverseof parentOf},
+               youngerThan : {transitive, subsetof childOf}
              }
 
 }
