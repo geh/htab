@@ -1,3 +1,9 @@
+* 2009.11.10 : 1.5.2
+      o fix bug that made 1.5.1 nearly unusable
+      o instance retrieval handling (return all nominals making true a given formula)
+      o add example formulas for all supported languages
+      o add a --no-loop-check switch (to use with -U -F)
+      o no longer need --simple if the first word of the input is "begin"
 * 2009.10.29 : 1.5.1
       o role inclusion and role equality support of the form
          r subsetof {s,t,u}
