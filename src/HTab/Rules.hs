@@ -50,14 +50,14 @@ data BranchModification =    BM_AddFormulas   [PrFormula]
                            | BM_Merge Prefix DS.Pointer DependencySet
 
 -- each rule constructor contains exactly the needed data to know the effect of the rule
-data Rule =  DiaRule    PrFormula AccFormula PrFormula        -- creates a prefix
+data Rule =  DiaRule    PrFormula -- creates a prefix
            | DiaXRule   PrFormula Dependency
            | DisjRule   PrFormula [PrFormula]
            | SemBrRule  PrFormula [[PrFormula]]
-           | AtRule     PrFormula PrFormula
-           | DownRule   PrFormula PrFormula PrFormula
-           | DiffRule   (Prefix, DependencySet, Formula)
-           | ExistModRule PrFormula PrFormula                 -- creates a prefix
+           | AtRule     PrFormula
+           | DownRule   PrFormula
+           | DiffRule   PrFormula Dependency
+           | ExistRule  PrFormula                 -- creates a prefix
            | DiscardRule PrFormula
            | ClashRule DependencySet PrFormula
            | UBlockRule Prefix Prefix Dependency
@@ -69,18 +69,24 @@ data Rule =  DiaRule    PrFormula AccFormula PrFormula        -- creates a prefi
 
 getMods :: Branch -> Rule -> [[BranchModification]]
 getMods _ (ClashRule ds f) = [[BM_Clash ds f]]
+getMods _ (MergeRule p n ds)= [[BM_Merge p n ds]]
 
 getMods _ (RoleIncRule p1 ss p2 ds) = [[BM_AddAccFormula (AccFormula ds (RelSymbol s) p1 p2)] | s <- ss]
 
-getMods _ (MergeRule p n ds)=
- [[BM_Merge p n ds]]
+getMods br (DiaRule df@(PrFormula pr ds f@(Dia r f2)))
+ = if diaAlreadyDone br df
+    then getMods br (DiscardRule df)
+    else  [[BM_AddParentPrefix newPr ur,
+            BM_AddAccFormula acctoadd,
+            BM_AddFormulas [toadd],
+            BM_AddDiaRuleCheck pr f,
+            BM_CreateNewPref]]
+ where acctoadd   = AccFormula (dsUnion ds ds2) r ur newPr
+       toadd      = PrFormula newPr ds f2
+       newPr      = getNewPref br
+       (ur,ds2,_) = getUrfatherAndDeps br (DS.Prefix pr)
 
-getMods _ (DiaRule (PrFormula pr _ f) acctoadd@(AccFormula _ _ p1 p2) toadd) =
- [[BM_AddParentPrefix p2 p1,
-   BM_AddAccFormula acctoadd,
-   BM_AddFormulas [toadd],
-   BM_AddDiaRuleCheck pr f,
-   BM_CreateNewPref]]
+getMods _ (DiaRule _) = error "getMods DiaRule"
 
 getMods _ (DiaXRule (PrFormula pr ds (DiaX mi r ev)) dep)=
  [[BM_AddFormulas [PrFormula pr ds2 ev],
@@ -97,9 +103,14 @@ getMods _ (DiaXRule (PrFormula pr ds (DiaX mi r ev)) dep)=
 
 getMods _ (DiaXRule _ _)= error "getMods DiaXRule"
 
-getMods _ (ExistModRule _ toadd) =
+getMods br (ExistRule (PrFormula _ ds (E f2))) =
  [[BM_AddFormulas [toadd],
    BM_CreateNewPref]]
+ where toadd = PrFormula newPr ds f2
+       newPr = getNewPref br
+
+getMods _ (ExistRule _) = error "getMods ExistRule"
+
 
 getMods _ (UBlockRule p1 p2 d) =
  [[BM_UpdateUBBookKeep p1 p2,
@@ -119,16 +130,28 @@ getMods _ (DisjRule _ toadds) =
 getMods _ (SemBrRule _ toaddss) =
  [[BM_AddFormulas toadds] | toadds <- toaddss]
 
-getMods _ (AtRule _ toadd) =
+getMods br (AtRule (PrFormula _ ds (At (NomSymbol n) f))) =
  [[BM_AddFormulas [toadd]]]
+  where toadd = PrFormula earliestPrefix (dsUnion ds ds2) f
+        (earliestPrefix,ds2,_) = getUrfatherAndDeps br (DS.Nominal n)
 
-getMods _ (DownRule (PrFormula pr _ f) toadd1 toadd2) =
- [[BM_CreateNewNomTestRelevance f,  --  order  --  what about using a monadic
-   BM_AddFormulas [toadd1, toadd2], -- matters -- writing for the getMods functions ?
-   BM_AddDownRuleCheck pr f
- ]]
+getMods _ (AtRule _) = error "getMods AtRules"
 
-getMods br (DiffRule (pr, ds , f2)) =
+
+getMods br (DownRule df@(PrFormula pr ds f@(Down v f2)))
+ = if downAlreadyDone br df
+    then getMods br (DiscardRule df)
+    else  [[BM_CreateNewNomTestRelevance f,  --  order  --  what about using a monadic
+            BM_AddFormulas [toadd1, toadd2], -- matters -- writing for the getMods functions ?
+            BM_AddDownRuleCheck pr f
+          ]]
+ where toadd1 = PrFormula pr ds (replaceVar v newNom f2)
+       toadd2 = PrFormula pr ds $ nom newNom
+       newNom = getNewNom br
+
+getMods _ (DownRule _) = error "getMods DownRule"
+
+getMods br (DiffRule (PrFormula pr ds_ (D f2)) d) =
  case Map.lookup f2 (dDiaRlCh br) of
   Nothing -> [[BM_AddDiffRuleCheck f2 Nothing,
                BM_CreateNewPref, BM_CreateNewPref,
@@ -152,20 +175,25 @@ getMods br (DiffRule (pr, ds , f2)) =
                     newProp  = getNewProp br
   Just Nothing          -> [[]]
   Just (Just diffProp)  -> [[BM_AddFormulas [PrFormula pr ds (neg $ prop diffProp)]]]
+  where ds = d `dsInsert` ds_
+
+getMods _ (DiffRule _ _) = error "getMods DiffRule"
+
+
 
 getMods _ (DiscardRule _) = [[]]
 
 
 instance Show Rule where
    show (MergeRule pr po _)        = "merge:              " ++ show (pr,po)
-   show (DiaRule   todelete _ _ )  = "diamond:            " ++ showLess todelete
+   show (DiaRule   todelete)       = "diamond:            " ++ showLess todelete
    show (DiaXRule  todelete _)     = "diamondX:           " ++ showLess todelete
    show (DisjRule  todelete _ )    = "disjunction:        " ++ showLess todelete
    show (SemBrRule todelete _ )    = "semantic branching: " ++ showLess todelete
-   show (AtRule    todelete _ )    = "at:                 " ++ showLess todelete
-   show (DownRule  todelete _ _ )  = "down:               " ++ showLess todelete
-   show (ExistModRule todelete _)  = "E:                  " ++ showLess todelete
-   show (DiffRule (pr,_,f) )       = "D:                  " ++ show pr ++ ":" ++ show f
+   show (AtRule    todelete )      = "at:                 " ++ showLess todelete
+   show (DownRule  todelete )      = "down:               " ++ showLess todelete
+   show (ExistRule todelete )      = "E:                  " ++ showLess todelete
+   show (DiffRule  todelete _)     = "D:                  " ++ showLess todelete
    show (DiscardRule todelete)     = "Discard:            " ++ showLess todelete
    show (ClashRule bprs f)         = "Clash:              " ++ show bprs ++ " " ++ show f
    show (UBlockRule p1 p2 _ )      = "Unrestricted blocking " ++ show (p1,p2)
@@ -175,14 +203,14 @@ instance Show Rule where
 ruleToId :: Rule -> RuleId
 ruleToId r = case r of
               (MergeRule _ _ _)  -> R_Merge
-              (DiaRule _ _ _)    -> R_Dia
+              (DiaRule _ )       -> R_Dia
               (DiaXRule _ _)     -> R_DiaX
               (DisjRule _ _)     -> R_Disj
               (SemBrRule _ _)    -> R_SemBr
-              (AtRule _ _ )      -> R_At
-              (DownRule _ _ _)   -> R_Down
-              (ExistModRule _ _) -> R_Exist
-              (DiffRule _ )      -> R_Diff
+              (AtRule _ )        -> R_At
+              (DownRule _)       -> R_Down
+              (ExistRule _)      -> R_Exist
+              (DiffRule _ _)     -> R_Diff
               (DiscardRule _)    -> R_Discard
               (ClashRule _ _)    -> R_Clash
               (UBlockRule _ _ _) -> R_UBlocking
@@ -204,12 +232,12 @@ scheduledRuleToRule _ _ _ (SR_Merge pr po ds)  = MergeRule pr po ds
 scheduledRuleToRule br clp d (SR_Formula pf@(PrFormula _ _ f2)) =
  case f2 of
   Dis _     -> if semBranch clp then semBrRule clp pf br d else disjRule clp pf br d
-  Dia _ _   -> diaRule pf br
+  Dia _ _   -> DiaRule pf
   DiaX _ _ _-> diaXRule pf br d
-  At _ _    -> atRule pf br
-  Down _ _  -> downRule pf br
-  E _       -> existRule pf br
-  D _       -> diffRule pf d
+  At _ _    -> AtRule pf
+  Down _ _  -> DownRule pf
+  E _       -> ExistRule pf
+  D _       -> DiffRule pf d
   _         -> error "scheduledRuleToRule, incorrect formula kind"
 
 ruleByChar :: Branch -> CmdLineParams -> Dependency -> Char -> Maybe (Rule,TodoList)
@@ -231,22 +259,22 @@ ruleByChar br clp d char =
   applicableDiaRule   = case [ f | f@(PrFormula pr _ _) <- Set.toAscList $ diaStr todos,
                                     noLoopCheck clp || isNotBlocked br pr] of
                            []    -> Nothing
-                           (f:_) -> Just (diaRule f br, todos{diaStr = Set.delete f $ diaStr todos})
+                           (f:_) -> Just (DiaRule f, todos{diaStr = Set.delete f $ diaStr todos})
 
   applicableDiaXRule  = do (f,new) <- Set.minView $ diaXStr todos
                            return (diaXRule f br d, todos{diaXStr = new})
 
   applicableAtRule    = do (f,new) <- Set.minView $ atStr todos
-                           return (atRule f br, todos{atStr = new})
+                           return (AtRule f, todos{atStr = new})
 
   applicableDownRule  = do (f,new) <- Set.minView $ downStr todos
-                           return (downRule f br, todos{downStr = new})
+                           return (DownRule f, todos{downStr = new})
 
   applicableExistRule = do (f,new) <- Set.minView $ existStr todos
-                           return (existRule f br, todos{existStr = new})
+                           return (ExistRule f, todos{existStr = new})
 
   applicableDiffRule  = do (f,new) <- Set.minView $ diffStr todos
-                           return (diffRule f d, todos{diffStr = new})
+                           return (DiffRule f d, todos{diffStr = new})
 
   applicableRoleIncRule = do ((ds, p1, p2, ss),new) <- Set.minView $ roleIncStr todos
                              return (RoleIncRule p1 ss p2 (dsInsert d ds), todos{roleIncStr = new})
@@ -297,17 +325,6 @@ applyMod clp br (BM_Merge pr p ds)                 = merge clp br pr ds p
 
 -- the actual rules and their helper functions
 
--- dia (may create a discard rule)
-diaRule :: PrFormula -> Branch -> Rule
-diaRule f@(PrFormula pr ds (Dia r f2)) br
-  = if diaAlreadyDone br f
-     then DiscardRule f
-     else DiaRule f (AccFormula (dsUnion ds ds2) r ur newPr) (PrFormula newPr ds f2)
-      where newPr      = getNewPref br
-            (ur,ds2,_) = getUrfatherAndDeps br (DS.Prefix pr)
-
-diaRule _ _ = error $ "diaRule"
-
 -- diaX (may create a discard rule)
 diaXRule :: PrFormula -> Branch -> Dependency -> Rule
 diaXRule f@(PrFormula pr _ (DiaX _ r f2)) br d
@@ -327,20 +344,6 @@ getNewProp br = maybe (PropSymbol newPropBaseName) incPropSymbol (lastProp br)
 
 getNewNom :: Branch -> NomSymbol
 getNewNom br =  maybe (NomSymbol newNomBaseName) incNomSymbol (lastNom br)
-
--- E
-existRule :: PrFormula -> Branch -> Rule
-existRule f@(PrFormula _ ds (E f2)) br
-  = ExistModRule f (PrFormula newPr ds f2)
-     where newPr = getNewPref br
-existRule _ _ = error $ "existRule"
-
--- D
-diffRule :: PrFormula -> Dependency -> Rule
-diffRule (PrFormula pr ds (D f2)) d
-  = DiffRule (pr, dsInsert d ds, f2)
-
-diffRule _ _ = error $ "diffRule"
 
 -- disjunction
 disjRule :: CmdLineParams -> PrFormula -> Branch -> Dependency -> Rule
@@ -375,30 +378,11 @@ sbModList fs = go fs []
            where neg_ (PrFormula pr ds f) = PrFormula pr ds (neg f)
        go [] _ = []
 
-
-
 -- helper function for disjunction and semantic branching
 -- updates the branching pointers of each formula
 breakDisj :: PrFormula -> Dependency -> [PrFormula]
 breakDisj (PrFormula pr ds (Dis fs)) d = prefix pr (dsInsert d ds) fs
 breakDisj _ _ = error $ "breakDisj error"
-
--- @
-atRule :: PrFormula -> Branch -> Rule
-atRule af@(PrFormula _ ds (At (NomSymbol n) f)) br
- = AtRule af (PrFormula earliestPrefix (dsUnion ds ds2) f)
-    where (earliestPrefix,ds2,_) = getUrfatherAndDeps br (DS.Nominal n)
-
-atRule _ _ = error "atRule error"
-
--- down
-downRule :: PrFormula -> Branch -> Rule
-downRule df@(PrFormula pr ds (Down v f)) br
- = if downAlreadyDone br df
-    then DiscardRule df
-    else DownRule df (PrFormula pr ds (replaceVar v newNom f)) (PrFormula pr ds $ nom newNom)
-    where newNom = getNewNom br
-downRule _ _ = error "downRule error"
 
 --if the input rule is a disjunction, returns the prefix of the rule
 get_pr_disjunt_rule :: Rule -> Maybe Prefix
