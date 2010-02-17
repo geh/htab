@@ -12,14 +12,14 @@ import System.CPUTime( getCPUTime )
 
 import HyLo.InputFile.Parser ( QueryType(..) )
 
-import HTab.CommandLine( filename, maxtimeout, CmdLineParams, logState, genModel,
+import HTab.CommandLine( filename, maxtimeout, CmdLineParams, logState, genModel, backJumping,
                          configureMetrics, quietMode, simpleInput, showFormula )
 import HTab.Branch( BranchInfo(..),initialBranchStateFor,BranchMonad, BranchData(..),
                     emptyBranch, addFirstFormulas,initUnsatCache )
 import HTab.Statistics( Statistics, initialStatisticsStateFor, printOutAllMetrics' )
 import HTab.Base( vPutStrLn )
 import HTab.Tableau( liftStats, tableau, OpenFlag(..) )
-import HTab.Formula( formulaLanguageInfo, Theory, RelInfo, Task,
+import HTab.Formula( formulaLanguageInfo, languageTrans, Theory, RelInfo, Task,
                      Formula, encodeValidityTest, encodeSatTest, encodeRetrieveTask,
                      showRelInfo )
 import qualified HTab.Formula as F
@@ -136,8 +136,9 @@ runOneTask (query,mOutFile,fs) relInfo theory clp ts=
                let fLang         = formulaLanguageInfo f
                let initialBranch = emptyBranch clp fLang relInfo
                let branchInfo    = addFirstFormulas clp initialBranch fLang f
+               let clp2          = if (languageTrans fLang) then clp{backJumping=False} else clp
                --
-               result <- tableauInit clp ts branchInfo 
+               result <- tableauInit clp2 ts branchInfo
                --
                case result of
                   (OPEN m, stats)   -> do myPutStrLn $

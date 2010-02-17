@@ -14,7 +14,7 @@ addFormulas, addFormula, addAccFormula,
 addDiaRuleCheck, addDiaXRuleCheck, addDownRuleCheck, addDiffRuleCheck,
 addParentPrefix, addFirstFormulas,
 updateUBBookKeep, ScheduledRule(..), TodoList(..),
-BranchData(..), getBranch,
+BranchData(..),
 emptyBranch,initialBranchStateFor,prefixes,
 reduceDisjunctionAgainstBranch, merge,
 getUrfather, getUrfatherAndDeps, isInTheModel, relationIsInTheModel,
@@ -65,10 +65,6 @@ import qualified Data.Bimap as Bimap
 
 data BranchInfo = BranchOK Branch |
                   BranchClash Branch Prefix DependencySet Formula
-
-getBranch :: BranchInfo -> Branch
-getBranch (BranchOK br)          = br
-getBranch (BranchClash br _ _ _) = br
 
 type Clashable_info   = DMap Prefix Atom (Bool,DependencySet)
 type Conj_structure   = Set.Set PrFormula

@@ -5,14 +5,14 @@ import HTab.Base(vPutStrLn)
 import HTab.Statistics(updateStep,printOutInspectionMetrics,
                        recordClosedBranch, recordCacheHit, recordFiredRule)
 import HTab.Branch(BranchInfo(..),Branch(..),BranchMonad, BranchData(..),
-                   calculateStepInfo, unfulfilledEventualities, getBranch, setPrevPref,
+                   calculateStepInfo, unfulfilledEventualities, setPrevPref,
                    delNonAncestors, del_level_disjunctPrefixes)
 import HTab.CommandLine(logState,backJumping,caching,CmdLineParams)
 import HTab.Rules(Rule,applyRule,
                   applicableRule,ruleToId,
                   get_pr_disjunt_rule)
 import HTab.Statistics(Statistics)
-import HTab.Formula(Prefix,DependencySet,Formula,dsEmpty,dsMember,dsUnion,languageTrans)
+import HTab.Formula(Prefix,DependencySet,Formula,dsEmpty,dsMember,dsUnion)
 import HTab.ModelGen ( Model, buildModel )
 import HTab.Timeout( isTimeout )
 import HTab.UnsatCache (update, query)
@@ -117,11 +117,9 @@ chooseBranch_ currentDepSet ((hd,path):tl) =
      TIMEOUT       -> return TIMEOUT
      o@(OPEN _)    -> return o
      CLOSED depSet ->
-      if backjump && (not $ dsMember currentBranchingDepth depSet)
+      if (backJumping $ branch_clp bd) && (not $ dsMember currentBranchingDepth depSet)
        then return $ CLOSED depSet
        else chooseBranch_ (dsUnion currentDepSet depSet) tl
-        where backjump = (not $ languageTrans $ inputLanguage $ getBranch $ branch_info bd)
-                         && (backJumping $ branch_clp bd) -- disable backjumping in presence of transitive closure
 
 chooseBranch_ currentDepSet [] = return $ CLOSED currentDepSet
 
