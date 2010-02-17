@@ -330,7 +330,6 @@ addFormulas clp br fs =
        (BranchOK br)
        fs
 
--- 2 main cases : adding a positive nominal, and otherwise.
 addFormula :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
 addFormula clp br_ pf_
  =   addFormulaPutAway        pf clp
