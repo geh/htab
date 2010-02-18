@@ -91,9 +91,6 @@ type InclusionUrfathersMap = Map.Map Prefix Prefix
 
 type AugmentedPrefixes = [Prefix] -- list of prefixes whose label is modified during the current step of the algorithm
 
-type PrevPrefixes = [Prefix] --To keep the prefixes true at b-b1, where b is the current branch, and b1 is prev(b)
-
-
 type PrefixParent = Map.Map Prefix Prefix
 
 data BlockingMode = InclusionBlockingGlobal | InclusionBlockingChain | ChainBlocking
@@ -111,14 +108,12 @@ data Branch =
                        diaRlCh :: Dia_rule_chart,       -- saturation of the diamond rule
                       diaXRlCh :: DiaX_rule_chart,      -- saturation of the diamondX rule
                       boxXRlCh :: BoxX_rule_chart,      -- saturation of the boxX rule
-                      downRlCh :: Down_rule_chart,      -- saturatino of the down-arrow rule
+                      downRlCh :: Down_rule_chart,      -- saturation of the down-arrow rule
                         atRlCh :: At_rule_chart,        -- saturation of the @ rule
                      existRlCh :: Exist_rule_chart,     -- saturation of the exist rule
                       dDiaRlCh :: Diff_Dia_rule_chart,  -- saturation of the diff diamond rule chart (D)
                  -- formulas true in an equivalence class
                    prefToForms :: PrefToFormulas,
-        --To keep the prefixes true at b-b1, where b is the current branch, and b1 is prev(b)
-                      prevPref :: PrevPrefixes,
                  -- backjumping data attached to equivalence classes
                     prToDepSet :: PrefToDepSet,
                  -- other data
@@ -173,7 +168,6 @@ emptyBranch clp fLang relInfo_ =
                   inputLanguage = fLang,
                   inclUrMap = Nothing,
                   incrPrs = [],
-                  prevPref =[], 
                   blockMode = blockingMode,
                   prefParent = Map.empty::PrefixParent,
                   relevantNominals = set $ languageNoms fLang,
@@ -215,7 +209,6 @@ instance Show Branch where
               showl "\nParent: " (prefParent br),
               "\nInclusion urfather map: ", show (inclUrMap br),
               "\nIncreased prefixes: ", show (incrPrs br),
-              "\nPrefixes in (current branch - prev(current branch): ", show (prevPref br),
               "\nBlocking mode: ", show (blockMode br),
               "\nPrefix-Nominal classes : ", showMap show ", " (nomPrefClasses br),
               showl "\nModel-relevant nominals : " (list $ relevantNominals br)
