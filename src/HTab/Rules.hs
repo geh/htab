@@ -3,7 +3,7 @@ module HTab.Rules
 Rule(..),BranchModification(..),
 applicableRule, applyRule, ruleToId,
 applyMod,
-get_pr_disjunt_rule, 
+isDisjunctive,
 ) where
 
 import qualified Data.Set as Set
@@ -385,9 +385,9 @@ breakDisj (PrFormula pr ds (Dis fs)) d = prefix pr (dsInsert d ds) fs
 breakDisj _ _ = error $ "breakDisj error"
 
 --if the input rule is a disjunction, returns the prefix of the rule
-get_pr_disjunt_rule :: Rule -> Maybe Prefix
-get_pr_disjunt_rule (DisjRule  (PrFormula pr _ _) _) = Just pr
-get_pr_disjunt_rule (SemBrRule (PrFormula pr _ _) _) = Just pr
-get_pr_disjunt_rule (DiaXRule  (PrFormula pr _ _) _) = Just pr
-get_pr_disjunt_rule _                                = Nothing
+isDisjunctive :: Rule -> Maybe Prefix
+isDisjunctive (DisjRule  (PrFormula pr _ _) _) = Just pr
+isDisjunctive (SemBrRule (PrFormula pr _ _) _) = Just pr
+isDisjunctive (DiaXRule  (PrFormula pr _ _) _) = Just pr
+isDisjunctive _                                = Nothing
 

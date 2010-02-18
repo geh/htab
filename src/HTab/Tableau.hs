@@ -10,7 +10,7 @@ import HTab.Branch(BranchInfo(..),Branch(..),BranchMonad, BranchData(..),
 import HTab.CommandLine(logState,backJumping,caching,CmdLineParams)
 import HTab.Rules(Rule,applyRule,
                   applicableRule,ruleToId,
-                  get_pr_disjunt_rule)
+                  isDisjunctive)
 import HTab.Statistics(Statistics)
 import HTab.Formula(Prefix,DependencySet,Formula,dsEmpty,dsMember,dsUnion)
 import HTab.ModelGen ( Model, buildModel )
@@ -34,12 +34,7 @@ tableau path =
               BranchClash br pr bprs f ->
                do debugMsg_BranchClash br pr bprs f path
                   liftStats $ recordClosedBranch
-                  case caching clp of
-                      Nothing -> return (CLOSED bprs)
-                      _       -> do let new_disPr = delNonAncestors br pr (disjunctPrefixes bd)
-                                    put bd{disjunctPrefixes = new_disPr}
-                                    debugMsg_BranchClash1 br pr dsEmpty 1 path
-                                    return (CLOSED bprs)
+                  returnClosedBranch clp bd br pr bprs path
               BranchOK br_ ->
                do let currentBranchingDepth = length path + 1
                   let br = calculateStepInfo br_
@@ -79,18 +74,17 @@ tableau path =
                                               do debugMsg_BranchOK_applicableRule rule
                                                  liftStats $ recordFiredRule $ ruleToId rule
                                                  let possibleBranches' = applyRule clp rule br newTodo
-                                                 --to avoid entering in the rules.hs code, clean the
-                                                 --notPrevPref here...
-                                                 let pref_dis_rule = get_pr_disjunt_rule rule
+
+                                                 let disjunctPrefix = isDisjunctive rule
                                                  let possibleBranches =
-                                                      case pref_dis_rule of
+                                                      case disjunctPrefix of
                                                         Nothing -> possibleBranches'
                                                         _       -> setPrevPrefInBranch possibleBranches'
-                                                 set_disjointPrefixes currentBranchingDepth pref_dis_rule
+                                                 set_disjointPrefixes currentBranchingDepth disjunctPrefix
                                                  result_branching <- chooseBranch possibleBranches path
                                                  --if rule is a disjunction rule and if the result
                                                  --of chooseBranch is closed, then update the cache
-                                                 case pref_dis_rule of
+                                                 case disjunctPrefix of -- now that we backtrack, update the cache
                                                   Nothing -> return result_branching
                                                   Just p ->
                                                    do modify (delete_levels currentBranchingDepth)
@@ -101,6 +95,15 @@ tableau path =
                                                               return c
                                                         TIMEOUT -> return TIMEOUT
                                                         o@(OPEN _)  -> return o
+
+returnClosedBranch :: CmdLineParams -> BranchData -> Branch -> Prefix -> DependencySet -> Path -> BranchMonad OpenFlag
+returnClosedBranch clp bd br pr bprs path =
+ case caching clp of
+     Nothing -> return (CLOSED bprs)
+     _       -> do let new_disPr = delNonAncestors br pr (disjunctPrefixes bd)
+                   put bd{disjunctPrefixes = new_disPr}
+                   debugMsg_BranchClash1 br pr dsEmpty 1 path
+                   return (CLOSED bprs)
 
 -- depth-first branch-choosing strategy
 
