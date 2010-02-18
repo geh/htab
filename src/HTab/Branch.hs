@@ -528,8 +528,7 @@ isNominalUrfather b p = DS.isRoot (DS.Prefix p) classes
                          where classes = nomPrefClasses b
 
 getUrfather :: Branch -> DS.Pointer -> Prefix
-getUrfather b p = u
-                  where (u,_,_) = getUrfatherAndDeps b p
+getUrfather b p = u where (u,_,_) = getUrfatherAndDeps b p
 
 getUrfatherAndDeps :: Branch -> DS.Pointer -> (Prefix,DependencySet,EquivClasses)
 getUrfatherAndDeps br p =
