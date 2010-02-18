@@ -45,7 +45,10 @@ tableau path =
                         do debugMsg_BranchOK_applicableRule rule
                            liftStats $ recordFiredRule $ ruleToId rule
                            let possibleBranches = applyRule clp rule br newTodo
-                           chooseBranch possibleBranches path
+                           case possibleBranches of
+                            [newBi] -> do put bd{branch_info=newBi}
+                                          tableau (0:path)
+                            _       -> chooseBranch possibleBranches path
 
 -- depth-first branch-choosing strategy
 
