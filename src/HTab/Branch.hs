@@ -344,26 +344,24 @@ putAwayFormula :: CmdLineParams -> PrFormula -> Branch -> BranchInfo
 putAwayFormula clp pf@(PrFormula pr ds f2) br =
  case f2 of
    Con fs     -> addFormulas clp br (prefix pr ds fs)
-   Dis _      -> addToTodo pf br
-   Dia _ _    -> addToTodo pf br
-   DiaX _ _ _ -> addToTodo pf br
+   Dis _      -> BranchOK $ addToTodo pf br
+   Dia _ _    -> BranchOK $ addToTodo pf br
+   DiaX _ _ _ -> BranchOK $ addToTodo pf br
    Box r f    -> addBoxConstraint      pr r f ds clp br
    BoxX r f   -> addBoxXConstraint     pr r f ds clp br
    A f        -> addUnivConstraint          f ds clp br
    B f        -> b_rule                pr   f ds clp br
-   E _        -> addToTodo pf br
-   D _        -> addToTodo pf br
-   At _ _     -> addToTodo pf br
-   Down _ _   -> addToTodo pf br
-   Lit l@(PosLit (N _)) -> let BranchOK br_ = addToTodo pf br
-                           in addToClashable pr ds l br_
+   E _        -> BranchOK $ addToTodo pf br
+   D _        -> BranchOK $ addToTodo pf br
+   At _ _     -> BranchOK $ addToTodo pf br
+   Down _ _   -> BranchOK $ addToTodo pf br
+   Lit l@(PosLit (N _)) -> addToClashable pr ds l $ addToTodo pf br
    Lit l                -> addToClashable pr ds l br
 
 {- todo list functions -}
 
-addToTodo :: PrFormula -> Branch -> BranchInfo
+addToTodo :: PrFormula -> Branch -> Branch
 addToTodo pf@(PrFormula p ds f2) br =
- BranchOK $
   if alreadyDone
    then br
    else brWithSaturation{todoList = newTodoList}
