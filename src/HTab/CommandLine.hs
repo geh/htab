@@ -10,7 +10,7 @@
 
 module HTab.CommandLine (
     CmdLineParams(..), getCmdLineParams, defaultParams,
-    usage, configureMetrics, Caching(..)
+    usage, configureMetrics,
 ) where
 
 import Data.Char(isDigit)
@@ -26,7 +26,7 @@ import Control.Monad.Error (MonadError(..))
 import Control.Applicative ( (<$>) )
 
 import HTab.Base(intToBool, permutationOf)
-import HTab.Statistics(Metric,closedBranches,cacheHits,StatisticsState,
+import HTab.Statistics(Metric,closedBranches,StatisticsState,
                        addMetric, addInspectionMetric, setPrintOutInterval,
                        ruleApplicationCount)
 
@@ -48,7 +48,6 @@ data CmdLineParams = CLP {
            showFormula     :: Bool,
            inclBlockGlobal :: Bool,
            inclBlockChain  :: Bool,
-           caching         :: Maybe Caching,
            simpleInput     :: Bool,
            allTransitive   :: Bool,
            allReflexive    :: Bool,
@@ -59,7 +58,6 @@ data CmdLineParams = CLP {
 
 type CLPModifier   = CmdLineParams -> Either ParsingErrMsg CmdLineParams
 type ParsingErrMsg = String
-data Caching = TrieCaching | ListCaching deriving Show
 
 parseCmds :: [String] -> CmdLineParams -> Either ParsingErrMsg CmdLineParams
 parseCmds argv clp = case getOpt RequireOrder options argv of
@@ -116,14 +114,6 @@ options =
           ["backjumping"]
           (ReqArg setBackJumping "[0|1]")
           "disable/enable backjumping optimisation",
-   Option ['c'] 
-          ["caching"]
-          (ReqArg setCaching "[0|1|2]")
-          (unlines [
-	  "0 disable caching optimisation (default), ",
-          "1 enable caching optimisation using trie data structure,",
-          "2 enable caching optimisation using list data structure.",
-	  ""]),
    Option ['o']
           ["strategy"]
           (ReqArg setStrategy "PAT")
@@ -176,7 +166,6 @@ options =
            "METRICS is made of one or more of the following",
            "values:",
            "  c = number of closed branches",
-           "  h = number of UNSAT cache hits",
            "  r = number of rules applied",
            "",
            "The default is `" ++ statsStr defaultParams ++ "'",
@@ -235,19 +224,6 @@ setUnitProp = is0or1 ?->  \s c -> return c{unitProp = intToBool $ read s}
 setBackJumping :: String -> CLPModifier
 setBackJumping = is0or1 ?->  \s c -> return c{backJumping = intToBool $ read s}
 
-
-setCaching :: String -> CLPModifier
-setCaching = is0or1or2 ?->  \s c -> return c{caching = strToCaching s}
-
-is0or1or2 :: String -> Bool
-is0or1or2 s = (s == "2") || (s == "1") || (s == "0") 
-
-strToCaching :: String -> Maybe Caching
-strToCaching s = case (read s )::Int of
-                  1 -> Just TrieCaching
-                  2 -> Just ListCaching
-                  _ -> Nothing
-
 is0or1 :: String -> Bool
 is0or1 s = (s == "1") || (s == "0")
 
@@ -280,7 +256,6 @@ defaultParams = CLP {showHelp = False,
                      showFormula = False,
                      inclBlockGlobal = False,
                      inclBlockChain  = True,
-                     caching     = Nothing,
                      simpleInput   = False,
                      allTransitive = False,
                      allReflexive  = False,
@@ -334,7 +309,6 @@ usage header = unlines [
 
 metrics :: [(Char,Metric)]
 metrics = [('c',closedBranches),
-           ('h',cacheHits),
            ('r',ruleApplicationCount)]
 
 parseStats :: String -> Maybe (String, Maybe (Int, String))

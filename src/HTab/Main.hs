@@ -15,7 +15,7 @@ import HyLo.InputFile.Parser ( QueryType(..) )
 import HTab.CommandLine( filename, maxtimeout, CmdLineParams, logState, genModel, backJumping,
                          configureMetrics, quietMode, simpleInput, showFormula )
 import HTab.Branch( BranchInfo(..),initialBranchStateFor,BranchMonad, BranchData(..),
-                    emptyBranch, addFirstFormulas,initUnsatCache )
+                    emptyBranch, addFirstFormulas)
 import HTab.Statistics( Statistics, initialStatisticsStateFor, printOutAllMetrics' )
 import HTab.Base( vPutStrLn )
 import HTab.Tableau( liftStats, tableau, OpenFlag(..) )
@@ -188,9 +188,7 @@ tableauInit clp ts bi =
        bd              = BranchData
                           { branch_info = bi,
                             branch_clp  = clp,
-                            timeout_signal = ts,
-			    unsat_cache = initUnsatCache clp,
-                            disjunctPrefixes = []
+                            timeout_signal = ts
 			    }
 
 tableauStart :: CmdLineParams -> BranchMonad OpenFlag

@@ -21,22 +21,15 @@ getUrfather, getUrfatherAndDeps, isInTheModel, relationIsInTheModel,
 getModelRepresentative, isNotBlocked,
 calculateStepInfo, BlockingMode(..), diaAlreadyDone, diaXAlreadyDone,
 downAlreadyDone, incPropSymbol, incNomSymbol,
-UCache(..),CacheStructure(..),
-Univ_constraints,AugmentedPrefixes,UCMap,TrueForms,initUnsatCache,setPrevPref,
+Univ_constraints,AugmentedPrefixes,
 unfulfilledEventualities, ReducedDisjunct(..), newNomBaseName, newPropBaseName, getUnappliedUBPairs,
 isReflexive, isSymmetric, isTransitive,
-delNonAncestors, del_level_disjunctPrefixes, search_disjunctPrefixes,DisjunctPrefixes,
 deleteUEV, insertUEV_addFormula
 ) where
 
 import Control.Monad.State(StateT, MonadState)
 import Data.List(minimumBy)
 import Data.Char ( isNumber )
-
-import HTab.UCList ( UCList )
-import qualified HTab.UCList as UCList
-import HTab.UCTrie ( UCTrie )
-import qualified HTab.UCTrie as UCTrie
 
 import Data.Map ( Map, foldWithKey )
 import qualified Data.Map as Map
@@ -50,7 +43,7 @@ import Data.Maybe( fromJust, fromMaybe, catMaybes)
 
 import HTab.Timeout( TimeoutSignal )
 import HTab.Statistics(Statistics)
-import HTab.CommandLine(CmdLineParams(..), Caching(..))
+import HTab.CommandLine(CmdLineParams(..))
 
 import HTab.Formula
 
@@ -61,7 +54,6 @@ import HTab.Base(moveInMap, almostCartesianProduct, doMemoize, set, list)
 import HTab.Relations ( Relations(..), emptyRels, insertRelation, mergePrefixes,
                         successors, predecessors, linksFromTo )
 import qualified HTab.Relations as Relations
-import qualified Data.Bimap as Bimap
 
 data BranchInfo = BranchOK Branch |
                   BranchClash Branch Prefix DependencySet Formula
@@ -107,9 +99,6 @@ type PrefixParent = Map.Map Prefix Prefix
 data BlockingMode = InclusionBlockingGlobal | InclusionBlockingChain | ChainBlocking
  deriving (Eq,Show)
 
-
-type TrueForms = DMap Prefix Formula DependencySet
-
 data Branch =
               Branch {clashStr :: Clashable_info,
                  -- pending formulas / todo lists
@@ -128,8 +117,6 @@ data Branch =
                       dDiaRlCh :: Diff_Dia_rule_chart,  -- saturation of the diff diamond rule chart (D)
                  -- formulas true in an equivalence class
                    prefToForms :: PrefToFormulas,
-             --all formulas true in the branch, by prefixes
-                     trueForms :: TrueForms,
         --To keep the prefixes true at b-b1, where b is the current branch, and b1 is prev(b)
                       prevPref :: PrevPrefixes,
                  -- backjumping data attached to equivalence classes
@@ -179,7 +166,6 @@ emptyBranch clp fLang relInfo_ =
                   lastNom  = Nothing,
                   lastProp = Nothing,
                   prefToForms= Map.empty::PrefToFormulas,
-                  trueForms=DMap.empty :: TrueForms,
                   prToDepSet= Map.empty::PrefToDepSet,
                   eventualities = Map.empty::Eventualities,
                   bookKeepUB=(0,0),
@@ -226,7 +212,6 @@ instance Show Branch where
               ifNotEmpty (prToDepSet br) (\m -> "\nPrefix to dependency set:" ++ showMap  dsShow "\n " m),
               ifNotEmpty (prefToForms br) (\m -> "\nPrefix to formulas:"       ++ showMap  (show . Set.toList) "\n " m),
               showl "\nEventualities: "  (eventualities br),
-              ifNotEmpty (trueForms br) (\m -> "\nTrue formulas: " ++ show (DMap.flatten m)),
               showl "\nParent: " (prefParent br),
               "\nInclusion urfather map: ", show (inclUrMap br),
               "\nIncreased prefixes: ", show (incrPrs br),
@@ -329,13 +314,12 @@ addFormulas clp br fs =
 addFormula :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
 addFormula clp br pf
  =   putAwayFormula  clp pf
-   $ bookKeepFormula clp pf br
+   $ bookKeepFormula pf br
 
-bookKeepFormula :: CmdLineParams -> PrFormula -> Branch -> Branch
-bookKeepFormula clp pf_ br
+bookKeepFormula :: PrFormula -> Branch -> Branch
+bookKeepFormula pf_ br
  =   addToAugmentedPrefixes   ur
-   $ addToPrefToForms         pf
-   $ addToTrueForms       clp pf br
+   $ addToPrefToForms         pf br
   where
     (ur,pf) = toUrfather br pf_
 
@@ -437,7 +421,6 @@ merge clp br pr fDs pointer -- pointer is a nominal or a prefix
                       newBoxConstrFwd = DMap.moveInnerDataDMapPlusDeps fDs (boxConstrFwd br) oldUr newUr
                       newBoxConstrBwd = DMap.moveInnerDataDMapPlusDeps fDs (boxConstrBwd br) oldUr newUr
                       newAccStr       = mergePrefixes (accStr br) oldUr newUr fDs
-                      newTrueForms    = DMap.moveInnerDataDMap (trueForms br) oldUr newUr dsUnion
                       newDiaRlCh      = moveInMap (diaRlCh br)  oldUr newUr Set.union
                       newDiaXRlCh     = moveInMap (diaXRlCh br) oldUr newUr Set.union
                       newBoxXRlCh     = moveInMap (boxXRlCh br) oldUr newUr Set.union
@@ -473,7 +456,6 @@ merge clp br pr fDs pointer -- pointer is a nominal or a prefix
                                            accStr         = newAccStr,
                                            prToDepSet     = newPrToDepSet,
                                            prefToForms    = newPrefToForms,
-                                           trueForms      = newTrueForms,
                                            diaRlCh        = newDiaRlCh,
                                            diaXRlCh       = newDiaXRlCh,
                                            boxXRlCh       = newBoxXRlCh,
@@ -505,14 +487,6 @@ toUrfather br f@(PrFormula pr ds f2)
      (urfather,ds2,_) = getUrfatherAndDeps br (DS.Prefix pr)
      newF  = if urfather == pr
                  then f else PrFormula urfather (dsUnion ds ds2) f2
-
-addToTrueForms :: CmdLineParams -> PrFormula -> Branch -> Branch
-addToTrueForms clp (PrFormula pre dps f) br =
- case caching clp of
-   Nothing -> br
-   _       -> br{trueForms = newMap}
- where newMap = DMap.insertWith dsUnion pre f dps $ trueForms br
-
 
 addToPrefToForms :: PrFormula -> Branch -> Branch
 addToPrefToForms (PrFormula pr _ f) br | forInclusion br f =
@@ -881,10 +855,6 @@ wipeAugmentedPrefixes br = br{incrPrs=[]}
 addToAugmentedPrefixes :: Prefix -> Branch -> Branch
 addToAugmentedPrefixes pr br = br{incrPrs = (pr:incrPrs br)}
 
---To keep the prefixes true at b-b1, where b is the current branch, and b1 is prev(b)
-setPrevPref :: Branch -> Branch
-setPrevPref br = br{prevPref = prefixes br}
-
 {-     modifications done by rule application     -}
 
 addDiaRuleCheck :: Branch -> Prefix -> Formula -> Branch
@@ -1082,20 +1052,9 @@ addFirstFormulas clp br_ fLang f
                               (zip [1..] ns)
           br2 = br{nomPrefClasses = newClasses,
                          clashStr = newClashStr}
-          br3 = foldr (\(pr,n) -> bookKeepFormula clp (PrFormula pr dsEmpty (nom n)))
+          br3 = foldr (\(pr,n) -> bookKeepFormula (PrFormula pr dsEmpty (nom n)))
                       br2
                       (zip [1..] ns)
-
-initUnsatCache :: CmdLineParams -> UCache
-initUnsatCache clp
- = case caching clp of
-     Just TrieCaching -> UCache{ cache = emptyCache::UCTrie,
-                                 bimap =emptyBimap }
-     Just ListCaching -> UCache{ cache = emptyCache::UCList,
-                                 bimap =emptyBimap }
-     Nothing          -> UCache{ cache = emptyCache::UCList,
-                                 bimap =emptyBimap }
-  where  emptyBimap = Bimap.singleton (neg taut) 0
 
 {-     functions to handle the "clashable information", ie literals associated to prefixes     -}
 
@@ -1259,58 +1218,10 @@ isInjective = hasProperty Injective
 
 data BranchData = BranchData { branch_info :: BranchInfo,
                                branch_clp :: CmdLineParams,
-                               timeout_signal :: TimeoutSignal,
-                               ------unsat cache info-------
-                               unsat_cache :: UCache,
-                               disjunctPrefixes::DisjunctPrefixes}
+                               timeout_signal :: TimeoutSignal}
 
 type BranchMonad a = StateT BranchData (StateT Statistics IO) a
 
 initialBranchStateFor :: (MonadState BranchData m) =>  (m a -> BranchData -> b) -> BranchData -> m a -> b
 initialBranchStateFor f bd = flip f bd
-
--- Unsat Cache
-
-data UCache = forall a . CacheStructure a
-                => UCache { cache :: a,
-                            bimap :: UCMap}
-
-type UCMap = Bimap.Bimap Formula Int
-
-instance Show UCache where
- show UCache{ cache = c,
-              bimap = bm }
-  = "UCache: " ++ show c ++ show bm
-
-class Show a => CacheStructure a where
-  emptyCache :: a
-  insertCache :: Set Int -> a -> a
-  queryCache :: Set Int -> a -> Maybe [Int]
-
-instance CacheStructure UCList where
- emptyCache = []
- insertCache = UCList.update
- queryCache = UCList.superset_matching
-
-instance CacheStructure UCTrie where
- emptyCache  = UCTrie.empty
- insertCache = UCTrie.update
- queryCache  = UCTrie.query
-
--- 
-
-type DisjunctPrefixes = [(Int,Prefix)]
-
-search_disjunctPrefixes :: Prefix -> DisjunctPrefixes  -> Bool
-search_disjunctPrefixes  p = any ((==p) . snd)
-
-del_level_disjunctPrefixes :: Int -> DisjunctPrefixes  -> DisjunctPrefixes
-del_level_disjunctPrefixes lev = filter ((<=lev) . fst)
-
-delNonAncestors :: Branch -> Prefix -> DisjunctPrefixes -> DisjunctPrefixes
-delNonAncestors br pr_clash
- = filter ((`elem` ancestors) . snd)
-   where ancestors = getAncestors pr_clash
-         getAncestors pr = (pr:rest)
-               where rest = maybe [] getAncestors $ Map.lookup pr (prefParent br)
 
