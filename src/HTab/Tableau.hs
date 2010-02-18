@@ -27,80 +27,80 @@ tableau path =
          let clp = branch_clp bd
 
          timeout <- isTimeout $ timeout_signal bd
-         if timeout
-          then return TIMEOUT
-          else do debugMsg_NewSection path
-                  case branch_info bd of
-                     BranchClash br pr bprs f ->
-                      do debugMsg_BranchClash br pr bprs f path
-                         liftStats $ recordClosedBranch
-                         case caching clp of
-                             Nothing -> return (CLOSED bprs)
-                             Just _  -> do let new_disPr = delNonAncestors br pr (disjunctPrefixes bd)
-                                           put bd{disjunctPrefixes = new_disPr}
-                                           debugMsg_BranchClash1 br pr dsEmpty 1 path
-                                           return (CLOSED bprs)
-                     BranchOK br_ ->
-                      do let currentBranchingDepth = length path + 1
-                         let br = calculateStepInfo br_
-                         case caching clp of
-                          Nothing
-                            -> do debugMsg_BranchOK br_
-                                  case applicableRule br clp currentBranchingDepth of
-                                    Nothing  ->
-                                        do debugMsg_BranchOK_saturated
-                                           return $ case unfulfilledEventualities br of
-                                                     Just ds -> CLOSED ds
-                                                     Nothing -> OPEN   $ buildModel br
-                                    Just (rule,newTodo) ->
-                                        do debugMsg_BranchOK_applicableRule rule
-                                           liftStats $ recordFiredRule $ ruleToId rule
-                                           let possibleBranches = applyRule clp rule br newTodo
-                                           chooseBranch possibleBranches path
+         if timeout then return TIMEOUT else
+          do
+           debugMsg_NewSection path
+           case branch_info bd of
+              BranchClash br pr bprs f ->
+               do debugMsg_BranchClash br pr bprs f path
+                  liftStats $ recordClosedBranch
+                  case caching clp of
+                      Nothing -> return (CLOSED bprs)
+                      _       -> do let new_disPr = delNonAncestors br pr (disjunctPrefixes bd)
+                                    put bd{disjunctPrefixes = new_disPr}
+                                    debugMsg_BranchClash1 br pr dsEmpty 1 path
+                                    return (CLOSED bprs)
+              BranchOK br_ ->
+               do let currentBranchingDepth = length path + 1
+                  let br = calculateStepInfo br_
+                  case caching clp of
+                   Nothing
+                     -> do debugMsg_BranchOK br_
+                           case applicableRule br clp currentBranchingDepth of
+                             Nothing  ->
+                                 do debugMsg_BranchOK_saturated
+                                    return $ case unfulfilledEventualities br of
+                                              Just ds -> CLOSED ds
+                                              Nothing -> OPEN   $ buildModel br
+                             Just (rule,newTodo) ->
+                                 do debugMsg_BranchOK_applicableRule rule
+                                    liftStats $ recordFiredRule $ ruleToId rule
+                                    let possibleBranches = applyRule clp rule br newTodo
+                                    chooseBranch possibleBranches path
 
-                          _
-                            -> do case query br_ (unsat_cache bd) of-- not br, because br has removed its augmented prefixes
-                                     BranchClash br1 pr1 bprs1 _ ->
-                                         do debugMsg_BranchClash1 br1 pr1 bprs1 0 path--TODO see should I add this line?
-                                            let new_disjunctPrefixes = delNonAncestors br1 pr1 (disjunctPrefixes bd)
-                                            modify (\b -> b{disjunctPrefixes = new_disjunctPrefixes})
-                                            liftStats $ recordClosedBranch
-                                            liftStats $ recordCacheHit
-                                            return (CLOSED bprs1)
-                                     BranchOK br1_ ->
-                                        do -- no cache hit: go on working with the branch
-                                           debugMsg_BranchOK br1_
-                                           case applicableRule br clp currentBranchingDepth of
-                                                Nothing  -> do debugMsg_BranchOK_saturated
-                                                               return $ case unfulfilledEventualities br of
-                                                                          Just ds -> CLOSED ds
-                                                                          Nothing -> OPEN   $ buildModel br
-                                                Just (rule,newTodo) ->
-                                                        do debugMsg_BranchOK_applicableRule rule
-                                                           liftStats $ recordFiredRule $ ruleToId rule
-                                                           let possibleBranches' = applyRule clp rule br newTodo
-                                                           --to avoid entering in the rules.hs code, clean the
-                                                           --notPrevPref here...
-                                                           let pref_dis_rule = get_pr_disjunt_rule rule
-                                                           let possibleBranches = 
-                                                                case pref_dis_rule of
-                                                                  Nothing -> possibleBranches'
-                                                                  _       -> setPrevPrefInBranch possibleBranches'
-                                                           set_disjointPrefixes currentBranchingDepth pref_dis_rule 
-                                                           result_branching <- chooseBranch possibleBranches path
-                                                           --if rule is a disjunction rule and if the result 
-                                                           --of chooseBranch is closed, then update the cache 
-                                                           case pref_dis_rule of 
-                                                            Nothing -> return result_branching
-                                                            Just p -> 
-                                                             do modify (delete_levels currentBranchingDepth)
-                                                                case result_branching of 
-                                                                  c@(CLOSED bprs) ->
-                                                                     do update p br
-                                                                        debugMsg_BranchClash1 br p bprs 2 path
-                                                                        return c
-                                                                  TIMEOUT -> return TIMEOUT
-                                                                  o@(OPEN _)  -> return o
+                   _
+                     -> case query br_ (unsat_cache bd) of-- not br, because br has removed its augmented prefixes
+                           BranchClash br1 pr1 bprs1 _ ->
+                               do debugMsg_BranchClash1 br1 pr1 bprs1 0 path--TODO see should I add this line?
+                                  let new_disjunctPrefixes = delNonAncestors br1 pr1 (disjunctPrefixes bd)
+                                  modify (\b -> b{disjunctPrefixes = new_disjunctPrefixes})
+                                  liftStats $ recordClosedBranch
+                                  liftStats $ recordCacheHit
+                                  return (CLOSED bprs1)
+                           BranchOK br1_ ->
+                              do -- no cache hit: go on working with the branch
+                                 debugMsg_BranchOK br1_
+                                 case applicableRule br clp currentBranchingDepth of
+                                      Nothing  -> do debugMsg_BranchOK_saturated
+                                                     return $ case unfulfilledEventualities br of
+                                                                Just ds -> CLOSED ds
+                                                                Nothing -> OPEN   $ buildModel br
+                                      Just (rule,newTodo) ->
+                                              do debugMsg_BranchOK_applicableRule rule
+                                                 liftStats $ recordFiredRule $ ruleToId rule
+                                                 let possibleBranches' = applyRule clp rule br newTodo
+                                                 --to avoid entering in the rules.hs code, clean the
+                                                 --notPrevPref here...
+                                                 let pref_dis_rule = get_pr_disjunt_rule rule
+                                                 let possibleBranches =
+                                                      case pref_dis_rule of
+                                                        Nothing -> possibleBranches'
+                                                        _       -> setPrevPrefInBranch possibleBranches'
+                                                 set_disjointPrefixes currentBranchingDepth pref_dis_rule
+                                                 result_branching <- chooseBranch possibleBranches path
+                                                 --if rule is a disjunction rule and if the result
+                                                 --of chooseBranch is closed, then update the cache
+                                                 case pref_dis_rule of
+                                                  Nothing -> return result_branching
+                                                  Just p ->
+                                                   do modify (delete_levels currentBranchingDepth)
+                                                      case result_branching of
+                                                        c@(CLOSED bprs) ->
+                                                           do update p br
+                                                              debugMsg_BranchClash1 br p bprs 2 path
+                                                              return c
+                                                        TIMEOUT -> return TIMEOUT
+                                                        o@(OPEN _)  -> return o
 
 -- depth-first branch-choosing strategy
 
