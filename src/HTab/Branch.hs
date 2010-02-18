@@ -637,6 +637,9 @@ boxXAlreadyDone b ur f@(BoxX _ _) =
 boxXAlreadyDone _ _ _ = error "boxX already done : wrong formula kind"
 
 addAccFormula :: CmdLineParams -> Branch -> AccFormula -> BranchInfo
+addAccFormula clp br (AccFormula ds (InvRelSymbol r) p1 p2)
+ = addAccFormula clp br (AccFormula ds (RelSymbol r) p2 p1)
+
 addAccFormula clp br (AccFormula ds (RelSymbol r) p1_ p2_)
  = addFormulas clp newBr toAdd
    where toAdd = transApplications ++ funcApplications ++ injApplications ++ boxApplications
@@ -659,8 +662,6 @@ addAccFormula clp br (AccFormula ds (RelSymbol r) p1_ p2_)
          toSendBwd = Map.findWithDefault [] r $ Map.findWithDefault Map.empty p2 (toMap $ boxConstrBwd br)
          newBr = scheduleInclusionRule p1 p2 r ds $ insertRelationBranch br p1 r p2 ds
 
-addAccFormula clp br (AccFormula ds (InvRelSymbol r) p1_ p2_ ) -- so, create p2<>p1
- = addAccFormula clp br (AccFormula ds (RelSymbol r) p2_ p1_)
 
 scheduleInclusionRule :: Prefix -> Prefix -> Rel -> DependencySet -> Branch -> Branch
 scheduleInclusionRule p1 p2 r ds br -- todo get all included
