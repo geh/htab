@@ -618,25 +618,22 @@ updateBoxConstr p1_ r_ f_ ds_ (DMap boxConstr_) =
 -- [*]phi --> phi & [][*]phi
 -- need not to do all that addBoxConstraint does
 addBoxXConstraint :: Prefix -> RelSymbol -> Formula -> DependencySet -> CmdLineParams ->  Branch -> BranchInfo
-addBoxXConstraint nonRepresentativePr r f ds clp br
- = if boxXAlreadyDone br pr (BoxX r f)
+addBoxXConstraint pr r f ds clp br
+ = if boxXAlreadyDone br ur (BoxX r f)
     then BranchOK br
-    else addFormulas clp br2 [PrFormula pr ds f,
-                     PrFormula pr ds (Box r (BoxX r f))]
-   where pr = getUrfather br (DS.Prefix nonRepresentativePr)
-         br2 = addBoxXRuleCheck br pr (BoxX r f)
+    else addFormulas clp br2 [PrFormula pr ds f, PrFormula pr ds (Box r (BoxX r f))]
+   where ur = getUrfather br (DS.Prefix pr)
+         br2 = addBoxXRuleCheck br ur (BoxX r f)
 
 addBoxXRuleCheck :: Branch -> Prefix -> Formula -> Branch
-addBoxXRuleCheck br pr f =
+addBoxXRuleCheck br ur f =
   br{boxXRlCh=Map.insertWith Set.union ur (Set.singleton f) (boxXRlCh br)}
-   where ur = getUrfather br (DS.Prefix pr)
 
 boxXAlreadyDone :: Branch -> Prefix -> Formula -> Bool
-boxXAlreadyDone b p f@(BoxX _ _) =
+boxXAlreadyDone b ur f@(BoxX _ _) =
   case Map.lookup ur (boxXRlCh b) of
      Nothing  -> False
      Just fset -> Set.member f fset
- where ur = getUrfather b (DS.Prefix p)
 
 boxXAlreadyDone _ _ _ = error "boxX already done : wrong formula kind"
 
