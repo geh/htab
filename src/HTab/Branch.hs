@@ -598,7 +598,7 @@ addBoxConstraint pr_ (InvRelSymbol r) f ds clp br
    where pr = getUrfather br (DS.Prefix pr_)
          newBr = br{boxConstrBwd = updateBoxConstr pr r f ds (boxConstrBwd br)}
          accessiblePrDs          = Map.findWithDefault [] r $ predecessors (accStr br) pr
-         toAdd = transApplications ++ boxApplications
+         toAdd = transApplications ++ boxApplications -- no symApplications because inverse boxes have been rewritten as forward boxes during parsing
          transApplications = if isTransitive (relInfo br) r
                              then map (\(p,ds2) -> PrFormula p (dsUnion ds ds2) (Box (InvRelSymbol r) f)) accessiblePrDs
                              else []
