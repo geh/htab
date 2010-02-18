@@ -356,8 +356,8 @@ putAwayFormula clp pf@(PrFormula pr ds f2) br =
    At _ _     -> addToTodo pf br
    Down _ _   -> addToTodo pf br
    Lit l@(PosLit (N _)) -> let BranchOK br_ = addToTodo pf br
-                           in addAndUpdateMap pr ds l br_
-   Lit l                -> addAndUpdateMap pr ds l br
+                           in addToClashable pr ds l br_
+   Lit l                -> addToClashable pr ds l br
 
 {- todo list functions -}
 
@@ -1106,8 +1106,8 @@ initUnsatCache clp
 
 data UpdateResult = UpdateSuccess Clashable_info | UpdateFailure DependencySet
 
-addAndUpdateMap :: Prefix -> DependencySet -> Literal -> Branch -> BranchInfo
-addAndUpdateMap pr_ ds1 l br
+addToClashable :: Prefix -> DependencySet -> Literal -> Branch -> BranchInfo
+addToClashable pr_ ds1 l br
   = case ( case l of PosLit a -> updateMap (clashStr br) pr ds a True
                      NegLit a -> updateMap (clashStr br) pr ds a False ) of
      UpdateSuccess cs  -> BranchOK br{clashStr = cs}
