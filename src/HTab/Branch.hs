@@ -313,7 +313,7 @@ emptyTodoList clp =
 
 {-
    "add formula" functions, that handle
-   prefixes, nominals, and vId rule
+   prefixes and nominals
 -}
 
 addFormulas :: CmdLineParams -> Branch -> [PrFormula] -> BranchInfo
@@ -327,20 +327,21 @@ addFormulas clp br fs =
        fs
 
 addFormula :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
-addFormula clp br_ pf_
- =   addFormulaPutAway        pf clp
-   $ addFormulaBookKeep clp pf br
-  where
-   (br, pf) = vId br_ pf_
+addFormula clp br pf
+ =   putAwayFormula  clp pf
+   $ bookKeepFormula clp pf br
 
-addFormulaBookKeep :: CmdLineParams -> PrFormula -> Branch -> Branch
-addFormulaBookKeep clp pf@(PrFormula pr _ _) br
- =   addToAugmentedPrefixes   pr
+bookKeepFormula :: CmdLineParams -> PrFormula -> Branch -> Branch
+bookKeepFormula clp pf_ br
+ =   addToAugmentedPrefixes   ur
    $ addToPrefToForms         pf
    $ addToTrueForms       clp pf br
+  where
+    (ur,pf) = toUrfather br pf_
 
-addFormulaPutAway :: PrFormula -> CmdLineParams -> Branch -> BranchInfo
-addFormulaPutAway pf@(PrFormula pr ds f2) clp br =
+
+putAwayFormula :: CmdLineParams -> PrFormula -> Branch -> BranchInfo
+putAwayFormula clp pf@(PrFormula pr ds f2) br =
  case f2 of
    Con fs     -> addFormulas clp br (prefix pr ds fs)
    Dis _      -> addToTodo pf br
@@ -496,15 +497,14 @@ namd ((PrFormula p ds f):prfs) theMap =
 namd [] theMap = map (\((p,f),ds) -> PrFormula p ds f) (Map.assocs theMap)
 
 {-
-   Functions related to vId, nom, prefixes and nominals ...
+   Functions related to nom, prefixes and nominals ...
 -}
 
-vId :: Branch -> PrFormula -> (Branch,PrFormula)
-vId br f@(PrFormula pr ds f2)
- = (newBr, newF)
+toUrfather :: Branch -> PrFormula -> (Prefix,PrFormula)
+toUrfather br f@(PrFormula pr ds f2)
+ = (urfather, newF)
    where
-     (urfather,ds2,newClasses) = getUrfatherAndDeps br (DS.Prefix pr)
-     newBr = br{nomPrefClasses = newClasses}
+     (urfather,ds2,_) = getUrfatherAndDeps br (DS.Prefix pr)
      newF  = if urfather == pr
                  then f else PrFormula urfather (dsUnion ds ds2) f2
 
@@ -1087,7 +1087,7 @@ addFirstFormulas clp br_ fLang f
                               (zip [1..] ns)
           br2 = br{nomPrefClasses = newClasses,
                          clashStr = newClashStr}
-          br3 = foldr (\(pr,n) -> addFormulaBookKeep clp (PrFormula pr dsEmpty (nom n)))
+          br3 = foldr (\(pr,n) -> bookKeepFormula clp (PrFormula pr dsEmpty (nom n)))
                       br2
                       (zip [1..] ns)
 
@@ -1107,11 +1107,13 @@ initUnsatCache clp
 data UpdateResult = UpdateSuccess Clashable_info | UpdateFailure DependencySet
 
 addAndUpdateMap :: Prefix -> DependencySet -> Literal -> Branch -> BranchInfo
-addAndUpdateMap pr ds l br
+addAndUpdateMap pr_ ds1 l br
   = case ( case l of PosLit a -> updateMap (clashStr br) pr ds a True
                      NegLit a -> updateMap (clashStr br) pr ds a False ) of
      UpdateSuccess cs  -> BranchOK br{clashStr = cs}
-     UpdateFailure ds2 -> BranchClash br pr ds2 (Lit l)
+     UpdateFailure dsf -> BranchClash br pr dsf (Lit l)
+   where (pr,ds2,_) = getUrfatherAndDeps br (DS.Prefix pr_)
+         ds = ds1 `dsUnion` ds2
 
 
 -- Insert a piece of clashable information into all the clashable information of a branch
