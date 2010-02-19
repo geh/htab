@@ -348,7 +348,7 @@ getNewNom br =  maybe (NomSymbol newNomBaseName) incNomSymbol (lastNom br)
 disjRule :: CmdLineParams -> PrFormula -> Branch -> Dependency -> Rule
 disjRule clp df@(PrFormula pr ds (Dis fs)) br d
   = if not $ unitProp clp
-     then DisjRule df (breakDisj df d)
+     then DisjRule df $ prefix pr (dsInsert d ds) fs
      else case reduceDisjunctionAgainstBranch br pr fs of
              Triviality               -> DiscardRule df
              Contradiction ds_clash   -> ClashRule (dsUnion ds ds_clash) df
@@ -360,7 +360,7 @@ disjRule _ _ _ _ = error "disjRule"
 semBrRule :: CmdLineParams -> PrFormula -> Branch -> Dependency -> Rule    -- todo : unit propagation, part 2 (b)
 semBrRule clp df@(PrFormula pr ds (Dis fs)) br d
  = if not $ unitProp clp
-    then SemBrRule df (sbModList $ breakDisj df d)
+    then SemBrRule df $ sbModList $ prefix pr (dsInsert d ds) fs
     else case reduceDisjunctionAgainstBranch br pr fs of
             Triviality               -> DiscardRule df
             Contradiction ds_clash   -> ClashRule (dsUnion ds ds_clash) df
@@ -376,10 +376,4 @@ sbModList fs = go fs []
            (hd:negated):(go tl ((neg_ hd):negated))
            where neg_ (PrFormula pr ds f) = PrFormula pr ds (neg f)
        go [] _ = []
-
--- helper function for disjunction and semantic branching
--- updates the branching pointers of each formula
-breakDisj :: PrFormula -> Dependency -> [PrFormula]
-breakDisj (PrFormula pr ds (Dis fs)) d = prefix pr (dsInsert d ds) fs
-breakDisj _ _ = error $ "breakDisj error"
 
