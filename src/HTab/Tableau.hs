@@ -5,7 +5,7 @@ import HTab.Base(vPutStrLn)
 import HTab.Statistics(updateStep,printOutInspectionMetrics,
                        recordClosedBranch, recordFiredRule)
 import HTab.Branch(BranchInfo(..),Branch(..),BranchMonad, BranchData(..),
-                   calculateStepInfo, unfulfilledEventualities)
+                   unfulfilledEventualities)
 import HTab.CommandLine(logState,backJumping,CmdLineParams)
 import HTab.Rules(Rule,applyRule,applicableRule,ruleToId)
 import HTab.Statistics(Statistics)
@@ -31,10 +31,9 @@ tableau path =
                do debugMsg_BranchClash br pr bprs f path
                   liftStats $ recordClosedBranch
                   return (CLOSED bprs)
-              BranchOK br_ ->
+              BranchOK br ->
                do let currentBranchingDepth = length path + 1
-                  let br = calculateStepInfo br_
-                  debugMsg_BranchOK br_
+                  debugMsg_BranchOK br
                   case applicableRule br clp currentBranchingDepth of
                     Nothing  ->
                         do debugMsg_BranchOK_saturated

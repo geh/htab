@@ -19,9 +19,9 @@ emptyBranch,initialBranchStateFor,prefixes,
 reduceDisjunctionAgainstBranch, merge,
 getUrfather, getUrfatherAndDeps, isInTheModel, relationIsInTheModel,
 getModelRepresentative, isNotBlocked,
-calculateStepInfo, BlockingMode(..), diaAlreadyDone, diaXAlreadyDone,
+BlockingMode(..), diaAlreadyDone, diaXAlreadyDone,
 downAlreadyDone, incPropSymbol, incNomSymbol,
-Univ_constraints,AugmentedPrefixes,
+Univ_constraints,
 unfulfilledEventualities, ReducedDisjunct(..), newNomBaseName, newPropBaseName, getUnappliedUBPairs,
 isReflexive, isSymmetric, isTransitive,
 deleteUEV, insertUEV_addFormula
@@ -39,7 +39,7 @@ import qualified Data.Set as Set
 
 import qualified HTab.DisjSet as DS
 
-import Data.Maybe( fromJust, fromMaybe, catMaybes)
+import Data.Maybe( fromMaybe, catMaybes)
 
 import HTab.Timeout( TimeoutSignal )
 import HTab.Statistics(Statistics)
@@ -87,9 +87,6 @@ type PrefToDepSet     = Map.Map Prefix DependencySet
 type Eventualities    = Map.Map Int DependencySet
 
 type EquivClasses = DS.DisjSet DS.Pointer
-type InclusionUrfathersMap = Map.Map Prefix Prefix
-
-type AugmentedPrefixes = [Prefix] -- list of prefixes whose label is modified during the current step of the algorithm
 
 type PrefixParent = Map.Map Prefix Prefix
 
@@ -124,14 +121,12 @@ data Branch =
                       lastPref :: Prefix,
                        lastNom :: Maybe NomSymbol,
                       lastProp :: Maybe PropSymbol,
-                       incrPrs :: AugmentedPrefixes,
                  eventualities :: Eventualities,
                     bookKeepUB :: (Prefix,Prefix),
                  -- caching / memoisation data
              downVarRelevantCh :: DownVarRelevant_chart,
                  -- information about language of input formula and blocking mode
                  inputLanguage :: LanguageInfo,
-                     inclUrMap :: Maybe InclusionUrfathersMap,
                      blockMode :: BlockingMode,
                     prefParent :: PrefixParent,
               relevantNominals :: Set.Set NomSymbol,
@@ -166,8 +161,6 @@ emptyBranch clp fLang relInfo_ =
                   bookKeepUB=(0,0),
                   nomPrefClasses= DS.mkDSet::EquivClasses,
                   inputLanguage = fLang,
-                  inclUrMap = Nothing,
-                  incrPrs = [],
                   blockMode = blockingMode,
                   prefParent = Map.empty::PrefixParent,
                   relevantNominals = set $ languageNoms fLang,
@@ -207,8 +200,6 @@ instance Show Branch where
               ifNotEmpty (prefToForms br) (\m -> "\nPrefix to formulas:"       ++ showMap  (show . Set.toList) "\n " m),
               showl "\nEventualities: "  (eventualities br),
               showl "\nParent: " (prefParent br),
-              "\nInclusion urfather map: ", show (inclUrMap br),
-              "\nIncreased prefixes: ", show (incrPrs br),
               "\nBlocking mode: ", show (blockMode br),
               "\nPrefix-Nominal classes : ", showMap show ", " (nomPrefClasses br),
               showl "\nModel-relevant nominals : " (list $ relevantNominals br)
@@ -311,10 +302,9 @@ addFormula clp br pf
 
 bookKeepFormula :: PrFormula -> Branch -> Branch
 bookKeepFormula pf_ br
- =   addToAugmentedPrefixes   ur
-   $ addToPrefToForms         pf br
+ =  addToPrefToForms         pf br
   where
-    (ur,pf) = toUrfather br pf_
+    pf = toUrfather br pf_
 
 
 putAwayFormula :: CmdLineParams -> PrFormula -> Branch -> BranchInfo
@@ -473,9 +463,9 @@ namd [] theMap = map (\((p,f),ds) -> PrFormula p ds f) (Map.assocs theMap)
    Functions related to nom, prefixes and nominals ...
 -}
 
-toUrfather :: Branch -> PrFormula -> (Prefix,PrFormula)
+toUrfather :: Branch -> PrFormula -> PrFormula
 toUrfather br f@(PrFormula pr ds f2)
- = (urfather, newF)
+ = newF
    where
      (urfather,ds2,_) = getUrfatherAndDeps br (DS.Prefix pr)
      newF  = if urfather == pr
@@ -664,8 +654,14 @@ injNominal r p = nom $ NomSymbol $ "i_" ++ r ++ show p
 isNotBlocked :: Branch -> Prefix -> Bool
 isNotBlocked br pr =
  case blockMode br of
-   InclusionBlockingGlobal -> let ur =  getUrfather br (DS.Prefix pr) in
-                              getModelRepresentative br ur == ur  -- i'm not happy to call this model related function
+   InclusionBlockingGlobal ->
+               case filter isSubsumer labels of
+                    [] -> True
+                    _  -> False
+                 where ur = getUrfather br (DS.Prefix pr)
+                       fs = formulasOf br ur
+                       isSubsumer (p_,fs_) = (p_ < ur) && (Set.isSubsetOf fs fs_)
+                       labels = Map.toAscList (prefToForms br)
    InclusionBlockingChain  -> not $ isChainInclusionBlocked br pr
    ChainBlocking           -> not $ isChainBlocked br pr
 
@@ -722,13 +718,9 @@ relationIsInTheModel br (p1,_,p2)
 getModelRepresentative :: Branch -> Prefix -> Prefix  -- which is also an inclusion representative
 getModelRepresentative br pr
  = case blockMode br of
-    InclusionBlockingGlobal -> giu_get_oldest (fromJust $ inclUrMap br) nomUrfather
-                                where nomUrfather = getUrfather br (DS.Prefix pr)
-                                      giu_get_oldest :: InclusionUrfathersMap -> Prefix -> Prefix
-                                       -- request "includer" prefix until fixpoint reached
-                                      giu_get_oldest ium pr_
-                                       = if parent == pr_ then pr_ else giu_get_oldest ium parent
-                                          where parent = ium Map.! pr_
+    InclusionBlockingGlobal -> head $ map fst $ filter (Set.isSubsetOf fs . snd) $ Map.toAscList (prefToForms br)
+                                 where ur = getUrfather br (DS.Prefix pr)
+                                       fs = formulasOf br ur
     InclusionBlockingChain  -> -- find the *oldest* inclusion urfather on the chain
                                  go br nomUrfather nomUrfather Nothing
                                 where nomUrfather = getUrfather br (DS.Prefix pr)
@@ -760,47 +752,6 @@ findModelRepresentativeChainBlocking br pr
                    then Just urCurrent
                    else go br_ initial (current+1)
 
-
-calculateInclusionUrfathers :: Branch -> Branch
--- calculates the prefix -> inclusion urfather map incrementally, by
--- updating the map from the given prefix, which typically is the smallest augmented
--- prefix in the previous step
-
--- if the inclusion urfather blocking mode is enabled, we handle this map
--- if not, we let it as it is
-calculateInclusionUrfathers br =
-    br{inclUrMap = newInclUrMap}
-     where newInclUrMap =  case blockMode br of
-                            InclusionBlockingGlobal -> Just $ calculateInclusionUrfathersMap br
-                            _                       -> Nothing
-
-calculateInclusionUrfathersMap :: Branch -> InclusionUrfathersMap
-calculateInclusionUrfathersMap br = 
-  case inclUrMap br of
-   Just previousM -> if null $ incrPrs br
-                      then fromScratchInclUrMap       -- this case is reached if we applied the (A) rule  -- does it happen ??
-                      else updateInclUrMap previousM  -- works, provided that the augmented prefixes list is correctly filled
-   Nothing        -> fromScratchInclUrMap
-
- where updateInclUrMap prevM  = foldr     updateM        prevM           (filter (isNominalUrfather br) [pr..(lastPref br)])
-       fromScratchInclUrMap   = foldr     updateM        emptyM          (filter (isNominalUrfather br) (prefixes br))
-
-       updateM pref currentM_ = condFoldr (oneStep pref) currentM        (filter (isNominalUrfather br) (reverse [0..pref-1]))
-                                 where currentM = Map.insert pref pref currentM_
-       oneStep pref pref2 iuMap =
-         if formulasIncluded br pref pref2
-             then (Map.insert pref pref2 iuMap,False) -- if inclusion, update map and stop
-             else (iuMap, True)
-       smallestModifiedPrefix = minimum $ incrPrs br 
-       pr = smallestModifiedPrefix
-       emptyM = Map.empty::InclusionUrfathersMap
-
-
-condFoldr :: (a -> b -> (b,Bool)) -> b -> [a] -> b
-condFoldr _ accum    []      = accum
-condFoldr f accum (hd:tl)
-   = let (newAcc,continue) = f hd accum in
-      if continue then condFoldr f newAcc tl else newAcc
 
 formulasIncluded :: Branch -> Prefix -> Prefix-> Bool
 formulasIncluded br p1 p2 = (formulasOf br p1) `Set.isSubsetOf` (formulasOf br p2)
@@ -836,17 +787,6 @@ forInclAtom _  (P _) = True
 
 addParentPrefix :: Branch -> Prefix -> Prefix -> Branch
 addParentPrefix br son father =  br{prefParent = Map.insert son father (prefParent br)}
-
-{-     book-keeping that needs to be done before each step of the tableaux calculus     -}
-
-calculateStepInfo :: Branch -> Branch
-calculateStepInfo = wipeAugmentedPrefixes . calculateInclusionUrfathers
-
-wipeAugmentedPrefixes :: Branch -> Branch
-wipeAugmentedPrefixes br = br{incrPrs=[]}
-
-addToAugmentedPrefixes :: Prefix -> Branch -> Branch
-addToAugmentedPrefixes pr br = br{incrPrs = (pr:incrPrs br)}
 
 {-     modifications done by rule application     -}
 
