@@ -6,6 +6,7 @@ where
 import Control.Applicative ( (<$>) )
 import Control.Monad       ( unless, when )
 import Control.Monad.State( runStateT )
+import Control.Monad.Reader( runReaderT )
 
 import System.IO           ( hSetBuffering, stdin, BufferMode(LineBuffering)) 
 import System.CPUTime( getCPUTime )
@@ -181,21 +182,19 @@ saveGenModel clp mOutFile m = maybe (return ()) doWrite mOutFile
 tableauInit :: CmdLineParams -> TimeoutSignal -> BranchInfo -> IO (OpenFlag,Statistics)
 tableauInit clp ts bi =
         do vPutStrLn ">> Starting rules application" (logState clp)
-           ((openflag,_),stats) <- initStatsState $ initBranchState bd $ tableauStart clp
-           return (openflag,stats)
+           initStatsState $ initBranchState bd $ tableauStart clp bi
  where initStatsState  = initialStatisticsStateFor runStateT
-       initBranchState = initialBranchStateFor runStateT
+       initBranchState = initialBranchStateFor runReaderT
        bd              = BranchData
-                          { branch_info = bi,
-                            branch_clp  = clp,
+                          { branch_clp  = clp,
                             timeout_signal = ts
 			    }
 
-tableauStart :: CmdLineParams -> BranchMonad OpenFlag
-tableauStart clp =
+tableauStart :: CmdLineParams -> BranchInfo -> BranchMonad OpenFlag
+tableauStart clp bi =
  do liftStats $ configureMetrics clp
     let initialPath = [0]
-    tableau initialPath
+    tableau initialPath bi
 
 --
 

@@ -1,6 +1,7 @@
 module HTab.Tableau where
 
-import Control.Monad.State(StateT,lift,modify, put, get)
+import Control.Monad.Reader(ask)
+import Control.Monad.State(StateT,lift,modify)
 import HTab.Base(vPutStrLn)
 import HTab.Statistics(updateStep,printOutInspectionMetrics,
                        recordClosedBranch, recordFiredRule)
@@ -16,17 +17,17 @@ import HTab.Timeout( isTimeout )
 type Path = [Int]
 data OpenFlag = OPEN Model | CLOSED DependencySet | TIMEOUT
 
-tableau :: Path -> BranchMonad OpenFlag
-tableau path =
+tableau :: Path -> BranchInfo -> BranchMonad OpenFlag
+tableau path branchInfo =
       do logMe
-         bd <- get
+         bd <- ask
          let clp = branch_clp bd
 
          timeout <- isTimeout $ timeout_signal bd
          if timeout then return TIMEOUT else
           do
            debugMsg_NewSection path
-           case branch_info bd of
+           case branchInfo of
               BranchClash br pr bprs f ->
                do debugMsg_BranchClash br pr bprs f path
                   liftStats $ recordClosedBranch
@@ -43,32 +44,26 @@ tableau path =
                     Just (rule,newTodo) ->
                         do debugMsg_BranchOK_applicableRule rule
                            liftStats $ recordFiredRule $ ruleToId rule
-                           let possibleBranches = applyRule clp rule br newTodo
-                           case possibleBranches of
-                            [newBi] -> do put bd{branch_info=newBi}
-                                          tableau (0:path)
-                            _       -> chooseBranch possibleBranches path
+                           case applyRule clp rule br newTodo of
+                            [newBi] -> tableau (0:path) newBi
+                            bis     -> chooseBranch dsEmpty $ zipWith (\bi n -> (bi,n:path)) bis [0..]
 
--- depth-first branch-choosing strategy
 
-chooseBranch :: [BranchInfo] ->  Path -> BranchMonad OpenFlag
-chooseBranch bis path = chooseBranch_ dsEmpty $ zipWith (\bi n -> (bi,n:path)) bis [0..]
 
-chooseBranch_ :: DependencySet -> [(BranchInfo,Path)] -> BranchMonad OpenFlag
-chooseBranch_ currentDepSet ((hd,path):tl) =
- do bd <- get
-    put bd{branch_info=hd}
-    res <- tableau path
+chooseBranch :: DependencySet -> [(BranchInfo,Path)] -> BranchMonad OpenFlag
+chooseBranch currentDepSet ((hd,path):tl) =
+ do res <- tableau path hd
     let currentBranchingDepth = length path
     case res of
      TIMEOUT       -> return TIMEOUT
      o@(OPEN _)    -> return o
      CLOSED depSet ->
-      if (backJumping $ branch_clp bd) && (not $ dsMember currentBranchingDepth depSet)
-       then return $ CLOSED depSet
-       else chooseBranch_ (dsUnion currentDepSet depSet) tl
+      do bd <- ask
+         if (backJumping $ branch_clp bd) && (not $ dsMember currentBranchingDepth depSet)
+          then return $ CLOSED depSet
+          else chooseBranch (dsUnion currentDepSet depSet) tl
 
-chooseBranch_ currentDepSet [] = return $ CLOSED currentDepSet
+chooseBranch currentDepSet [] = return $ CLOSED currentDepSet
 
 
 logMe :: BranchMonad ()
@@ -86,7 +81,7 @@ liftIO = lift . lift
 
 debugMsg_NewSection :: Path -> BranchMonad ()
 debugMsg_NewSection path =
- do bd <- get
+ do bd <- ask
     let showState = logState $ branch_clp bd
     let depth = length path
     let width = head path 
@@ -95,26 +90,26 @@ debugMsg_NewSection path =
 
 debugMsg_BranchClash :: Branch -> Prefix -> DependencySet -> Formula -> Path -> BranchMonad ()
 debugMsg_BranchClash br pr bprs f path =
- do bd <- get
+ do bd <- ask
     let showState = logState $ branch_clp bd
     let currentBranchingDepth = length path
     liftIO $ vPutStrLn (show br ++ "\nClasher : " ++ show (pr,bprs,currentBranchingDepth,f)) showState
 
 debugMsg_BranchOK :: Branch -> BranchMonad ()
 debugMsg_BranchOK br =
- do bd <- get
+ do bd <- ask
     let showState = logState $ branch_clp bd
     liftIO $ vPutStrLn (show br) showState
 
 debugMsg_BranchOK_applicableRule :: Rule -> BranchMonad ()
 debugMsg_BranchOK_applicableRule rule =
- do bd <- get
+ do bd <- ask
     let showState = logState $ branch_clp bd
     liftIO $ vPutStrLn ("\n>> Rule : " ++ show rule) showState
 
 debugMsg_BranchOK_saturated :: BranchMonad ()
 debugMsg_BranchOK_saturated =
- do bd <- get
+ do bd <- ask
     let showState = logState $ branch_clp bd
     let traceMsg = "Saturated open branch"
     liftIO $ vPutStrLn ("\n>> " ++ traceMsg) showState

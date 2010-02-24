@@ -27,7 +27,8 @@ isReflexive, isSymmetric, isTransitive,
 deleteUEV, insertUEV_addFormula
 ) where
 
-import Control.Monad.State(StateT, MonadState)
+import Control.Monad.Reader(ReaderT, MonadReader)
+import Control.Monad.State(StateT)
 import Data.List(minimumBy)
 import Data.Char ( isNumber )
 
@@ -1149,12 +1150,11 @@ isInjective = hasProperty Injective
 
 {-      Monad related stuff      -}
 
-data BranchData = BranchData { branch_info :: BranchInfo,
-                               branch_clp :: CmdLineParams,
+data BranchData = BranchData {     branch_clp :: CmdLineParams,
                                timeout_signal :: TimeoutSignal}
 
-type BranchMonad a = StateT BranchData (StateT Statistics IO) a
+type BranchMonad a = ReaderT BranchData (StateT Statistics IO) a
 
-initialBranchStateFor :: (MonadState BranchData m) =>  (m a -> BranchData -> b) -> BranchData -> m a -> b
+initialBranchStateFor :: (MonadReader BranchData m) =>  (m a -> BranchData -> b) -> BranchData -> m a -> b
 initialBranchStateFor f bd = flip f bd
 
