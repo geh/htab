@@ -63,19 +63,11 @@ chooseBranch currentDepSet ((hd,path):tl) =
 
 chooseBranch currentDepSet [] = return $ CLOSED currentDepSet
 
+--
 
 logMe :: BranchMonad ()
 logMe = do liftStats $ printOutInspectionMetrics
            liftStats $ modify updateStep
-
---
-liftStats :: StateT Statistics IO a -> BranchMonad a
-liftStats  = lift
-
-liftIO :: IO a -> BranchMonad a
-liftIO = lift . lift
-
---
 
 debugMsg_NewSection :: Path -> BranchMonad ()
 debugMsg_NewSection path =
@@ -111,4 +103,10 @@ debugMsg_BranchOK_saturated =
     let showState = logState $ branch_clp bd
     let traceMsg = "Saturated open branch"
     liftIO $ vPutStrLn ("\n>> " ++ traceMsg) showState
+
+liftStats :: StateT Statistics IO a -> BranchMonad a
+liftStats  = lift
+
+liftIO :: IO a -> BranchMonad a
+liftIO = lift . lift
 
