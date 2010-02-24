@@ -1,4 +1,6 @@
-module HTab.Tableau where
+module HTab.Tableau
+ (OpenFlag(..), tableauStart)
+where
 
 import Control.Monad.Reader(ask)
 import Control.Monad.State(StateT,lift,modify)
