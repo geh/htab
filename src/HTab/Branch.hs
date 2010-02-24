@@ -21,7 +21,6 @@ getUrfather, getUrfatherAndDeps, isInTheModel, relationIsInTheModel,
 getModelRepresentative, isNotBlocked,
 BlockingMode(..), diaAlreadyDone, diaXAlreadyDone,
 downAlreadyDone, incPropSymbol, incNomSymbol,
-Univ_constraints,
 unfulfilledEventualities, ReducedDisjunct(..), newNomBaseName, newPropBaseName, getUnappliedUBPairs,
 isReflexive, isSymmetric, isTransitive,
 deleteUEV, insertUEV_addFormula
@@ -137,35 +136,34 @@ data Branch =
 
 emptyBranch :: CmdLineParams -> LanguageInfo -> RelInfo -> Branch
 emptyBranch clp fLang relInfo_ =
- addReflexiveLinks 0 $
                 Branch
-                { clashStr = DMap.empty::Clashable_info,
-                  todoList = emptyTodoList clp,
-                  accStr   = emptyRels,
-                  boxConstrBwd=DMap.empty::Box_constraints,
-                  boxConstrFwd=DMap.empty::Box_constraints,
-                  diaRlCh=Map.empty::Dia_rule_chart,
-                  diaXRlCh=Map.empty::DiaX_rule_chart,
-                  boxXRlCh=Map.empty::BoxX_rule_chart,
-                  downRlCh=Map.empty::Down_rule_chart,
-                  atRlCh=Set.empty::At_rule_chart,
-                  existRlCh=Set.empty::Exist_rule_chart,
-                  dDiaRlCh = Map.empty::Diff_Dia_rule_chart,
-                  downVarRelevantCh = Map.empty::DownVarRelevant_chart,
-                  univCons=[],
-                  lastPref = 0,
-                  lastNom  = Nothing,
-                  lastProp = Nothing,
-                  prefToForms= Map.empty::PrefToFormulas,
-                  prToDepSet= Map.empty::PrefToDepSet,
-                  eventualities = Map.empty::Eventualities,
-                  bookKeepUB=(0,0),
-                  nomPrefClasses= DS.mkDSet::EquivClasses,
-                  inputLanguage = fLang,
-                  blockMode = blockingMode,
-                  prefParent = Map.empty::PrefixParent,
-                  relevantNominals = set $ languageNoms fLang,
-                  relInfo = relInfo_
+                { clashStr          = DMap.empty,
+                  todoList          = emptyTodoList clp,
+                  accStr            = emptyRels,
+                  boxConstrBwd      = DMap.empty,
+                  boxConstrFwd      = DMap.empty,
+                  diaRlCh           = Map.empty,
+                  diaXRlCh          = Map.empty,
+                  boxXRlCh          = Map.empty,
+                  downRlCh          = Map.empty,
+                  atRlCh            = Set.empty,
+                  existRlCh         = Set.empty,
+                  dDiaRlCh          = Map.empty,
+                  downVarRelevantCh = Map.empty,
+                  univCons          = [],
+                  lastPref          = 0,
+                  lastNom           = Nothing,
+                  lastProp          = Nothing,
+                  prefToForms       = Map.empty,
+                  prToDepSet        = Map.empty,
+                  eventualities     = Map.empty,
+                  bookKeepUB        = (0,0),
+                  nomPrefClasses    = DS.mkDSet,
+                  inputLanguage     = fLang,
+                  blockMode         = blockingMode,
+                  prefParent        = Map.empty,
+                  relevantNominals  = set $ languageNoms fLang,
+                  relInfo           = relInfo_
                 }
  where blockingMode =
          if    languagePast fLang
@@ -970,13 +968,14 @@ nextName name
 -- preparation of the branch at the beginning of the calculus:
 --  - add the input formula at prefix 0
 --  - add a nominal formula at a fresh prefix for each nominal of the input formula
+--  - add reflexive links for prefixes 0 and nominal witnesses
 addFirstFormulas :: CmdLineParams -> Branch -> LanguageInfo -> Formula -> BranchInfo
 addFirstFormulas clp br_ fLang f
  = addFormula clp br3 pf
     where ns = languageNoms fLang
           nbNs = length ns
           noms = [1..nbNs]
-          br =  foldr addReflexiveLinks (  br_{lastPref = nbNs} ) noms
+          br =  foldr addReflexiveLinks (  br_{lastPref = nbNs} ) (0:noms)
           pf = firstPrefixedFormula f
           newClasses = foldr (\(pr,(NomSymbol n)) -> DS.union (DS.Prefix pr) (DS.Nominal n))
                              (nomPrefClasses br)
