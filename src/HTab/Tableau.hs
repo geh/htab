@@ -7,7 +7,7 @@ import HTab.Statistics(updateStep,printOutInspectionMetrics,
                        recordClosedBranch, recordFiredRule)
 import HTab.Branch(BranchInfo(..),Branch(..),BranchMonad, BranchData(..),
                    unfulfilledEventualities)
-import HTab.CommandLine(logState,backJumping,CmdLineParams)
+import HTab.CommandLine(logState,backJumping,CmdLineParams,configureMetrics)
 import HTab.Rules(Rule,applyRule,applicableRule,ruleToId)
 import HTab.Statistics(Statistics)
 import HTab.Formula(Prefix,DependencySet,Formula,dsEmpty,dsMember,dsUnion)
@@ -16,6 +16,9 @@ import HTab.Timeout( isTimeout )
 
 type Path = [Int]
 data OpenFlag = OPEN Model | CLOSED DependencySet | TIMEOUT
+
+tableauStart :: CmdLineParams -> BranchInfo -> BranchMonad OpenFlag
+tableauStart clp bi = (liftStats $ configureMetrics clp) >> tableau [0] bi
 
 tableau :: Path -> BranchInfo -> BranchMonad OpenFlag
 tableau path branchInfo =

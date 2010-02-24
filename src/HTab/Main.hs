@@ -14,12 +14,12 @@ import System.CPUTime( getCPUTime )
 import HyLo.InputFile.Parser ( QueryType(..) )
 
 import HTab.CommandLine( filename, maxtimeout, CmdLineParams, logState, genModel, backJumping,
-                         configureMetrics, quietMode, simpleInput, showFormula )
-import HTab.Branch( BranchInfo(..),initialBranchStateFor,BranchMonad, BranchData(..),
+                         quietMode, simpleInput, showFormula )
+import HTab.Branch( BranchInfo(..),initialBranchStateFor, BranchData(..),
                     emptyBranch, addFirstFormulas)
 import HTab.Statistics( Statistics, initialStatisticsStateFor, printOutAllMetrics' )
 import HTab.Base( vPutStrLn )
-import HTab.Tableau( liftStats, tableau, OpenFlag(..) )
+import HTab.Tableau( OpenFlag(..), tableauStart )
 import HTab.Formula( formulaLanguageInfo, languageTrans, Theory, RelInfo, Task,
                      Formula, encodeValidityTest, encodeSatTest, encodeRetrieveTask,
                      showRelInfo )
@@ -189,12 +189,6 @@ tableauInit clp ts bi =
                           { branch_clp  = clp,
                             timeout_signal = ts
 			    }
-
-tableauStart :: CmdLineParams -> BranchInfo -> BranchMonad OpenFlag
-tableauStart clp bi =
- do liftStats $ configureMetrics clp
-    let initialPath = [0]
-    tableau initialPath bi
 
 --
 
