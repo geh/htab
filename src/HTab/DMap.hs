@@ -1,4 +1,10 @@
-module HTab.DMap where
+module HTab.DMap
+(DMap(..), empty, toMap, flatten,
+ delete, insert, insertWith, (!),
+ insert1, lookup, lookup1, lookupInter,
+ moveInnerDataDMap, moveInnerDataDMapPlusDeps )
+
+where
 
 -- import Test.QuickCheck       ( Arbitrary(..), Gen, Property,
 --                                forAll, oneof, variant, sized, resize )

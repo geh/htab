@@ -1,4 +1,6 @@
-module HTab.DisjSet where
+module HTab.DisjSet
+( DisjSet, Pointer(..), mkDSet, find, union, isRoot )
+where
 
 import Data.Maybe (isNothing)
 import qualified Data.Map as Map
