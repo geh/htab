@@ -21,8 +21,6 @@ tableau :: Path -> BranchInfo -> BranchMonad OpenFlag
 tableau path branchInfo =
       do logMe
          bd <- ask
-         let clp = branch_clp bd
-
          timeout <- isTimeout $ timeout_signal bd
          if timeout then return TIMEOUT else
           do
@@ -35,6 +33,7 @@ tableau path branchInfo =
               BranchOK br ->
                do let currentBranchingDepth = length path + 1
                   debugMsg_BranchOK br
+                  let clp = branch_clp bd
                   case applicableRule br clp currentBranchingDepth of
                     Nothing  ->
                         do debugMsg_BranchOK_saturated
@@ -47,7 +46,6 @@ tableau path branchInfo =
                            case applyRule clp rule br newTodo of
                             [newBi] -> tableau (0:path) newBi
                             bis     -> chooseBranch dsEmpty $ zipWith (\bi n -> (bi,n:path)) bis [0..]
-
 
 
 chooseBranch :: DependencySet -> [(BranchInfo,Path)] -> BranchMonad OpenFlag
