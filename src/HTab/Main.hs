@@ -20,7 +20,7 @@ import HTab.Branch( BranchInfo(..),initialBranchStateFor, BranchData(..),
 import HTab.Statistics( Statistics, initialStatisticsStateFor, printOutAllMetrics' )
 import HTab.Base( vPutStrLn )
 import HTab.Tableau( OpenFlag(..), tableauStart )
-import HTab.Formula( formulaLanguageInfo, languageTrans, Theory, RelInfo, Task,
+import HTab.Formula( formulaLanguageInfo, languageTrans, Theory, RelInfo, Encoding, Task,
                      Formula, encodeValidityTest, encodeSatTest, encodeRetrieveTask,
                      showRelInfo )
 import qualified HTab.Formula as F
@@ -61,12 +61,12 @@ runWithParams clp =
 
 --
 
-runTasks :: (Theory,RelInfo,[Task]) -> CmdLineParams -> TimeoutSignal ->  IO (TaskRunFlag)
-runTasks allTasks@(theory,relInfo,tasks) clp ts =
+runTasks :: (Theory,RelInfo,Encoding,[Task]) -> CmdLineParams -> TimeoutSignal ->  IO (TaskRunFlag)
+runTasks allTasks@(theory,relInfo,encoding,tasks) clp ts =
  do
     let myPutStrLn str = vPutStrLn str (not $ quietMode clp)
     myPutStrLn "== Checking theory satisfiability =="
-    res <- runOneTask (Satisfiable, genModel clp,[]) relInfo theory clp ts
+    res <- runOneTask (Satisfiable, genModel clp,[]) relInfo encoding theory clp ts
     case res of
      SUCCESS | length tasks == 0 -> return SUCCESS
              | otherwise         -> do myPutStrLn "\n==         Starting tasks         =="
@@ -77,20 +77,20 @@ runTasks allTasks@(theory,relInfo,tasks) clp ts =
 
 --
 
-runTasks2 :: (Theory,RelInfo,[Task]) -> CmdLineParams -> TimeoutSignal -> IO (TaskRunFlag)
-runTasks2 (_,_,[]) _ _                    = error "runTasks2 empty list error"
-runTasks2 (theory,relInfo,(hd:tl)) clp ts =
- do res <- runOneTask hd relInfo theory clp ts
+runTasks2 :: (Theory,RelInfo,Encoding,[Task]) -> CmdLineParams -> TimeoutSignal -> IO (TaskRunFlag)
+runTasks2 (_,_,_,[]) _ _                  = error "runTasks2 empty list error"
+runTasks2 (theory,relInfo,encoding,(hd:tl)) clp ts =
+ do res <- runOneTask hd relInfo encoding theory clp ts
     case res of
       SUCCESS | length tl == 0 -> return SUCCESS
-              | otherwise      -> runTasks2 (theory,relInfo,tl) clp ts
-      failOrTimeout            -> do runTasks2 (theory,relInfo,tl) clp ts
+              | otherwise      -> runTasks2 (theory,relInfo,encoding,tl) clp ts
+      failOrTimeout            -> do runTasks2 (theory,relInfo,encoding,tl) clp ts
                                      return failOrTimeout
 
 --
 
-runOneTask :: Task -> RelInfo -> Formula -> CmdLineParams -> TimeoutSignal -> IO (TaskRunFlag)
-runOneTask (query,mOutFile,fs) relInfo theory clp ts=
+runOneTask :: Task -> RelInfo -> Encoding -> Formula -> CmdLineParams -> TimeoutSignal -> IO (TaskRunFlag)
+runOneTask (query,mOutFile,fs) relInfo encoding theory clp ts=
  time clp "Task time:"
  $ do
      let myPutStrLn str = vPutStrLn str (not $ quietMode clp)
@@ -104,8 +104,8 @@ runOneTask (query,mOutFile,fs) relInfo theory clp ts=
         Retrieve
           ->
             do let fLang = formulaLanguageInfo theory
-               let initialBranch = emptyBranch clp fLang relInfo
-               let (noms,encfs) = encodeRetrieveTask relInfo fLang theory fs
+               let initialBranch = emptyBranch clp fLang relInfo encoding
+               let (noms,encfs) = encodeRetrieveTask relInfo encoding fLang theory fs
                --
                myPutStrLn $ "Instances making true: " ++ show fs
                --
@@ -123,8 +123,8 @@ runOneTask (query,mOutFile,fs) relInfo theory clp ts=
         valOrSat
           ->
             do let f = case valOrSat of
-                        Valid       -> encodeValidityTest relInfo theory fs
-                        Satisfiable -> encodeSatTest      relInfo theory fs
+                        Valid       -> encodeValidityTest relInfo encoding theory fs
+                        Satisfiable -> encodeSatTest      relInfo encoding theory fs
                         _           -> error "never happens"
                --
                f `seq` when (showFormula clp)
@@ -135,7 +135,7 @@ runOneTask (query,mOutFile,fs) relInfo theory clp ts=
                                     "Relations properties :" ++ showRelInfo relInfo ]
                --
                let fLang         = formulaLanguageInfo f
-               let initialBranch = emptyBranch clp fLang relInfo
+               let initialBranch = emptyBranch clp fLang relInfo encoding
                let branchInfo    = addFirstFormulas clp initialBranch fLang f
                let clp2          = if (languageTrans fLang) then clp{backJumping=False} else clp
                --

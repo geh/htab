@@ -9,8 +9,10 @@ import HyLo.Model.Herbrand ( inducedModel )
 import qualified HyLo.Model.Herbrand as H
 import qualified HyLo.Model as M
 
-import HTab.Formula( Prefix, Atom (..), Rel, LanguageInfo(..),
-                     NomSymbol(..), RelSymbol(..), PropSymbol(..), RelInfo )
+import qualified HyLo.Signature.String as S -- PropSymbol(..), NomSymbol(..), RelSymbol(..)
+
+import HTab.Formula( Prefix, Rel, LanguageInfo(..),
+                     RelInfo, toPropSymbol, toNomSymbol, isProp )
 import HTab.Branch( Branch(..), prefixes, getUrfather,
                     isInTheModel, relationIsInTheModel, getModelRepresentative,
                     isTransitive, isSymmetric )
@@ -18,54 +20,54 @@ import qualified HTab.DisjSet as DS
 import HTab.DMap (flatten, DMap(..), toMap )
 import HTab.Relations ( allRels )
 
-type Model = M.Model NomSymbol NomSymbol PropSymbol RelSymbol
+type Model = M.Model S.NomSymbol S.NomSymbol S.PropSymbol S.RelSymbol
 
 buildModel :: Branch -> Model
 buildModel branch =
   completeModel (relInfo branch) $ inducedModel $ H.herbrand es ps rs
  where
+       e = encoding branch
        bias = if null $ languageNoms $ inputLanguage branch
                then 0
                else 1 + (length $ languageNoms $ inputLanguage branch)
        es = Set.union
              (Set.fromList
-               [(NomSymbol $ show (getUrfather branch (DS.Nominal nString) + bias), n)
-               | n@(NomSymbol nString) <- (languageNoms $ inputLanguage branch)]
+               [(S.NomSymbol $ show (getUrfather branch (DS.Nominal n) + bias), toNomSymbol e n)
+               | n <- (languageNoms $ inputLanguage branch)]
              )
              (Set.fromList
-               [(NomSymbol $ show (p + bias), NomSymbol $ show (p + bias))
+               [(S.NomSymbol $ show (p + bias), S.NomSymbol $ show (p + bias))
                | p <- (prefixes branch), isInTheModel branch p]
              )
        ps = Set.fromList
-             [(NomSymbol $ show (pre + bias), pro)
+             [(S.NomSymbol $ show (pre + bias), pro)
              | (pre,pro) <- prefixAndProps branch]
        rs = Set.fromList $ map toSimpSig
               $ map (\(p1,r,p2) -> ((getModelRepresentative branch p1) + bias, r, (getModelRepresentative branch p2) + bias))
                     $ filter (relationIsInTheModel branch) $ allRels $ accStr branch
 
-toSimpSig :: (Prefix,Rel,Prefix) -> (NomSymbol,RelSymbol,NomSymbol)
-toSimpSig (p1,r,p2) = (NomSymbol (show p1), RelSymbol r, NomSymbol (show p2))
+toSimpSig :: (Prefix,Rel,Prefix) -> (S.NomSymbol,S.RelSymbol,S.NomSymbol)
+toSimpSig (p1,r,p2) = (S.NomSymbol (show p1), S.RelSymbol r, S.NomSymbol (show p2))
 
-prefixAndProps :: Branch -> [(Prefix,PropSymbol)]
+prefixAndProps :: Branch -> [(Prefix,S.PropSymbol)]
 prefixAndProps br =
-  [(pr, p_) | (pr , P p_) <- prPosLitProp]
+  [(pr, toPropSymbol e p_) | (pr , p_) <- prPosLitProp]
  where clashable             = toMap $ clashStr br
        clashableRelevant     = Map.filterWithKey (\k _ -> isInTheModel br k) clashable
-       prPosLitProp          = filter (isPosLitProp . snd) $ map fst $ filter (fst . snd) $ flatten $ DMap clashableRelevant
-       isPosLitProp   (P _)  = True
-       isPosLitProp     _    = False
+       prPosLitProp          = filter (isProp . snd) $ map fst $ filter (fst . snd) $ flatten $ DMap clashableRelevant
+       e = encoding br
 
 completeModel :: RelInfo -> Model -> Model
 completeModel relI m = completeTransitivity relI $ completeSymmetry relI m
 
 completeTransitivity :: RelInfo -> Model -> Model
-completeTransitivity relI m = m{M.succs = \rs@(RelSymbol r) w
+completeTransitivity relI m = m{M.succs = \rs@(S.RelSymbol r) w
                                                -> if isTransitive relI r
                                                     then getTransClos (M.succs m) rs w
                                                     else M.succs m rs w}
 
 completeSymmetry :: RelInfo -> Model -> Model
-completeSymmetry relI m = m{M.succs = \rs@(RelSymbol r) w
+completeSymmetry relI m = m{M.succs = \rs@(S.RelSymbol r) w
                                            -> if isSymmetric relI r
                                                 then getSymClos (M.worlds m) (M.succs m) rs w
                                                 else M.succs m rs w}

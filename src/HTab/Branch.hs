@@ -20,8 +20,8 @@ reduceDisjunctionAgainstBranch, merge,
 getUrfather, getUrfatherAndDeps, isInTheModel, relationIsInTheModel,
 getModelRepresentative, isNotBlocked,
 BlockingMode(..), diaAlreadyDone, diaXAlreadyDone,
-downAlreadyDone, incPropSymbol, incNomSymbol,
-unfulfilledEventualities, ReducedDisjunct(..), newNomBaseName, newPropBaseName, getUnappliedUBPairs,
+downAlreadyDone,
+unfulfilledEventualities, ReducedDisjunct(..), getUnappliedUBPairs,
 isReflexive, isSymmetric, isTransitive,
 deleteUEV, insertUEV_addFormula
 ) where
@@ -29,7 +29,6 @@ deleteUEV, insertUEV_addFormula
 import Control.Monad.Reader(ReaderT, MonadReader)
 import Control.Monad.State(StateT)
 import Data.List(minimumBy)
-import Data.Char ( isNumber )
 
 import Data.Map ( Map, foldWithKey )
 import qualified Data.Map as Map
@@ -77,7 +76,7 @@ type BoxX_rule_chart   = Map.Map Prefix (Set.Set Formula)
 type Down_rule_chart   = Map.Map Prefix (Set.Set Formula)
 type At_rule_chart     = Set.Set Formula
 type Exist_rule_chart  = Set.Set Formula
-type Diff_Dia_rule_chart = Map.Map Formula (Maybe PropSymbol)
+type Diff_Dia_rule_chart = Map.Map Formula (Maybe Prop)
 type DownVarRelevant_chart = Map.Map Formula Bool
 
 type Univ_constraints  = [(DependencySet,Formula)]
@@ -119,8 +118,8 @@ data Branch =
                 nomPrefClasses :: EquivClasses,
                  -- book keeping
                       lastPref :: Prefix,
-                       lastNom :: Maybe NomSymbol,
-                      lastProp :: Maybe PropSymbol,
+                       nextNom :: Nom,
+                      nextProp :: Prop,
                  eventualities :: Eventualities,
                     bookKeepUB :: (Prefix,Prefix),
                  -- caching / memoisation data
@@ -129,13 +128,14 @@ data Branch =
                  inputLanguage :: LanguageInfo,
                      blockMode :: BlockingMode,
                     prefParent :: PrefixParent,
-              relevantNominals :: Set.Set NomSymbol,
-                       relInfo :: RelInfo}
+              relevantNominals :: Set.Set Nom,
+                       relInfo :: RelInfo,
+                      encoding :: Encoding}
 
 --
 
-emptyBranch :: CmdLineParams -> LanguageInfo -> RelInfo -> Branch
-emptyBranch clp fLang relInfo_ =
+emptyBranch :: CmdLineParams -> LanguageInfo -> RelInfo -> Encoding -> Branch
+emptyBranch clp fLang relInfo_ encoding_ =
                 Branch
                 { clashStr          = DMap.empty,
                   todoList          = emptyTodoList clp,
@@ -152,8 +152,8 @@ emptyBranch clp fLang relInfo_ =
                   downVarRelevantCh = Map.empty,
                   univCons          = [],
                   lastPref          = 0,
-                  lastNom           = Nothing,
-                  lastProp          = Nothing,
+                  nextNom           = maxNom encoding_ + 4,
+                  nextProp          = maxProp encoding_ + 4,
                   prefToForms       = Map.empty,
                   prToDepSet        = Map.empty,
                   eventualities     = Map.empty,
@@ -162,8 +162,9 @@ emptyBranch clp fLang relInfo_ =
                   inputLanguage     = fLang,
                   blockMode         = blockingMode,
                   prefParent        = Map.empty,
-                  relevantNominals  = set $ languageNoms fLang,
-                  relInfo           = relInfo_
+                  relevantNominals  = set $ relevantNoms fLang,
+                  relInfo           = relInfo_,
+                  encoding          = encoding_
                 }
  where blockingMode =
          if    languagePast fLang
@@ -201,7 +202,9 @@ instance Show Branch where
               showl "\nParent: " (prefParent br),
               "\nBlocking mode: ", show (blockMode br),
               "\nPrefix-Nominal classes : ", showMap show ", " (nomPrefClasses br),
-              showl "\nModel-relevant nominals : " (list $ relevantNominals br)
+              showl "\nModel-relevant nominals : " (list $ relevantNominals br),
+              "\n nextnom : "  ++ show (nextNom br),
+              "\n nextprop : " ++ show (nextProp br)
            ]
               where
                   ifNotEmpty b f = if empty b then "" else f b
@@ -209,7 +212,7 @@ instance Show Branch where
                   str True = "" ; str False = "!"
 
                   showMap vShow sep = foldWithKey (\k v -> (++ sep ++ show k ++ " -> " ++ vShow v )) ""
-                  showMap_lits = foldWithKey (\a (b,d) -> (++ str b ++ show a ++ " " ++ dsShow d  ++ ", ")) ""
+                  showMap_lits = foldWithKey (\a (b,d) -> (++ str b ++ showLit a ++ " " ++ dsShow d  ++ ", ")) ""
                   showMap_rel = foldWithKey (\r dxs -> (++ "-" ++ r ++ "-> " ++ show dxs ++ ", ")) ""
 
 class Emptyable a where
@@ -321,8 +324,8 @@ putAwayFormula clp pf@(PrFormula pr ds f2) br =
    D _        -> BranchOK $ addToTodo pf br
    At _ _     -> BranchOK $ addToTodo pf br
    Down _ _   -> BranchOK $ addToTodo pf br
-   Lit l@(PosLit (N _)) -> addToClashable pr ds l $ addToTodo pf br
-   Lit l                -> addToClashable pr ds l br
+   Lit l | isPositiveNom l -> addToClashable pr ds l $ addToTodo pf br
+   Lit l                   -> addToClashable pr ds l br
 
 {- todo list functions -}
 
@@ -335,31 +338,33 @@ addToTodo pf@(PrFormula p ds f2) br =
    newTodoList =
      case todoList br of
       Fair srs -> case f2 of
-                   Lit (PosLit(N(NomSymbol n)))
-                       -> Fair ( srs ++ [SR_Merge p (DS.Nominal n) ds] )
+                   Lit l | isPositiveNom l
+                       -> Fair ( srs ++ [SR_Merge p (DS.Nominal l) ds] )
                    _   -> Fair ( srs ++ [SR_Formula pf])
       utodo    ->
        case f2 of
-         Dis _      -> utodo{disjStr  = Set.insert pf (disjStr utodo)}
-         Dia _ _    -> utodo{diaStr   = Set.insert pf (diaStr utodo)}
-         DiaX _ _ _ -> utodo{diaXStr  = Set.insert pf (diaXStr utodo)}
-         E _        -> utodo{existStr = Set.insert pf (existStr utodo)}
-         D _        -> utodo{diffStr  = Set.insert pf (diffStr utodo)}
-         At _ _     -> utodo{atStr    = Set.insert pf (atStr utodo)}
-         Down _ _   -> utodo{downStr  = Set.insert pf (downStr utodo)}
-         Lit (PosLit (N (NomSymbol n))) -> utodo{mergeStr   = Set.insert (ds,p,(DS.Nominal n)) (mergeStr utodo)}
-         _          -> error "addToTodo"
+         Dis _              -> utodo{disjStr  = Set.insert pf (disjStr utodo)}
+         Dia _ _            -> utodo{diaStr   = Set.insert pf (diaStr utodo)}
+         DiaX _ _ _         -> utodo{diaXStr  = Set.insert pf (diaXStr utodo)}
+         E _                -> utodo{existStr = Set.insert pf (existStr utodo)}
+         D _                -> utodo{diffStr  = Set.insert pf (diffStr utodo)}
+         At _ _             -> utodo{atStr    = Set.insert pf (atStr utodo)}
+         Down _ _           -> utodo{downStr  = Set.insert pf (downStr utodo)}
+         Lit l
+          | isPositiveNom l -> utodo{mergeStr   = Set.insert (ds,p,(DS.Nominal l)) (mergeStr utodo)}
+         _                  -> error "addToTodo"
    alreadyDone =
     case f2 of
-     E  _       -> existAlreadyDone br f2
-     D _        -> False
-     At _ _     -> atAlreadyDone br f2
-     Down _ _   -> downAlreadyDone br pf
-     Dia  _ _   -> diaAlreadyDone br pf
-     DiaX _ r ev-> diaXAlreadyDone br p (r,ev)
-     Dis _      -> False
-     Lit (PosLit (N n)) -> inSameClass br p n
-     _          -> error "alreadyDone"
+     E  _               -> existAlreadyDone br f2
+     D _                -> False
+     At _ _             -> atAlreadyDone br f2
+     Down _ _           -> downAlreadyDone br pf
+     Dia  _ _           -> diaAlreadyDone br pf
+     DiaX _ r ev        -> diaXAlreadyDone br p (r,ev)
+     Dis _              -> False
+     Lit l
+      | isPositiveNom l -> inSameClass br p l
+     _                  -> error "alreadyDone"
    brWithSaturation =
     case f2 of
      E _         -> br{existRlCh = Set.insert f2 (existRlCh br)}
@@ -416,21 +421,8 @@ merge clp br pr fDs pointer -- pointer is a nominal or a prefix
                       mapAccBwd = map (predecessors (accStr br)) [ur1,ur2]
                       formulasToSend2 = concatMap (boxRule currentDeps) $ almostCartesianProduct mapBoxBwd mapAccBwd
 
-                      funNomsToSend = addFNom $ Map.filterWithKey (\r _ -> isFunctional (relInfo br) r) $ successors (accStr br) oldUr
-                       where addFNom :: Map Rel [(Prefix,DependencySet)] -> [PrFormula]
-                             addFNom = concatMap (\(r,pds) ->
-                                                    map (\(p,ds) -> PrFormula p (dsUnion ds fDs) (funcNominal r newUr)) pds
-                                                 ) . Map.toList
-                      injNomsToSend  = addINom $ Map.filterWithKey (\r _ -> isInjective (relInfo br) r) $ predecessors (accStr br) oldUr
-                       where addINom :: Map Rel [(Prefix,DependencySet)] -> [PrFormula]
-                             addINom = concatMap (\(r,pds) ->
-                                                    map (\(p,ds) -> PrFormula p (dsUnion ds fDs) (injNominal r newUr)) pds
-                                                 ) . Map.toList
-
                       formulasToAdd   = nubAndMergeDeps $     formulasToSend1
                                                            ++ formulasToSend2
-                                                           ++  funNomsToSend
-                                                           ++  injNomsToSend
 
                       newBr           = br{nomPrefClasses = classes3,
                                            boxConstrFwd   = newBoxConstrFwd,
@@ -503,9 +495,9 @@ findDeps br pr = Map.findWithDefault dsEmpty pr (prToDepSet br)
 addClassDeps :: Prefix -> DependencySet -> Branch -> Branch
 addClassDeps pr ds br = br { prToDepSet = Map.insertWith dsUnion pr ds (prToDepSet br) }
 
-inSameClass :: Branch -> Prefix -> NomSymbol -> Bool
-inSameClass br p (NomSymbol n)
- = case fst $ DS.find (DS.Nominal n) (nomPrefClasses br) of
+inSameClass :: Branch -> Prefix -> Int -> Bool
+inSameClass br p n
+ = case fst $ DS.find (DS.Nominal (atom n)) (nomPrefClasses br) of
     DS.Nominal _ -> False
     DS.Prefix p2 -> getUrfather br (DS.Prefix p) == p2
 
@@ -546,7 +538,7 @@ addBoxConstraint pr_ (RelSymbol r) f ds clp br
          transApplications = if isTransitive (relInfo br) r
                              then map (\(p,ds2) -> PrFormula p (dsUnion ds ds2) (Box (RelSymbol r) f)) accessiblePrDs
                              else []
-         symApplications = if isSymmetric (relInfo br) r then [PrFormula pr ds $ box (InvRelSymbol r) f] else []
+         symApplications = if isSymmetric (relInfo br) r then [PrFormula pr ds $ Box (InvRelSymbol r) f] else []
          boxApplications = map (\(p,ds2) -> PrFormula p (dsUnion ds ds2) f) accessiblePrDs
 
 addBoxConstraint pr_ (InvRelSymbol r) f ds clp br
@@ -598,18 +590,12 @@ addAccFormula clp br (AccFormula ds (InvRelSymbol r) p1 p2)
 
 addAccFormula clp br (AccFormula ds (RelSymbol r) p1_ p2_)
  = addFormulas clp newBr toAdd
-   where toAdd = transApplications ++ funcApplications ++ injApplications ++ boxApplications
+   where toAdd = transApplications ++ boxApplications
          transApplications = if isTransitive (relInfo br) r
                               then
                                (  ( map (\(f,ds2) -> PrFormula p2 (dsUnion ds ds2) (Box (RelSymbol r) f)) toSendFwd )
                                ++ ( map (\(f,ds2) -> PrFormula p1 (dsUnion ds ds2) (Box (RelSymbol r) f)) toSendBwd )  )
                               else []
-         funcApplications = if isFunctional (relInfo br) r
-                             then [PrFormula p2 ds (funcNominal r p1)] -- add nominal to destination
-                             else []
-         injApplications = if isInjective (relInfo br) r
-                            then [PrFormula p1 ds (injNominal r p1)] -- add nominal to origin
-                            else []
          boxApplications =  (  ( map (\(f,ds2) -> PrFormula p2 (dsUnion ds ds2) f) toSendFwd )
                             ++ ( map (\(f,ds2) -> PrFormula p1 (dsUnion ds ds2) f) toSendBwd )  )
          p1 = getUrfather br (DS.Prefix p1_)
@@ -638,15 +624,6 @@ insertRelationBranch :: Branch -> Prefix -> Rel -> Prefix -> DependencySet -> Br
 insertRelationBranch br p1 r p2 ds
  = br{accStr = insertRelation (accStr br) p1 r p2 ds}
 
-{-  functional relations  -}
-
-funcNominal :: Rel -> Prefix -> Formula
-funcNominal r p = nom $ NomSymbol $ "f_" ++ r ++ show p
-
-{-  injective relations  -}
-
-injNominal :: Rel -> Prefix -> Formula
-injNominal r p = nom $ NomSymbol $ "i_" ++ r ++ show p
 
 {-  functions related to blocking conditions and model building -}
 
@@ -764,8 +741,10 @@ formulasOf br p = Map.findWithDefault Set.empty p (prefToForms br)
 
 -- is the formula useful to calculate inclusion urfathers ?
 forInclusion :: Branch -> Formula -> Bool
-forInclusion br (Lit (PosLit atom)) = forInclAtom br atom
-forInclusion br (Lit (NegLit atom)) = forInclAtom br atom
+forInclusion br (Lit l)
+      | isProp l    = True
+      | isNominal l = Set.member (atom l) (relevantNominals br)
+      | otherwise   = False -- top, bottom
 forInclusion _ (Con _) = False
 forInclusion _ (Dis _) = False
 forInclusion _ (At _ _) = False
@@ -778,11 +757,6 @@ forInclusion _ (A _) = False
 forInclusion _ (E _) = False
 forInclusion _ (D _) = False
 forInclusion _ (B _) = False
-
-forInclAtom :: Branch -> Atom -> Bool
-forInclAtom _  Taut  = False
-forInclAtom br (N n) = Set.member n (relevantNominals br)
-forInclAtom _  (P _) = True
 
 addParentPrefix :: Branch -> Prefix -> Prefix -> Branch
 addParentPrefix br son father =  br{prefParent = Map.insert son father (prefParent br)}
@@ -866,11 +840,12 @@ addUnivConstraint f ds clp br
 
 b_rule :: Prefix -> Formula -> DependencySet -> CmdLineParams -> Branch -> BranchInfo
 b_rule  pr f ds clp br
- = addFormula clp br (PrFormula pr ds $ downArrow x $ univMod $ ((nom x) `disj` f))
-    where x = NomSymbol "x"
+ = addFormula clp br2 (PrFormula pr ds $ Down newNom $ univMod $ ((Lit newNom) `disj` f))
+    where newNom = nextNom br
+          br2 = br{nextNom = nextNom br + 4}
 --
 
-addDiffRuleCheck :: Branch -> Formula -> Maybe PropSymbol -> Branch
+addDiffRuleCheck :: Branch -> Formula -> Maybe Prop -> Branch
 addDiffRuleCheck br f mp = br{dDiaRlCh=Map.insert f mp (dDiaRlCh br)}
 
 --
@@ -928,66 +903,52 @@ addReflexiveLinks pr br
 
 --
 
-incPropSymbol :: PropSymbol -> PropSymbol
-incPropSymbol (PropSymbol n) = PropSymbol (nextName n)
-
-
 createNewProp :: Branch -> Branch
-createNewProp br
- = br{lastProp = Just newProp}
-    where newProp = maybe (PropSymbol newPropBaseName) incPropSymbol (lastProp br)
-
---
-
-incNomSymbol :: NomSymbol -> NomSymbol
-incNomSymbol (NomSymbol n) = NomSymbol (nextName n)
+createNewProp br = br{nextProp = nextProp br + 4}
 
 createNewNomTestRelevance :: Branch -> Formula -> Branch
 createNewNomTestRelevance br f
- = br{lastNom = Just newNom ,
+ = br{nextNom = nextNom br + 4,
       relevantNominals = if relevant then Set.insert newNom (relevantNominals br) else relevantNominals br,
       downVarRelevantCh = newDVRC
      }
    where (relevant, newDVRC) = doMemoize checkIfVariableNegatedOnce f (downVarRelevantCh br)
-         newNom = maybe (NomSymbol newNomBaseName) incNomSymbol (lastNom br)
+         newNom = nextNom br
 
 --
-
-newNomBaseName, newPropBaseName :: String
-newNomBaseName = "0N"
-newPropBaseName = "0P"
-
-nextName :: String -> String
-nextName name
- = newNumString ++ remainder
-   where (numString,remainder) = span isNumber name
-         newNumString          = increaseNumString numString
-         increaseNumString ss  = show ((read ss) + 1::Int)
-
 
 -- preparation of the branch at the beginning of the calculus:
 --  - add the input formula at prefix 0
 --  - add a nominal formula at a fresh prefix for each nominal of the input formula
 --  - add reflexive links for prefixes 0 and nominal witnesses
+--  - add functionality and injectivitty down-arrow formulas
 addFirstFormulas :: CmdLineParams -> Branch -> LanguageInfo -> Formula -> BranchInfo
 addFirstFormulas clp br_ fLang f
- = addFormula clp br3 pf
+ = addFormulas clp br4 ([pf]++funUniv++injUniv)
     where ns = languageNoms fLang
           nbNs = length ns
-          noms = [1..nbNs]
-          br =  foldr addReflexiveLinks (  br_{lastPref = nbNs} ) (0:noms)
+          nomWitnesses = [1..nbNs]
+          br =  foldr addReflexiveLinks (  br_{lastPref = nbNs} ) (0:nomWitnesses)
           pf = firstPrefixedFormula f
-          newClasses = foldr (\(pr,(NomSymbol n)) -> DS.union (DS.Prefix pr) (DS.Nominal n))
+          newClasses = foldr (\(pr,n) -> DS.union (DS.Prefix pr) (DS.Nominal n))
                              (nomPrefClasses br)
                              (zip [1..] ns)
-          newClashStr = foldr (\(pr,n) -> DMap.insert pr (N n) (True,dsEmpty))
+          newClashStr = foldr (\(pr,n) -> DMap.insert pr n (True,dsEmpty))
                               DMap.empty
                               (zip [1..] ns)
           br2 = br{nomPrefClasses = newClasses,
                          clashStr = newClashStr}
-          br3 = foldr (\(pr,n) -> bookKeepFormula (PrFormula pr dsEmpty (nom n)))
+          br3 = foldr (\(pr,n) -> bookKeepFormula (PrFormula pr dsEmpty (Lit n)))
                       br2
                       (zip [1..] ns)
+          funUniv = map (\r -> PrFormula 0 dsEmpty
+                                $ A $ Down newNom $ Box (inv r (relInfo br)) $ Box (RelSymbol r) (Lit newNom)) funRels
+                       where funRels = Map.keys $ Map.filter (elem Functional) (relInfo br)
+          injUniv = map (\r -> PrFormula 0 dsEmpty
+                                $ A $ Down newNom $ Box (RelSymbol r) $ Box (inv r (relInfo br)) (Lit newNom)) injRels
+                       where injRels = Map.keys $ Map.filter (elem Injective) (relInfo br)
+          newNom = nextNom br3
+          br4 = br3{nextNom = nextNom br3 + 4}
 
 {-     functions to handle the "clashable information", ie literals associated to prefixes     -}
 
@@ -995,8 +956,7 @@ data UpdateResult = UpdateSuccess Clashable_info | UpdateFailure DependencySet
 
 addToClashable :: Prefix -> DependencySet -> Literal -> Branch -> BranchInfo
 addToClashable pr_ ds1 l br
-  = case ( case l of PosLit a -> updateMap (clashStr br) pr ds a True
-                     NegLit a -> updateMap (clashStr br) pr ds a False ) of
+  = case updateMap (clashStr br) pr ds (atom l) (isPositive l) of
      UpdateSuccess cs  -> BranchOK br{clashStr = cs}
      UpdateFailure dsf -> BranchClash br pr dsf (Lit l)
    where (pr,ds2,_) = getUrfatherAndDeps br (DS.Prefix pr_)
@@ -1006,8 +966,8 @@ addToClashable pr_ ds1 l br
 -- Insert a piece of clashable information into all the clashable information of a branch
 
 updateMap :: Clashable_info -> Prefix -> DependencySet -> Atom -> Bool -> UpdateResult
-updateMap cs  _  _   Taut True = UpdateSuccess cs
-updateMap _   _  ds Taut False = UpdateFailure ds
+updateMap cs  _  _  a True  | isTop a = UpdateSuccess cs
+updateMap _   _  ds a False | isTop a = UpdateFailure ds
 updateMap (DMap cs) pre ds a bool
   = case Map.lookup pre cs of
        Nothing            -> UpdateSuccess $ DMap $ Map.insert pre (Map.singleton a (bool,ds)) cs
@@ -1059,8 +1019,8 @@ cisUnion cis1 cis2
 -- Insert a piece of information in a clashable info slot
 
 cisUpdate :: Clashable_info_slot -> Atom -> Bool -> DependencySet -> Slot_UpdateResult
-cisUpdate cis Taut True  _  = Slot_UpdateSuccess cis
-cisUpdate  _  Taut False ds = Slot_UpdateFailure ds
+cisUpdate cis a True  _  | isTop a = Slot_UpdateSuccess cis
+cisUpdate  _  a False ds | isTop a = Slot_UpdateFailure ds
 cisUpdate cis a             bool  ds  -- nominals, propositional symbols
  = case Map.lookup a cis of
     Nothing          -> Slot_UpdateSuccess $ Map.insert a (bool,ds) cis
@@ -1083,17 +1043,12 @@ cisAddDeps ds res_cis =
 
 cisQuery :: Branch -> Prefix -> Literal -> Maybe (Bool,DependencySet)
 -- Output : Nothing = nevermind ; Just True = already there ; Just False = contrary there
-cisQuery _ _ (PosLit Taut) = Just (True,dsEmpty)
-cisQuery _ _ (NegLit Taut) = Just (False,dsEmpty)
-cisQuery br pr (NegLit a)
-  = case DMap.lookup pr a (clashStr br) of
+cisQuery _ _ l | isTop l    = Just (True,dsEmpty)
+               | isBottom l = Just (False,dsEmpty)
+cisQuery br pr l
+  = case DMap.lookup pr (atom l) (clashStr br) of
       Nothing           -> Nothing
-      Just (bool,ds)    -> Just (not bool,ds)
-cisQuery br pr (PosLit a)
-  = case DMap.lookup pr a (clashStr br) of
-      Nothing           -> Nothing
-      Just (bool,ds)    -> Just (bool,ds)
-
+      Just (bool,ds)    -> Just (if isPositive l then bool else not bool,ds)
 
 {-     function used for unit propagation     -}
 
@@ -1140,12 +1095,6 @@ isSymmetric = hasProperty Symmetric
 
 isTransitive :: RelInfo -> Rel -> Bool
 isTransitive = hasProperty Transitive
-
-isFunctional :: RelInfo -> Rel -> Bool
-isFunctional = hasProperty Functional
-
-isInjective :: RelInfo -> Rel -> Bool
-isInjective = hasProperty Injective
 
 {-      Monad related stuff      -}
 

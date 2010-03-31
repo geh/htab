@@ -12,8 +12,8 @@ import Data.Maybe ( listToMaybe, catMaybes )
 import HTab.Formula( Formula(..), PrFormula(..), showLess, neg,
                      Dependency, DependencySet, dsUnion, dsInsert, dsEmpty,
                      prefix, AccFormula(..), Rel,
-                     Prefix, NomSymbol(..), PropSymbol(..), RelSymbol(..),
-                     conj, nom, prop, replaceVar )
+                     Prefix, RelSymbol(..),
+                     conj, replaceVar, Prop )
 import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewNomTestRelevance,
                     BranchInfo(..),
                     addFormulas, addAccFormula,
@@ -22,8 +22,8 @@ import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewNomTestRe
                     addParentPrefix, reduceDisjunctionAgainstBranch,
                     getUnappliedUBPairs, updateUBBookKeep,
                     getUrfatherAndDeps, isNotBlocked, merge,
-                    diaAlreadyDone,  diaXAlreadyDone, downAlreadyDone, incPropSymbol, incNomSymbol,
-                    ReducedDisjunct(..), newPropBaseName, newNomBaseName,
+                    diaAlreadyDone,  diaXAlreadyDone, downAlreadyDone,
+                    ReducedDisjunct(..),
                     ScheduledRule(..), TodoList(..),
                     deleteUEV, insertUEV_addFormula )
 import HTab.CommandLine(CmdLineParams, semBranch, unitProp, strategyStr, uBlocking, noLoopCheck)
@@ -37,7 +37,7 @@ data BranchModification =    BM_AddFormulas   [PrFormula]
                            | BM_AddDiaRuleCheck Prefix Formula
                            | BM_AddDiaXRuleCheck Prefix (RelSymbol,Formula)
                            | BM_AddDownRuleCheck Prefix Formula
-                           | BM_AddDiffRuleCheck Formula (Maybe PropSymbol)
+                           | BM_AddDiffRuleCheck Formula (Maybe Prop)
                            | BM_CreateNewPref
                            | BM_CreateNewProp
                            | BM_CreateNewNomTestRelevance Formula
@@ -111,16 +111,17 @@ getMods br (ExistRule (PrFormula _ ds (E f2))) =
 getMods _ (ExistRule _) = error "getMods ExistRule"
 
 
-getMods _ (UBlockRule p1 p2 d) =
+getMods br (UBlockRule p1 p2 d) =
  [[BM_UpdateUBBookKeep p1 p2,
    BM_Merge p1 (DS.Prefix p2) deps],
-  [BM_UpdateUBBookKeep p1 p2,
+  [BM_CreateNewProp,
+   BM_UpdateUBBookKeep p1 p2,
    BM_AddFormulas choiceDisequal]
  ]
    where
-     choiceDisequal = [PrFormula p1 deps      nequalNom,
-                       PrFormula p2 deps (neg nequalNom)]
-     nequalNom = nom $ NomSymbol $ show p1 ++ "/" ++ show p2
+     choiceDisequal = [PrFormula p1 deps       (Lit newProp),
+                       PrFormula p2 deps (neg (Lit newProp))]
+     newProp = nextProp br
      deps = dsInsert d dsEmpty
 
 getMods _ (DisjRule _ toadds) =
@@ -129,7 +130,7 @@ getMods _ (DisjRule _ toadds) =
 getMods _ (SemBrRule _ toaddss) =
  [[BM_AddFormulas toadds] | toadds <- toaddss]
 
-getMods br (AtRule (PrFormula _ ds (At (NomSymbol n) f))) =
+getMods br (AtRule (PrFormula _ ds (At n f))) =
  [[BM_AddFormulas [toadd]]]
   where toadd = PrFormula earliestPrefix (dsUnion ds ds2) f
         (earliestPrefix,ds2,_) = getUrfatherAndDeps br (DS.Nominal n)
@@ -145,8 +146,8 @@ getMods br (DownRule df@(PrFormula pr ds f@(Down v f2)))
             BM_AddDownRuleCheck pr f
           ]]
  where toadd1 = PrFormula pr ds (replaceVar v newNom f2)
-       toadd2 = PrFormula pr ds $ nom newNom
-       newNom = getNewNom br
+       toadd2 = PrFormula pr ds $ Lit newNom
+       newNom = nextNom br
 
 getMods _ (DownRule _) = error "getMods DownRule"
 
@@ -157,23 +158,23 @@ getMods br (DiffRule (PrFormula pr ds_ (D f2)) d) =
                BM_CreateNewProp,
                BM_AddFormulas [PrFormula newPref1 ds f2,
                                PrFormula newPref2 ds f2,
-                               PrFormula newPref1 ds (      prop newProp),
-                               PrFormula newPref2 ds (neg $ prop newProp),
-                               PrFormula pr       ds (neg $ prop newProp)]
+                               PrFormula newPref1 ds (      Lit newProp),
+                               PrFormula newPref2 ds (neg $ Lit newProp),
+                               PrFormula pr       ds (neg $ Lit newProp)]
                ],
               [BM_AddDiffRuleCheck f2 (Just newProp),
                BM_CreateNewPref,
                BM_CreateNewProp,
                BM_AddFormulas [PrFormula newPref1 ds f2,
-                               PrFormula newPref1 ds (      prop newProp),
-                               PrFormula pr       ds (neg $ prop newProp)]
+                               PrFormula newPref1 ds (      Lit newProp),
+                               PrFormula pr       ds (neg $ Lit newProp)]
                ]
              ]
               where newPref1 = getNewPref br
                     newPref2 = newPref1 + 1
-                    newProp  = getNewProp br
+                    newProp  = nextProp br
   Just Nothing          -> [[]]
-  Just (Just diffProp)  -> [[BM_AddFormulas [PrFormula pr ds (neg $ prop diffProp)]]]
+  Just (Just diffProp)  -> [[BM_AddFormulas [PrFormula pr ds (neg $ Lit diffProp)]]]
   where ds = d `dsInsert` ds_
 
 getMods _ (DiffRule _ _) = error "getMods DiffRule"
@@ -337,12 +338,6 @@ diaXRule _ _ _ = error $ "diaXRule"
 
 getNewPref :: Branch -> Prefix
 getNewPref br = (lastPref br)+1
-
-getNewProp :: Branch -> PropSymbol
-getNewProp br = maybe (PropSymbol newPropBaseName) incPropSymbol (lastProp br)
-
-getNewNom :: Branch -> NomSymbol
-getNewNom br =  maybe (NomSymbol newNomBaseName) incNomSymbol (lastNom br)
 
 -- disjunction
 disjRule :: CmdLineParams -> PrFormula -> Branch -> Dependency -> Rule

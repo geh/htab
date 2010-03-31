@@ -4,6 +4,7 @@ where
 
 import Data.Maybe (isNothing)
 import qualified Data.Map as Map
+import HTab.Formula ( showLit, Nom )
 
 -- a disjoint-set forest
 type DisjSet x = Map.Map x x
@@ -42,12 +43,12 @@ mkDSet :: Ord x => DisjSet x
 mkDSet = Map.empty::DisjSet x
 
 -- this should be outside of the module
-data Pointer = Prefix Int | Nominal String
+data Pointer = Prefix Int | Nominal Nom
  deriving (Eq)
 
 instance Show Pointer where
  show (Prefix p)  = 'P' : show p
- show (Nominal n) = n
+ show (Nominal n) = showLit n
 
 instance Ord Pointer where
  compare (Prefix i1)  (Prefix i2)  = compare i1 i2
