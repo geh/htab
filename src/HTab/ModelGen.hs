@@ -12,7 +12,7 @@ import qualified HyLo.Model as M
 import qualified HyLo.Signature.String as S -- PropSymbol(..), NomSymbol(..), RelSymbol(..)
 
 import HTab.Formula( Prefix, Rel, LanguageInfo(..),
-                     RelInfo, toPropSymbol, toNomSymbol, isProp )
+                     RelInfo, toPropSymbol, toNomSymbol, isPositiveProp )
 import HTab.Branch( Branch(..), prefixes, getUrfather,
                     isInTheModel, relationIsInTheModel, getModelRepresentative,
                     isTransitive, isSymmetric )
@@ -54,7 +54,7 @@ prefixAndProps br =
   [(pr, toPropSymbol e p_) | (pr , p_) <- prPosLitProp]
  where clashable             = toMap $ clashStr br
        clashableRelevant     = Map.filterWithKey (\k _ -> isInTheModel br k) clashable
-       prPosLitProp          = filter (isProp . snd) $ map fst $ filter (fst . snd) $ flatten $ DMap clashableRelevant
+       prPosLitProp          = filter (isPositiveProp . snd) $ map fst $ flatten $ DMap clashableRelevant
        e = encoding br
 
 completeModel :: RelInfo -> Model -> Model

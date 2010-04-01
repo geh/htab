@@ -22,10 +22,10 @@ prop, nom, formulaLanguageInfo, prefix,
 checkIfVariableNegatedOnce, replaceVar,
 firstPrefixedFormula,
 parse, simpleParse, Theory, RelInfo, Task,
-showRelInfo, showLit,
+showRelInfo, showLit, negLit,
 encodeValidityTest, encodeSatTest, encodeRetrieveTask,
 HyLoFormula, RelProperty(..), Encoding(..), maxNom, maxProp, toPropSymbol, toNomSymbol,
-isTop, isBottom, isPositiveNom, isPositive, isNegative, isNominal, isProp, atom,
+isTop, isBottom, isPositiveNom, isPositiveProp, isPositive, isNegative, isNominal, isProp, atom,
 inv
 )
 
@@ -94,17 +94,21 @@ type Prop = Int
 type Nom = Int
 type Literal = Int
 
-isTop, isBottom, isPositiveNom, isNominal, isProp, isNegative, isPositive :: Int -> Bool
-isTop           = (==0)
-isBottom        = (==1)
-isPositiveNom a = ((a `mod` 4) == 0) && (a > 1)
-isNominal a     = ((a `mod` 4) < 2)  && (a > 1)
-isProp a        = ((a `mod` 4) >= 2)
-isNegative a    = testBit a 0
-isPositive      = not . isNegative
+isTop, isBottom, isPositiveNom, isNominal, isPositiveProp, isProp, isNegative, isPositive :: Int -> Bool
+isTop            = (==0)
+isBottom         = (==1)
+isPositiveNom a  = ((a `mod` 4) == 0) && (a > 1)
+isNominal a      = ((a `mod` 4) < 2)  && (a > 1)
+isPositiveProp a = ((a `mod` 4) == 2)
+isProp a         = ((a `mod` 4) >= 2)
+isNegative a     = testBit a 0
+isPositive       = not . isNegative
 
 atom :: Int -> Int
 atom x = clearBit x 0
+
+negLit :: Int -> Int
+negLit x = complementBit x 0
 
 showLit :: Int -> String
 showLit n
@@ -549,7 +553,8 @@ neg (A f)            = E (neg f)
 neg (E f)            = A (neg f)
 neg (D f)            = B (neg f)
 neg (B f)            = D (neg f)
-neg (Lit n)          = Lit (complementBit n 0)
+neg (Lit n)          = Lit $ negLit n
+
 
 -- prefixed formula
 

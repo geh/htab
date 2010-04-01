@@ -57,7 +57,7 @@ import qualified HTab.Relations as Relations
 data BranchInfo = BranchOK Branch |
                   BranchClash Branch Prefix DependencySet Formula
 
-type Clashable_info   = DMap Prefix Atom (Bool,DependencySet)
+type Clashable_info   = DMap Prefix Literal DependencySet
 type Conj_structure   = Set.Set PrFormula
 type Disj_structure   = Set.Set PrFormula
 type Dia_structure    = Set.Set PrFormula
@@ -209,10 +209,9 @@ instance Show Branch where
               where
                   ifNotEmpty b f = if empty b then "" else f b
                   showl intro b  = if empty b then "" else intro ++ show b
-                  str True = "" ; str False = "!"
 
                   showMap vShow sep = foldWithKey (\k v -> (++ sep ++ show k ++ " -> " ++ vShow v )) ""
-                  showMap_lits = foldWithKey (\a (b,d) -> (++ str b ++ showLit a ++ " " ++ dsShow d  ++ ", ")) ""
+                  showMap_lits = foldWithKey (\l d -> (++ showLit l ++ " " ++ dsShow d  ++ ", ")) ""
                   showMap_rel = foldWithKey (\r dxs -> (++ "-" ++ r ++ "-> " ++ show dxs ++ ", ")) ""
 
 class Emptyable a where
@@ -933,7 +932,7 @@ addFirstFormulas clp br_ fLang f
           newClasses = foldr (\(pr,n) -> DS.union (DS.Prefix pr) (DS.Nominal n))
                              (nomPrefClasses br)
                              (zip [1..] ns)
-          newClashStr = foldr (\(pr,n) -> DMap.insert pr n (True,dsEmpty))
+          newClashStr = foldr (\(pr,n) -> DMap.insert pr n dsEmpty)
                               DMap.empty
                               (zip [1..] ns)
           br2 = br{nomPrefClasses = newClasses,
@@ -956,7 +955,7 @@ data UpdateResult = UpdateSuccess Clashable_info | UpdateFailure DependencySet
 
 addToClashable :: Prefix -> DependencySet -> Literal -> Branch -> BranchInfo
 addToClashable pr_ ds1 l br
-  = case updateMap (clashStr br) pr ds (atom l) (isPositive l) of
+  = case updateMap (clashStr br) pr ds l of
      UpdateSuccess cs  -> BranchOK br{clashStr = cs}
      UpdateFailure dsf -> BranchClash br pr dsf (Lit l)
    where (pr,ds2,_) = getUrfatherAndDeps br (DS.Prefix pr_)
@@ -965,18 +964,18 @@ addToClashable pr_ ds1 l br
 
 -- Insert a piece of clashable information into all the clashable information of a branch
 
-updateMap :: Clashable_info -> Prefix -> DependencySet -> Atom -> Bool -> UpdateResult
-updateMap cs  _  _  a True  | isTop a = UpdateSuccess cs
-updateMap _   _  ds a False | isTop a = UpdateFailure ds
-updateMap (DMap cs) pre ds a bool
+updateMap :: Clashable_info -> Prefix -> DependencySet -> Literal -> UpdateResult
+updateMap cs  _  ds l | isTop l    = UpdateSuccess cs
+                      | isBottom l = UpdateFailure ds
+updateMap (DMap cs) pre ds l
   = case Map.lookup pre cs of
-       Nothing            -> UpdateSuccess $ DMap $ Map.insert pre (Map.singleton a (bool,ds)) cs
-       Just slot          -> case cisUpdate slot a bool ds of
+       Nothing            -> UpdateSuccess $ DMap $ Map.insert pre (Map.singleton l ds) cs
+       Just slot          -> case cisUpdate slot l ds of
                               Slot_UpdateSuccess updatedSlot -> UpdateSuccess $ DMap $ Map.insert pre updatedSlot cs
                               Slot_UpdateFailure failureDeps -> UpdateFailure failureDeps
 
 
-type Clashable_info_slot = Map.Map Atom (Bool,DependencySet)
+type Clashable_info_slot = Map.Map Literal DependencySet
 data Slot_UpdateResult =   Slot_UpdateSuccess Clashable_info_slot
                          | Slot_UpdateFailure DependencySet
 
@@ -997,16 +996,16 @@ cisUnions (cis1:cis2:tl)
 cisUnion :: Clashable_info_slot -> Clashable_info_slot -> Slot_UpdateResult
 cisUnion cis1 cis2
  = ucis_helper cis1 (Map.assocs cis2)
-    where ucis_helper :: Clashable_info_slot -> [(Atom,(Bool,DependencySet))] -> Slot_UpdateResult
-          ucis_helper cis a_b_ds_s =
+    where ucis_helper :: Clashable_info_slot -> [(Literal,DependencySet)] -> Slot_UpdateResult
+          ucis_helper cis l_ds_s =
              let (updateStatus,clashing_ds_s)
-                  = foldr (\(a,(bool,ds)) (upResult,clashingBps_s)
+                  = foldr (\(l,ds) (upResult,clashingBps_s)
                            -> case upResult of
-                               Slot_UpdateSuccess cis_ ->  (cisUpdate cis_ a bool ds,      clashingBps_s)
-                               Slot_UpdateFailure ds_s ->  (cisUpdate cis  a bool ds, ds_s:clashingBps_s)
+                               Slot_UpdateSuccess cis_ ->  (cisUpdate cis_ l ds,      clashingBps_s)
+                               Slot_UpdateFailure ds_s ->  (cisUpdate cis  l ds, ds_s:clashingBps_s)
                                                                  -- we reuse the input Clashabe Info Slot
                           )
-                          (Slot_UpdateSuccess cis,[])   a_b_ds_s
+                          (Slot_UpdateSuccess cis,[])   l_ds_s
                  result = case clashing_ds_s of
                               []   -> updateStatus                                    -- is 'success'
                               ds_s -> Slot_UpdateFailure $ findEarliestSet ds_s
@@ -1018,26 +1017,24 @@ cisUnion cis1 cis2
 
 -- Insert a piece of information in a clashable info slot
 
-cisUpdate :: Clashable_info_slot -> Atom -> Bool -> DependencySet -> Slot_UpdateResult
-cisUpdate cis a True  _  | isTop a = Slot_UpdateSuccess cis
-cisUpdate  _  a False ds | isTop a = Slot_UpdateFailure ds
-cisUpdate cis a             bool  ds  -- nominals, propositional symbols
- = case Map.lookup a cis of
-    Nothing          -> Slot_UpdateSuccess $ Map.insert a (bool,ds) cis
-    Just (bool2,ds2) -> if bool == bool2
-                         then Slot_UpdateSuccess $ Map.insert a (bool,dsToKeep) cis
-                         else Slot_UpdateFailure $ dsUnion ds ds2
-                           where dsToKeep = if dsMin ds2 < dsMin ds then ds2 else ds
-                                  -- if the same information is caused by an earlier
-                                  -- branching, only keep the information of the earliest set of dependencies
+cisUpdate :: Clashable_info_slot -> Literal -> DependencySet -> Slot_UpdateResult
+cisUpdate cis l ds  | isTop l     = Slot_UpdateSuccess cis
+                    | isBottom l  = Slot_UpdateFailure ds
+cisUpdate cis l ds  -- nominals, propositional symbols
+ = case Map.lookup (negLit l) cis of
+    Just ds2         -> Slot_UpdateFailure $ dsUnion ds ds2
+    Nothing          -> Slot_UpdateSuccess $ Map.insertWith mergeDeps l ds cis
+                         where mergeDeps d1 d2  = if dsMin d1 < dsMin d2 then d1 else d2
+                                -- if the same information is caused by an earlier
+                                -- branching, only keep the information of the earliest set of dependencies
 
 -- Other functions related to clashable information
 
 cisAddDeps :: DependencySet -> Slot_UpdateResult -> Slot_UpdateResult
 cisAddDeps ds res_cis =
  case res_cis of
-  Slot_UpdateSuccess cis         ->  Slot_UpdateSuccess $ Map.map (\(a,currentDs) -> (a,dsUnion currentDs ds)) cis
-  failure@(Slot_UpdateFailure _) -> failure
+  Slot_UpdateSuccess cis -> Slot_UpdateSuccess $ Map.map (dsUnion ds) cis
+  failure                -> failure
 
 
 
@@ -1046,9 +1043,11 @@ cisQuery :: Branch -> Prefix -> Literal -> Maybe (Bool,DependencySet)
 cisQuery _ _ l | isTop l    = Just (True,dsEmpty)
                | isBottom l = Just (False,dsEmpty)
 cisQuery br pr l
-  = case DMap.lookup pr (atom l) (clashStr br) of
-      Nothing           -> Nothing
-      Just (bool,ds)    -> Just (if isPositive l then bool else not bool,ds)
+  = case DMap.lookup pr l (clashStr br) of
+      Just ds    -> Just (True,ds)
+      Nothing    -> case DMap.lookup pr (negLit l) (clashStr br) of
+                      Just ds -> Just (False,ds)
+                      Nothing -> Nothing
 
 {-     function used for unit propagation     -}
 
