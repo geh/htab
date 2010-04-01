@@ -9,24 +9,24 @@
 
 module HTab.Formula
 
-(RelSymbol(..), Atom, Prop, Nom, Literal,
+(Atom, Prop, Nom, Literal,
 Rel, Prefix, Formula(..),
 DependencySet, Dependency,
 dsUnion, dsUnions, dsInsert, dsMember,
 dsEmpty, dsMin, dsShow,
 PrFormula(..),showLess, AccFormula(..),
 LanguageInfo(..), neg,
-box, diamond, at, conj, disj, univMod, existMod,
+at, conj, disj, univMod, existMod,
 downArrow, dUnivMod, dExistMod, taut, dimp, imp,
 prop, nom, formulaLanguageInfo, prefix,
 checkIfVariableNegatedOnce, replaceVar,
 firstPrefixedFormula,
 parse, simpleParse, Theory, RelInfo, Task,
-showRelInfo, showLit, negLit,
+showRelInfo, showRel, showLit, negLit, isForward, isBackwards,
 encodeValidityTest, encodeSatTest, encodeRetrieveTask,
-HyLoFormula, RelProperty(..), Encoding(..), maxNom, maxProp, toPropSymbol, toNomSymbol,
+HyLoFormula, RelProperty(..), Encoding(..), maxNom, maxProp, toPropSymbol, toNomSymbol, toRelSymbol,
 isTop, isBottom, isPositiveNom, isPositiveProp, isPositive, isNegative, isNominal, isProp, atom,
-inv
+inv, invRel, int
 )
 
  where
@@ -51,23 +51,28 @@ import HTab.CommandLine ( CmdLineParams(..) )
 
 type Prefix = Int
 
-type Rel = String
-data RelSymbol = RelSymbol String | InvRelSymbol String deriving (Eq, Ord)
+type Rel = Int
 
-instance Show RelSymbol where
- show (RelSymbol r)    = r
- show (InvRelSymbol r) = '-':r
+showRel :: Int -> String
+showRel x = sign ++ name
+             where sign = if testBit x 0 then "-" else ""
+                   name = show $ x `div` 2
+
+
+isBackwards, isForward :: Int -> Bool
+isBackwards x = testBit x 0
+isForward = not . isBackwards
 
 data Formula
      = Lit    Atom
      | Con   (Set Formula)
      | Dis   (Set Formula)
      | At     Nom Formula
-     | Box    RelSymbol     Formula
-     | Dia    RelSymbol     Formula
+     | Box    Rel     Formula
+     | Dia    Rel     Formula
      | Down   Nom Formula
-     | BoxX   RelSymbol Formula
-     | DiaX   (Maybe Int) RelSymbol Formula
+     | BoxX   Rel Formula
+     | DiaX   (Maybe Int) Rel Formula
      | A      Formula
      | E      Formula
      | D      Formula
@@ -110,6 +115,9 @@ atom x = clearBit x 0
 negLit :: Int -> Int
 negLit x = complementBit x 0
 
+invRel :: Int -> Int
+invRel = negLit
+
 showLit :: Int -> String
 showLit n
   | isTop n    = "True"
@@ -126,10 +134,10 @@ instance Show Formula where
  show (Con fs)   = "^" ++ show (list fs)
  show (Dis fs)   = "v" ++ show (list fs)
  show (At n f)   = showLit n  ++ ":(" ++ show f ++ ")"
- show (Box r f)  = "[" ++ show r ++ "]" ++ show f
- show (Dia r f)  = "<" ++ show r ++ ">" ++ show f
- show (BoxX r f) = "[" ++ show r ++ "*]" ++ show f
- show (DiaX i r f) = "<" ++ show r ++ "*>(" ++ show i ++ ")" ++ show f
+ show (Box r f)    = "[" ++ showRel r ++ "]"   ++ show f
+ show (Dia r f)    = "<" ++ showRel r ++ ">"   ++ show f
+ show (BoxX r f)   = "[" ++ showRel r ++ "*]"  ++ show f
+ show (DiaX i r f) = "<" ++ showRel r ++ "*>(" ++ show i ++ ")" ++ show f
  show (A f)      = "A" ++ show f
  show (E f)      = "E" ++ show f
  show (D f)      = "D" ++ show f
@@ -157,22 +165,22 @@ data RelProperty   =   Reflexive
                      deriving (Eq, Show, Ord)
 
 showRelInfo :: RelInfo -> String
-showRelInfo = Map.foldWithKey (\rel v -> (++ " " ++ rel ++ " -> " ++ show v )) ""
+showRelInfo = Map.foldWithKey (\r v -> (++ " " ++ showRel r ++ " -> " ++ show v )) ""
 
 parse :: CmdLineParams -> String -> (Theory,RelInfo,Encoding,[Task])
 parse clp s
-  = (theory, relInfo, e, tasks)
+  = (theory, relInfo, encoding, tasks)
     where parseOutput = InputFile.myparse s
+          encoding    = getEncoding parseOutput
           pRelInfo    = P.relations parseOutput
-          rels        = Set.toList $ Set.unions $ map (relSymbols . getSignature) $ P.theory parseOutput
-          relInfo     = handleFunInj $ saturate $ forceProperties clp rels $ convertToOurType pRelInfo
-          e           = getEncoding $ P.theory parseOutput
-          theory      = convert relInfo e $ P.theory parseOutput
+          relInfo     = handleFunInj $ saturate $ forceProperties clp encoding $ convertToOurType pRelInfo encoding -- TODO
+          theory      = convert relInfo encoding $ P.theory parseOutput
           tasks       = P.tasks parseOutput
 
 
 data Encoding = Encoding { nomMap :: Map String Int,
-                          propMap :: Map String Int }
+                          propMap :: Map String Int,
+                           relMap :: Map String Int }
                   deriving Show
 
 maxNom, maxProp :: Encoding -> Int
@@ -185,34 +193,42 @@ maxProp e = case Map.elems $ propMap e of
               els -> maximum els
 
 toPropSymbol :: Encoding -> Int -> S.PropSymbol
---toPropSymbol e i = S.PropSymbol $ (invertMap $ propMap e) Map.! (atom i)
 toPropSymbol e i = S.PropSymbol $ case Map.lookup (atom i) (invertMap $ propMap e) of
                                     Nothing -> {- new prop symbol -} "new_prop_" ++ show i
                                     Just x -> x
 
 toNomSymbol :: Encoding -> Int -> S.NomSymbol
---toNomSymbol e i = S.NomSymbol $ (invertMap $ nomMap e) Map.! (atom i)
 toNomSymbol e i = S.NomSymbol $  case Map.lookup (atom i) (invertMap $ nomMap e) of
                                         Nothing -> error $ show e ++ " nom symbol " ++ show i
                                         Just x -> x
 
+toRelSymbol :: Encoding -> Int -> S.RelSymbol
+toRelSymbol e i = case Map.lookup (atom i) (invertMap $ relMap e) of
+                         Nothing -> error $ show e ++ " rel symbol " ++ show i
+                         Just x -> if isForward i then S.RelSymbol x else S.InvRelSymbol x
 
-getEncoding :: [F.Formula S.NomSymbol S.PropSymbol S.RelSymbol] -> Encoding
-getEncoding theory =
+
+getEncoding :: P.ParseOutput -> Encoding
+getEncoding parseOutput =
  Encoding {  nomMap = Map.fromList $ zip noms  $ map (\n -> 4 + n*4) [0..],
-            propMap = Map.fromList $ zip props $ map (\n -> 2 + n*4) [0..]  } 
+            propMap = Map.fromList $ zip props $ map (\p -> 2 + p*4) [0..],
+             relMap = Map.fromList $ zip rels  $ map (\r ->     r*2) [0..] } 
  where
+   theory =  P.theory parseOutput
    noms  = map (\(S.NomSymbol n)  -> n) $ Set.toList $ Set.unions $ map (nomSymbols . getSignature)  theory
    props = map (\(S.PropSymbol p) -> p) $ Set.toList $ Set.unions $ map (propSymbols . getSignature) theory
+   rels1  = map fst $ P.relations parseOutput
+   rels2  = map (\(S.RelSymbol r) -> r) $ Set.toList $ Set.unions $ map (relSymbols . getSignature) theory
+   rels = nub $ rels1 ++ rels2
 
 -- add properties specified by the --all-PROP parameters
 -- in order to work in case of automatic signature, requires
 -- the list of RelSymbol present in the formula
 
-forceProperties :: CmdLineParams -> [S.RelSymbol] -> RelInfo -> RelInfo
-forceProperties clp relsymbols relI
+forceProperties :: CmdLineParams -> Encoding -> RelInfo -> RelInfo
+forceProperties clp encoding relI
  = foldr addToAll relI rels
-   where rels = [ rel | S.RelSymbol rel <- relsymbols]
+   where rels = Map.elems $ relMap encoding
          addToAll r = Map.insertWith (\c1 c2 -> nub $ c1 ++ c2) r conds
          conds = map snd $
                    filter fst $ [(allTransitive clp, Transitive),
@@ -221,20 +237,20 @@ forceProperties clp relsymbols relI
                                  (allFunctional clp, Functional),
                                  (allInjective  clp, Injective )]
 
-convertToOurType :: PRelInfo -> RelInfo -- and add for each relation in the formula, the relevant key
-convertToOurType prelI = foldr insertRelProp (Map.empty) (concatMap convertOne prelI)
+convertToOurType :: PRelInfo -> Encoding -> RelInfo -- and add for each relation in the formula, the relevant key
+convertToOurType prelI e = foldr insertRelProp (Map.empty) (concatMap convertOne prelI)
  where insertRelProp (rs,pr) = Map.insertWith (++) rs [pr]
        convertOne (r,props)  = concatMap (c r) props
-       c r P.Reflexive       = [(r,Reflexive    )]
-       c r P.Symmetric       = [(r,Symmetric    )]
-       c r P.Transitive      = [(r,Transitive   )]
-       c r P.Functional      = [(r,Functional   )]
-       c r P.Universal       = [(r,Universal    )]
-       c r P.Difference      = [(r,Difference   )]
-       c r (P.InverseOf s)   = [(r,InverseOf s  )]
-       c r (P.TRClosureOf s) = [(r,TRClosureOf s)]
-       c r (P.SubsetOf ss)   = [(r,SubsetOf [ s | s <- ss])]
-       c r (P.Equals ss)     = [(r,SubsetOf [ s | s <- ss])] ++ [(s,SubsetOf [r]) | s <- ss]
+       c r P.Reflexive       = [(int e r,Reflexive    )]
+       c r P.Symmetric       = [(int e r,Symmetric    )]
+       c r P.Transitive      = [(int e r,Transitive   )]
+       c r P.Functional      = [(int e r,Functional   )]
+       c r P.Universal       = [(int e r,Universal    )]
+       c r P.Difference      = [(int e r,Difference   )]
+       c r (P.InverseOf s)   = [(int e r,InverseOf   (int e s))]
+       c r (P.TRClosureOf s) = [(int e r,TRClosureOf (int e s))]
+       c r (P.SubsetOf ss)   = [(int e r,SubsetOf [ int e s | s <- ss])]
+       c r (P.Equals ss)     = [(int e r,SubsetOf [ int e s | s <- ss])] ++ [(int e s,SubsetOf [int e r]) | s <- ss]
        c _ (P.TClosureOf _)  = error "TClosureOf not handled"
 
 simpleParse :: CmdLineParams -> String -> (Theory,RelInfo,Encoding,[Task])
@@ -254,8 +270,8 @@ conv_ relI e (f1 F.:&:    f2)    = (conv_ relI e f1) `conj` (conv_ relI e f2)
 conv_ relI e (f1 F.:|:    f2)    = (conv_ relI e f1) `disj` (conv_ relI e f2)
 conv_ relI e (f1 F.:-->:  f2)    = (conv_ relI e f1) `imp`  (conv_ relI e f2)
 conv_ relI e (f1 F.:<-->: f2)    = (conv_ relI e f1) `dimp` (conv_ relI e f2)
-conv_ relI e (F.Diam r f)        = (specialiseDia r relI) (conv_ relI e f)
-conv_ relI e (F.Box  r f)        = (specialiseBox r relI) (conv_ relI e f)
+conv_ relI e (F.Diam r f)        = (specialiseDia r relI e) (conv_ relI e f)
+conv_ relI e (F.Box  r f)        = (specialiseBox r relI e) (conv_ relI e f)
 conv_ relI e (F.At   n f)        = at        e n (conv_ relI e f)
 conv_ relI e (F.Down v f)        = downArrow e v (conv_ relI e f)
 conv_ relI e (F.A f)             = univMod     (conv_ relI e f)
@@ -265,33 +281,35 @@ conv_ relI e (F.B f)             = dUnivMod    (conv_ relI e f)
 
 type Connector = Formula -> Formula
 
-specialiseDia :: S.RelSymbol -> RelInfo -> Connector
-specialiseDia r relI = specialise r relI (diamond, diamondX, dExistMod, existMod)
+specialiseDia :: S.RelSymbol -> RelInfo -> Encoding -> Connector
+specialiseDia r relI e = specialise r relI (diamond e, diamondX e, dExistMod, existMod) e
 
-specialiseBox :: S.RelSymbol -> RelInfo -> Connector
-specialiseBox r relI = specialise r relI (box, boxX, dUnivMod, univMod)
+specialiseBox :: S.RelSymbol -> RelInfo -> Encoding -> Connector
+specialiseBox r relI e = specialise r relI (box e, boxX e, dUnivMod, univMod) e
 
-specialise :: S.RelSymbol -> RelInfo -> (S.RelSymbol -> Connector, S.RelSymbol -> Connector, Connector, Connector) -> Connector
-specialise (S.InvRelSymbol r) _ (relational, _ , _ , _) -- assume it is the simple input
+specialise :: S.RelSymbol -> RelInfo -> (S.RelSymbol -> Connector, S.RelSymbol -> Connector, Connector, Connector) -> Encoding -> Connector
+specialise (S.InvRelSymbol r) _ (relational, _ , _ , _) _ -- happens only with simple input
  = relational $ S.InvRelSymbol r
 
-specialise (S.RelSymbol r) relI (relational, rtclosure, difference, global)
- = case filter interesting (propsOf r) of
+specialise (S.RelSymbol r) relI (relational, rtclosure, difference, global) e
+ = case filter interesting props of
     (Difference:_) -> difference
     (Universal:_)  -> global
     []             -> relational $ S.RelSymbol r
-    _              -> case specialise2 r relI of
-                         Just_ r2        -> relational $ S.RelSymbol r2
-                         Inverse r2      -> relational $ inv r2 relI
-                         RTClosure r2    -> rtclosure  $ S.RelSymbol r2
-                         RTClosureInv r2 -> rtclosure  $ inv r2 relI
+    _              -> case specialise2 (int e r) relI of
+                         Just_ r2        -> relational $ toRelSymbol e r2
+                         Inverse r2      -> relational $ invRS $ toRelSymbol e r2
+                         RTClosure r2    -> rtclosure  $ toRelSymbol e r2
+                         RTClosureInv r2 -> rtclosure  $ invRS $ toRelSymbol e r2
     where
       interesting Difference      = True
       interesting Universal       = True
       interesting (InverseOf _)   = True
       interesting (TRClosureOf _) = True
       interesting _               = False
-      propsOf r_                  = Map.findWithDefault [] r_ relI
+      props                       = Map.findWithDefault [] (int e r) relI
+      invRS (S.RelSymbol s)       = S.InvRelSymbol s
+      invRS (S.InvRelSymbol s)    = S.RelSymbol s
 
 data ModType = Just_ Rel | Inverse Rel | RTClosure Rel | RTClosureInv Rel
 
@@ -328,20 +346,11 @@ specialise2 r_ relI
      propsOf r__                 = Map.findWithDefault [] r__ relI
 
 
-class Invertible a where
-  inv :: Rel -> RelInfo -> a
-
-instance Invertible S.RelSymbol where
-  inv r relI
-   = case Map.lookup r relI of
-      Nothing         -> S.RelSymbol r
-      Just properties -> if Symmetric `elem` properties then S.RelSymbol r else S.InvRelSymbol r
-
-instance Invertible RelSymbol where
-  inv r relI
-   = case Map.lookup r relI of
-      Nothing         -> RelSymbol r
-      Just properties -> if Symmetric `elem` properties then RelSymbol r else InvRelSymbol r
+inv :: Rel -> RelInfo -> Rel
+inv r relI
+ = case Map.lookup r relI of
+    Nothing         -> r
+    Just properties -> if Symmetric `elem` properties then r else invRel r
 
 type HyLoFormula = F.Formula S.NomSymbol S.PropSymbol S.RelSymbol
 
@@ -468,20 +477,23 @@ nom  e (S.NomSymbol n)  = Lit $ ( (nomMap e)  Map.! n )
 prop e (S.PropSymbol p) = Lit $ ( (propMap e) Map.! p )
 
 {- Modalities -}
-box, diamond, boxX, diamondX :: S.RelSymbol -> Formula -> Formula
+box, diamond, boxX, diamondX :: Encoding -> S.RelSymbol -> Formula -> Formula
 univMod, existMod, dUnivMod, dExistMod :: Formula -> Formula
-box        (S.RelSymbol r)    = Box   $ RelSymbol    r
-box        (S.InvRelSymbol r) = Box   $ InvRelSymbol r
-diamond    (S.RelSymbol r)    = Dia   $ RelSymbol    r
-diamond    (S.InvRelSymbol r) = Dia   $ InvRelSymbol r
-boxX       (S.RelSymbol r)    = BoxX  $ RelSymbol    r
-boxX       (S.InvRelSymbol r) = BoxX  $ InvRelSymbol r
-diamondX   (S.RelSymbol r)    = DiaX Nothing $ RelSymbol    r
-diamondX   (S.InvRelSymbol r) = DiaX Nothing $ InvRelSymbol r
+box        e (S.RelSymbol r)    = Box   $ int e r
+box        e (S.InvRelSymbol r) = Box   $ invRel $ int e r
+diamond    e (S.RelSymbol r)    = Dia   $ int e r
+diamond    e (S.InvRelSymbol r) = Dia   $ invRel $ int e r
+boxX       e (S.RelSymbol r)    = BoxX  $ int e r
+boxX       e (S.InvRelSymbol r) = BoxX  $ invRel $ int e r
+diamondX   e (S.RelSymbol r)    = DiaX Nothing $ int e r
+diamondX   e (S.InvRelSymbol r) = DiaX Nothing $ invRel $ int e r
 univMod    = A
 existMod   = E
 dUnivMod   = B
 dExistMod  = D
+
+int :: Encoding -> String -> Int
+int e s = (relMap e) Map.! s
 
 {- binder -}
 downArrow :: Encoding -> S.NomSymbol -> Formula -> Formula
@@ -575,11 +587,11 @@ firstPrefixedFormula = PrFormula 0 dsEmpty
 
 -- accessibility Formulas
 
-data AccFormula = AccFormula DependencySet RelSymbol Prefix Prefix
+data AccFormula = AccFormula DependencySet Rel Prefix Prefix
      deriving (Eq, Ord)
 
 instance Show AccFormula where
- show (AccFormula bprs r p1 p2) = show bprs ++ ":" ++ show p1 ++ "<" ++ show r ++ ">" ++ show p2
+ show (AccFormula bprs r p1 p2) = show bprs ++ ":" ++ show p1 ++ "<" ++ showRel r ++ ">" ++ show p2
 
 -- formula language
 
@@ -674,9 +686,11 @@ hasUnivModality (A _)     = True
 hasUnivModality f         = composeFold False (||) hasUnivModality f
 
 hasPast :: Formula -> Bool
-hasPast (Dia (InvRelSymbol _) _) = True
-hasPast f                        = composeFold False (||) hasPast f
-
+hasPast (Dia r _)    = testBit r 0
+hasPast (Box r _)    = testBit r 0
+hasPast (BoxX r _) = testBit r 0
+hasPast (DiaX _ r _) = testBit r 0
+hasPast f            = composeFold False (||) hasPast f
 
 hasDiffModality :: Formula -> Bool
 hasDiffModality (B _)     = True

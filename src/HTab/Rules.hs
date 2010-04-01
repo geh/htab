@@ -12,7 +12,7 @@ import Data.Maybe ( listToMaybe, catMaybes )
 import HTab.Formula( Formula(..), PrFormula(..), showLess, neg,
                      Dependency, DependencySet, dsUnion, dsInsert, dsEmpty,
                      prefix, AccFormula(..), Rel,
-                     Prefix, RelSymbol(..),
+                     Prefix,
                      conj, replaceVar, Prop )
 import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewNomTestRelevance,
                     BranchInfo(..),
@@ -35,7 +35,7 @@ import qualified HTab.DisjSet as DS
 data BranchModification =    BM_AddFormulas   [PrFormula]
                            | BM_AddAccFormula AccFormula
                            | BM_AddDiaRuleCheck Prefix Formula
-                           | BM_AddDiaXRuleCheck Prefix (RelSymbol,Formula)
+                           | BM_AddDiaXRuleCheck Prefix (Rel,Formula)
                            | BM_AddDownRuleCheck Prefix Formula
                            | BM_AddDiffRuleCheck Formula (Maybe Prop)
                            | BM_CreateNewPref
@@ -70,7 +70,7 @@ getMods :: Branch -> Rule -> [[BranchModification]]
 getMods _ (ClashRule ds f) = [[BM_Clash ds f]]
 getMods _ (MergeRule p n ds)= [[BM_Merge p n ds]]
 
-getMods _ (RoleIncRule p1 ss p2 ds) = [[BM_AddAccFormula (AccFormula ds (RelSymbol s) p1 p2)] | s <- ss]
+getMods _ (RoleIncRule p1 rs p2 ds) = [[BM_AddAccFormula (AccFormula ds r p1 p2)] | r <- rs]
 
 getMods br (DiaRule df@(PrFormula pr ds f@(Dia r f2)))
  = if diaAlreadyDone br df
@@ -197,7 +197,7 @@ instance Show Rule where
    show (DiscardRule todelete)     = "Discard:            " ++ showLess todelete
    show (ClashRule bprs f)         = "Clash:              " ++ show bprs ++ " " ++ show f
    show (UBlockRule p1 p2 _ )      = "Unrestricted blocking " ++ show (p1,p2)
-   show (RoleIncRule p1 ss p2 _)   = "Role inclusion      " ++ show (p1,ss,p2)
+   show (RoleIncRule p1 rs p2 _)   = "Role inclusion      " ++ show (p1,rs,p2)
 
 --
 ruleToId :: Rule -> RuleId
@@ -226,7 +226,7 @@ applicableRule br clp d =
   _        ->  listToMaybe $ catMaybes $ map (ruleByChar br clp d) (strategyStr clp)
 
 scheduledRuleToRule :: Branch -> CmdLineParams -> Dependency -> ScheduledRule -> Rule
-scheduledRuleToRule _ _ d (SR_Inclusion p1 ss p2 ds) = RoleIncRule p1 ss p2 (dsInsert d ds)
+scheduledRuleToRule _ _ d (SR_Inclusion p1 rs p2 ds) = RoleIncRule p1 rs p2 (dsInsert d ds)
 scheduledRuleToRule _ _ d (SR_UBlocking p1 p2) = UBlockRule p1 p2 d
 scheduledRuleToRule _ _ _ (SR_Merge pr po ds)  = MergeRule pr po ds
 scheduledRuleToRule br clp d (SR_Formula pf@(PrFormula _ _ f2)) =
@@ -276,8 +276,8 @@ ruleByChar br clp d char =
   applicableDiffRule  = do (f,new) <- Set.minView $ diffStr todos
                            return (DiffRule f d, todos{diffStr = new})
 
-  applicableRoleIncRule = do ((ds, p1, p2, ss),new) <- Set.minView $ roleIncStr todos
-                             return (RoleIncRule p1 ss p2 (dsInsert d ds), todos{roleIncStr = new})
+  applicableRoleIncRule = do ((ds, p1, p2, rs),new) <- Set.minView $ roleIncStr todos
+                             return (RoleIncRule p1 rs p2 (dsInsert d ds), todos{roleIncStr = new})
 
   applicableUBlockRule = case getUnappliedUBPairs br of
                             []          -> Nothing

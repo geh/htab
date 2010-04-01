@@ -32,6 +32,8 @@ module HTab.Base
 where
 import Control.Monad ( when )
 import qualified Data.Map as Map
+import Data.IntMap ( IntMap )
+import qualified Data.IntMap as IntMap
 import Data.List ( sort )
 import qualified Data.Set as Set
 
@@ -54,14 +56,14 @@ almostCartesianProduct as bs = [(a,b) | (idxA,a) <- zip [(0::Int)..] as,
                                         idxA /= idxB]
 
 
-moveInMap :: Ord a => Map.Map a b -> a -> a -> (b -> b -> b) -> Map.Map a b
+moveInMap :: IntMap b -> Int -> Int -> (b -> b -> b) -> IntMap b
 moveInMap m origKey destKey mergeF
  = result
-   where mOrigValue = Map.lookup origKey m
-         prunedM = Map.delete origKey m
+   where mOrigValue = IntMap.lookup origKey m
+         prunedM    = IntMap.delete origKey m
          result = case mOrigValue of
                    Nothing -> m
-                   Just origValue -> Map.insertWith mergeF destKey origValue prunedM
+                   Just origValue -> IntMap.insertWith mergeF destKey origValue prunedM
 
 doMemoize :: Ord a => (a -> b) -> a -> Map.Map a b -> (b, Map.Map a b)
 doMemoize f e m = case Map.lookup e m of
