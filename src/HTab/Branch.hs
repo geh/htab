@@ -812,7 +812,7 @@ addUnivConstraint f ds clp br
 
 b_rule :: Prefix -> Formula -> DependencySet -> CmdLineParams -> Branch -> BranchInfo
 b_rule  pr f ds clp br
- = addFormula clp br2 (PrFormula pr ds $ Down newNom $ univMod $ ((Lit newNom) `disj` f))
+ = addFormula clp br2 (PrFormula pr ds $ Down newNom $ A ((Lit newNom) `disj` f))
     where newNom = nextNom br
           br2 = br{nextNom = nextNom br + 4}
 --
