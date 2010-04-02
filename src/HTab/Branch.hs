@@ -41,7 +41,7 @@ import qualified Data.Set as Set
 
 import qualified HTab.DisjSet as DS
 
-import Data.Maybe( fromMaybe, catMaybes)
+import Data.Maybe( catMaybes )
 
 import HTab.Timeout( TimeoutSignal )
 import HTab.Statistics(Statistics)
@@ -91,7 +91,7 @@ type EquivClasses = DS.DisjSet DS.Pointer
 
 type PrefixParent = IntMap {- Prefix -} Prefix
 
-data BlockingMode = InclusionBlockingGlobal | InclusionBlockingChain | ChainBlocking
+data BlockingMode = AnywhereBlocking | ChainTwinBlocking
  deriving (Eq,Show)
 
 data Branch =
@@ -175,10 +175,8 @@ emptyBranch clp fLang relInfo_ encoding_ =
             || relInfo_ `oneIs` Symmetric
             || relInfo_ `oneIs` Functional
             || relInfo_ `oneIs` Injective
-           then ChainBlocking
-           else if inclBlockChain clp && (not $ inclBlockGlobal clp)
-                 then InclusionBlockingChain
-                 else InclusionBlockingGlobal
+           then ChainTwinBlocking
+           else AnywhereBlocking
 
 instance Show Branch where
  show br
@@ -635,7 +633,7 @@ insertRelationBranch br p1 r p2 ds
 isNotBlocked :: Branch -> Prefix -> Bool
 isNotBlocked br pr =
  case blockMode br of
-   InclusionBlockingGlobal ->
+   AnywhereBlocking ->
                case filter isSubsumer labels of
                     [] -> True
                     _  -> False
@@ -643,25 +641,10 @@ isNotBlocked br pr =
                        fs = formulasOf br ur
                        isSubsumer (p_,fs_) = (p_ < ur) && (Set.isSubsetOf fs fs_)
                        labels = IntMap.toAscList (prefToForms br)
-   InclusionBlockingChain  -> not $ isChainInclusionBlocked br pr
-   ChainBlocking           -> not $ isChainBlocked br pr
+   ChainTwinBlocking   -> isNotChainTwinBlocked br pr
 
-isChainInclusionBlocked :: Branch -> Prefix -> Bool
-isChainInclusionBlocked  br pr =
-  go br ur ur
- where ur = getUrfather br (DS.Prefix pr)
-       go :: Branch -> Prefix -> Prefix -> Bool
-       go br_ initial current =
-          case fatherOf current of
-            Nothing       -> False
-            Just ancestor -> let urAncestor = getUrfather br (DS.Prefix ancestor) in
-                             if formulasIncluded br_ initial urAncestor
-                              then True else go br_ initial ancestor
-       parentMap    = prefParent br
-       fatherOf pr_ = IntMap.lookup pr_ parentMap
-
-isChainBlocked :: Branch -> Prefix -> Bool
-isChainBlocked br pr = test2equal $ map (formulasOf br) (getAllParents br pr)
+isNotChainTwinBlocked :: Branch -> Prefix -> Bool
+isNotChainTwinBlocked br pr = not $ test2equal $ map (formulasOf br) (getAllParents br pr)
 
 getAllParents :: Branch -> Prefix -> [Prefix]
 -- getAllParents up to one that has an input nominal
@@ -681,9 +664,8 @@ test2equal [] = False
 isInTheModel :: Branch -> Prefix -> Bool
 isInTheModel br pr | isNominalUrfather br pr
  = case blockMode br of
-    InclusionBlockingGlobal ->  (getModelRepresentative br pr) == pr
-    InclusionBlockingChain  ->  (getModelRepresentative br pr) == pr
-    ChainBlocking           ->  case findModelRepresentativeChainBlocking br pr of
+    AnywhereBlocking  ->  (getModelRepresentative br pr) == pr
+    ChainTwinBlocking ->  case findModelRepresentativeChainTwinBlocking br pr of
                                  Nothing   -> False
                                  Just repr -> repr == pr
 isInTheModel _ _ = False
@@ -691,54 +673,39 @@ isInTheModel _ _ = False
 relationIsInTheModel :: Branch -> (Prefix,Rel,Prefix) -> Bool
 relationIsInTheModel br (p1,_,p2)
  = case blockMode br of
-     ChainBlocking            -> hasIdentityUrfather br p1 && hasIdentityUrfather br p2
-     _                        -> isInTheModel br p1
+     ChainTwinBlocking            -> hasIdentityUrfather br p1 && hasIdentityUrfather br p2
+     AnywhereBlocking             -> isInTheModel br p1
    where hasIdentityUrfather br_ pr_
-          = case findModelRepresentativeChainBlocking br_ pr_ of {Nothing -> False ; _ -> True }
+          = case findModelRepresentativeChainTwinBlocking br_ pr_ of {Nothing -> False ; _ -> True }
 
 getModelRepresentative :: Branch -> Prefix -> Prefix  -- which is also an inclusion representative
 getModelRepresentative br pr
  = case blockMode br of
-    InclusionBlockingGlobal -> head $ map fst $ filter (Set.isSubsetOf fs . snd) $ IntMap.toAscList (prefToForms br)
-                                 where ur = getUrfather br (DS.Prefix pr)
-                                       fs = formulasOf br ur
-    InclusionBlockingChain  -> -- find the *oldest* inclusion urfather on the chain
-                                 go br nomUrfather nomUrfather Nothing
-                                where nomUrfather = getUrfather br (DS.Prefix pr)
-                                      go :: Branch -> Prefix -> Prefix -> Maybe Prefix -> Prefix
-                                      go br_ initial current mBlocker =
-                                         case fatherOf current of
-                                           Nothing       -> fromMaybe initial mBlocker
-                                           Just ancestor -> let urAncestor = getUrfather br (DS.Prefix ancestor) in
-                                                            if formulasIncluded br_ initial urAncestor
-                                                             then go br_ initial ancestor (Just urAncestor)
-                                                             else go br_ initial ancestor mBlocker
-                                      parentMap    = prefParent br
-                                      fatherOf pr_ = IntMap.lookup pr_ parentMap
-    ChainBlocking -> case findModelRepresentativeChainBlocking br pr of
-                      Nothing -> error ("found an interesting counter example " ++ show pr)
-                      Just repr -> repr
+    AnywhereBlocking-> case map fst $ filter (Set.isSubsetOf fs . snd) $ IntMap.toAscList (prefToForms br) of
+                         []     -> pr
+                         (hd:_) -> hd
+                         where ur = getUrfather br (DS.Prefix pr)
+                               fs = formulasOf br ur
+    ChainTwinBlocking -> case findModelRepresentativeChainTwinBlocking br pr of
+                          Nothing -> error ("found an interesting counter example " ++ show pr)
+                          Just repr -> repr
 
 
-findModelRepresentativeChainBlocking :: Branch -> Prefix -> Maybe Prefix
-findModelRepresentativeChainBlocking br pr
+findModelRepresentativeChainTwinBlocking :: Branch -> Prefix -> Maybe Prefix
+findModelRepresentativeChainTwinBlocking br pr
  =  go br pr 0
      where
        go :: Branch -> Prefix -> Prefix -> Maybe Prefix
        go br_ initial current =
           let urCurrent =  getUrfather br (DS.Prefix current) in
            if urCurrent == initial
-            then if isChainBlocked br initial then Nothing else Just initial
-            else if (sameSetOfFormulas br_ initial urCurrent) && (not $ isChainBlocked br urCurrent)
+            then if isNotChainTwinBlocked br initial then Just initial else Nothing
+            else if areTwins br_ initial urCurrent && isNotChainTwinBlocked br urCurrent
                    then Just urCurrent
                    else go br_ initial (current+1)
 
-
-formulasIncluded :: Branch -> Prefix -> Prefix-> Bool
-formulasIncluded br p1 p2 = (formulasOf br p1) `Set.isSubsetOf` (formulasOf br p2)
-
-sameSetOfFormulas :: Branch -> Prefix -> Prefix -> Bool
-sameSetOfFormulas br p1 p2 = (formulasOf br p1) == (formulasOf br p2)
+areTwins :: Branch -> Prefix -> Prefix -> Bool
+areTwins br p1 p2 = (formulasOf br p1) == (formulasOf br p2)
 
 -- maybe should get the urfather of given prefix, so that the caller functions won't have to do it
 formulasOf :: Branch -> Prefix -> Set.Set Formula

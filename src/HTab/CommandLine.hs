@@ -46,8 +46,6 @@ data CmdLineParams = CLP {
            genModel        :: Maybe FilePath,
            quietMode       :: Bool,
            showFormula     :: Bool,
-           inclBlockGlobal :: Bool,
-           inclBlockChain  :: Bool,
            simpleInput     :: Bool,
            allTransitive   :: Bool,
            allReflexive    :: Bool,
@@ -171,14 +169,6 @@ options =
            "The default is `" ++ statsStr defaultParams ++ "'",
            ""]),
   Option []
-         ["inclusion-blocking-global"]
-         (NoArg $ \c -> return c{inclBlockGlobal = True})
-         "enable inclusion blocking among all nodes of the tableau (priority over chain-based)",
-  Option []
-         ["inclusion-blocking-chain"]
-         (NoArg $ \c -> return c{inclBlockChain = True})
-         "enable inclusion blocking among all nodes of a chain",
-  Option []
          ["simple"]
          (NoArg $ \c -> return c{simpleInput = True})
          "read formula in the simple input format",
@@ -254,8 +244,6 @@ defaultParams = CLP {showHelp = False,
                      genModel    = Nothing,
                      quietMode   = False,
                      showFormula = False,
-                     inclBlockGlobal = False,
-                     inclBlockChain  = True,
                      simpleInput   = False,
                      allTransitive = False,
                      allReflexive  = False,
