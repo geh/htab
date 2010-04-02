@@ -202,8 +202,10 @@ instance Show Branch where
               showl "\nParent: " (prefParent br),
               "\nBlocking mode: ", show (blockMode br),
               "\nPrefix-Nominal classes : ", showMap show ", " (nomPrefClasses br),
-              "\nModel-relevant nominals : " ++ (concatMap showLit $ list $ relevantNominals br),
-              "\nnextnom : "  ++ showLit (nextNom br) ++ " nextprop : " ++ showLit (nextProp br)
+              "\nModel-relevant nominals : " ++ (unwords $  map showLit $ list $ relevantNominals br),
+              "\nlastPref : " ++ show (lastPref br) ++
+              " nextnom : "  ++ showLit (nextNom br) ++
+              " nextprop : " ++ showLit (nextProp br)
            ]
               where
                   ifNotEmpty b f = if empty b then "" else f b
