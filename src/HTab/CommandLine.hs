@@ -96,10 +96,10 @@ options =
           (unlines [
           "if the theory is satisfiable, output a model",
           "to FILE"]),
-   Option ['s']
-          ["log-state"]
+   Option ['v']
+          ["verbose"]
           (NoArg $ \c -> return c{logState = True})
-          "log the internal state",
+          "display more information",
    Option ['b']
           ["semantic-branching"]
           (ReqArg setSemanticBranching "[0|1]")
@@ -112,7 +112,7 @@ options =
           ["backjumping"]
           (ReqArg setBackJumping "[0|1]")
           "disable/enable backjumping optimisation",
-   Option ['o']
+   Option ['s']
           ["strategy"]
           (ReqArg setStrategy "PAT")
           (unlines [
