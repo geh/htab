@@ -16,30 +16,30 @@ import HTab.Formula(Prefix,DependencySet,Formula,dsEmpty,dsMember,dsUnion)
 import HTab.ModelGen ( Model, buildModel )
 import HTab.Timeout( isTimeout )
 
-type Path = [Int]
+type Depth = Int
 data OpenFlag = OPEN Model | CLOSED DependencySet | TIMEOUT
 
 tableauStart :: CmdLineParams -> BranchInfo -> BranchMonad OpenFlag
-tableauStart clp bi = (liftStats $ configureMetrics clp) >> tableau [0] bi
+tableauStart clp bi = (liftStats $ configureMetrics clp) >> tableau 0 bi
 
-tableau :: Path -> BranchInfo -> BranchMonad OpenFlag
-tableau path branchInfo =
+
+tableau :: Depth -> BranchInfo -> BranchMonad OpenFlag
+tableau depth branchInfo =
       do logMe
          bd <- ask
          timeout <- isTimeout $ timeout_signal bd
          if timeout then return TIMEOUT else
           do
-           debugMsg_NewSection path
+           debugMsg_NewSection depth
            case branchInfo of
               BranchClash br pr bprs f ->
-               do debugMsg_BranchClash br pr bprs f path
+               do debugMsg_BranchClash br pr bprs f depth
                   liftStats $ recordClosedBranch
                   return (CLOSED bprs)
               BranchOK br ->
-               do let currentBranchingDepth = length path + 1
-                  debugMsg_BranchOK br
+               do debugMsg_BranchOK br
                   let clp = branch_clp bd
-                  case applicableRule br clp currentBranchingDepth of
+                  case applicableRule br clp (depth + 1) of
                     Nothing  ->
                         do debugMsg_BranchOK_saturated
                            return $ case unfulfilledEventualities br of
@@ -49,24 +49,23 @@ tableau path branchInfo =
                         do debugMsg_BranchOK_applicableRule rule
                            liftStats $ recordFiredRule $ ruleToId rule
                            case applyRule clp rule br newTodo of
-                            [newBi] -> tableau (0:path) newBi
-                            bis     -> chooseBranch dsEmpty $ zipWith (\bi n -> (bi,n:path)) bis [0..]
+                            [newBi] -> tableau (depth + 1) newBi
+                            bis     -> chooseBranch dsEmpty bis (depth + 1)
 
 
-chooseBranch :: DependencySet -> [(BranchInfo,Path)] -> BranchMonad OpenFlag
-chooseBranch currentDepSet ((hd,path):tl) =
- do res <- tableau path hd
-    let currentBranchingDepth = length path
+chooseBranch :: DependencySet -> [BranchInfo] -> Depth -> BranchMonad OpenFlag
+chooseBranch currentDepSet (hd:tl) depth =
+ do res <- tableau depth hd
     case res of
      TIMEOUT       -> return TIMEOUT
      o@(OPEN _)    -> return o
      CLOSED depSet ->
       do bd <- ask
-         if (backJumping $ branch_clp bd) && (not $ dsMember currentBranchingDepth depSet)
+         if (backJumping $ branch_clp bd) && (not $ dsMember depth depSet)
           then return $ CLOSED depSet
-          else chooseBranch (dsUnion currentDepSet depSet) tl
+          else chooseBranch (dsUnion currentDepSet depSet) tl depth
 
-chooseBranch currentDepSet [] = return $ CLOSED currentDepSet
+chooseBranch currentDepSet [] _ = return $ CLOSED currentDepSet
 
 --
 
@@ -74,21 +73,18 @@ logMe :: BranchMonad ()
 logMe = do liftStats $ printOutInspectionMetrics
            liftStats $ modify updateStep
 
-debugMsg_NewSection :: Path -> BranchMonad ()
-debugMsg_NewSection path =
+debugMsg_NewSection :: Depth -> BranchMonad ()
+debugMsg_NewSection depth =
  do bd <- ask
     let showState = logState $ branch_clp bd
-    let depth = length path
-    let width = head path 
-    let traceMsg = "Depth " ++ show depth ++ " Width " ++ show width ++ " path " ++ show path
+    let traceMsg = "Depth " ++ show depth
     liftIO $ vPutStrLn ("\n>> " ++ traceMsg) showState
 
-debugMsg_BranchClash :: Branch -> Prefix -> DependencySet -> Formula -> Path -> BranchMonad ()
-debugMsg_BranchClash br pr bprs f path =
+debugMsg_BranchClash :: Branch -> Prefix -> DependencySet -> Formula -> Depth -> BranchMonad ()
+debugMsg_BranchClash br pr bprs f depth =
  do bd <- ask
     let showState = logState $ branch_clp bd
-    let currentBranchingDepth = length path
-    liftIO $ vPutStrLn (show br ++ "\nClasher : " ++ show (pr,bprs,currentBranchingDepth,f)) showState
+    liftIO $ vPutStrLn (show br ++ "\nClasher : " ++ show (pr,bprs,depth,f)) showState
 
 debugMsg_BranchOK :: Branch -> BranchMonad ()
 debugMsg_BranchOK br =
