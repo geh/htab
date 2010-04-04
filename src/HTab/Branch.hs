@@ -32,13 +32,12 @@ import Data.List(minimumBy)
 
 import Data.Map ( Map )
 import qualified Data.Map as Map
+import Data.Set ( Set )
+import qualified Data.Set as Set
 import Data.IntMap ( IntMap)
 import qualified Data.IntMap as IntMap
 
 import qualified Data.List as List
-import Data.Set ( Set )
-import qualified Data.Set as Set
-
 import qualified HTab.DisjSet as DS
 
 import Data.Maybe( catMaybes )
@@ -129,6 +128,8 @@ data Branch =
                  -- information about language of input formula and blocking mode
                  inputLanguage :: LanguageInfo,
                      blockMode :: BlockingMode,
+             unblockedPrefsLim :: Prefix,
+                   blockedDias :: IntMap {- Prefix -} [PrFormula],
                     prefParent :: PrefixParent,
               relevantNominals :: Set.Set Nom,
                        relInfo :: RelInfo,
@@ -163,6 +164,8 @@ emptyBranch clp fLang relInfo_ encoding_ =
                   nomPrefClasses    = DS.mkDSet,
                   inputLanguage     = fLang,
                   blockMode         = blockingMode,
+                  unblockedPrefsLim = 0,
+                  blockedDias       = IntMap.empty,
                   prefParent        = IntMap.empty,
                   relevantNominals  = set $ relevantNoms fLang,
                   relInfo           = relInfo_,
@@ -306,9 +309,10 @@ addFormula clp br pf
 
 bookKeepFormula :: PrFormula -> Branch -> Branch
 bookKeepFormula pf_ br
- =  addToPrefToForms         pf br
+ =   addToPrefToForms         pf
+   $ rescheduleBlockedDias    ur br
   where
-    pf = toUrfather br pf_
+    (ur,pf) = toUrfather br pf_
 
 
 putAwayFormula :: CmdLineParams -> PrFormula -> Branch -> BranchInfo
@@ -373,6 +377,11 @@ addToTodo pf@(PrFormula p ds f2) br =
      At _ _      -> br{atRlCh    = Set.insert f2 (atRlCh br)}
      _           -> br
 
+rescheduleBlockedDias :: Prefix -> Branch -> Branch
+rescheduleBlockedDias  pr br
+ = foldr addToTodo br toAdd
+  where toAdd =  IntMap.findWithDefault [] pr (blockedDias br)
+
 {-    helper functions for equivalence class merge     -}
 
 merge :: CmdLineParams -> Branch -> Prefix -> DependencySet -> DS.Pointer -> BranchInfo
@@ -413,6 +422,7 @@ merge clp br pr fDs pointer -- pointer is a nominal or a prefix
                       newDiaRlCh      = moveInMap (diaRlCh br)  oldUr newUr Set.union
                       newDiaXRlCh     = moveInMap (diaXRlCh br) oldUr newUr Set.union
                       newBoxXRlCh     = moveInMap (boxXRlCh br) oldUr newUr Set.union
+                      newBlockedDias  = moveInMap (blockedDias br) oldUr newUr (++)
 
                       -- structures that combine
                       mapBoxFwd = map (\idx -> IntMap.findWithDefault IntMap.empty idx (toMap $ boxConstrFwd br) ) [ur1,ur2]
@@ -435,6 +445,7 @@ merge clp br pr fDs pointer -- pointer is a nominal or a prefix
                                            diaRlCh        = newDiaRlCh,
                                            diaXRlCh       = newDiaXRlCh,
                                            boxXRlCh       = newBoxXRlCh,
+                                           blockedDias    = newBlockedDias,
                                            clashStr       = newClashStr}
                   in
                       addFormulas clp newBr formulasToAdd
@@ -456,9 +467,9 @@ namd [] theMap = map (\((p,f),ds) -> PrFormula p ds f) (Map.assocs theMap)
    Functions related to nom, prefixes and nominals ...
 -}
 
-toUrfather :: Branch -> PrFormula -> PrFormula
+toUrfather :: Branch -> PrFormula -> (Prefix,PrFormula)
 toUrfather br f@(PrFormula pr ds f2)
- = newF
+ = (urfather, newF)
    where
      (urfather,ds2,_) = getUrfatherAndDeps br (DS.Prefix pr)
      newF  = if urfather == pr
@@ -630,20 +641,19 @@ insertRelationBranch br p1 r p2 ds
  = br{accStr = insertRelation (accStr br) p1 r p2 ds}
 
 
-{-  functions related to blocking conditions and model building -}
+{- blocking conditions -}
 
 isNotBlocked :: Branch -> Prefix -> Bool
-isNotBlocked br pr =
+isNotBlocked br pr
+ | ( pr <= (unblockedPrefsLim br) ) && isNominalUrfather br pr = True
+ | otherwise =
  case blockMode br of
-   AnywhereBlocking ->
-               case filter isSubsumer labels of
-                    [] -> True
-                    _  -> False
-                 where ur = getUrfather br (DS.Prefix pr)
-                       fs = formulasOf br ur
-                       isSubsumer (p_,fs_) = (p_ < ur) && (Set.isSubsetOf fs fs_)
-                       labels = IntMap.toAscList (prefToForms br)
-   ChainTwinBlocking   -> isNotChainTwinBlocked br pr
+   AnywhereBlocking   -> null $ filter isSubsumer labels
+                           where ur = getUrfather br (DS.Prefix pr)
+                                 fs = formulasOf br ur
+                                 isSubsumer fs_ = fs `Set.isSubsetOf` fs_
+                                 labels = map snd $ takeWhile ((< ur).fst) $  IntMap.toAscList (prefToForms br)
+   ChainTwinBlocking  -> isNotChainTwinBlocked br pr
 
 isNotChainTwinBlocked :: Branch -> Prefix -> Bool
 isNotChainTwinBlocked br pr = not $ test2equal $ map (formulasOf br) (getAllParents br pr)
@@ -662,6 +672,8 @@ test2equal :: (Ord a) => [Set a] -> Bool -- inefficient
 test2equal (s:sets) = any ((==) s) sets || test2equal sets
 test2equal [] = False
 
+
+{- model building -}
 
 isInTheModel :: Branch -> Prefix -> Bool
 isInTheModel br pr | isNominalUrfather br pr
@@ -898,7 +910,7 @@ createNewNomTestRelevance br f
 --  - add functionality and injectivitty down-arrow formulas
 addFirstFormulas :: CmdLineParams -> Branch -> LanguageInfo -> Formula -> BranchInfo
 addFirstFormulas clp br_ fLang f
- = addFormulas clp br4 ([pf]++funUniv++injUniv)
+ = addFormulas clp br5 ([pf]++funUniv++injUniv)
     where ns = languageNoms fLang
           nbNs = length ns
           nomWitnesses = [1..nbNs]
@@ -923,6 +935,7 @@ addFirstFormulas clp br_ fLang f
                        where injRels = Map.keys $ Map.filter (elem Injective) (relInfo br)
           newNom = nextNom br3
           br4 = br3{nextNom = nextNom br3 + 4}
+          br5 = br4{unblockedPrefsLim = nbNs}
 
 {-     functions to handle the "clashable information", ie literals associated to prefixes     -}
 

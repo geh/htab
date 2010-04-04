@@ -45,10 +45,10 @@ tableau depth branchInfo =
                            return $ case unfulfilledEventualities br of
                                      Just ds -> CLOSED ds
                                      Nothing -> OPEN   $ buildModel br
-                    Just (rule,newTodo) ->
+                    Just (rule,newTodo,newBranch)  -> -- of course then merge newBranch and newTodo
                         do debugMsg_BranchOK_applicableRule rule
                            liftStats $ recordFiredRule $ ruleToId rule
-                           case applyRule clp rule br newTodo of
+                           case applyRule clp rule newBranch newTodo of
                             [newBi] -> tableau (depth + 1) newBi
                             bis     -> chooseBranch dsEmpty bis (depth + 1)
 

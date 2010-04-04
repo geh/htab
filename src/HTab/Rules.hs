@@ -7,6 +7,7 @@ applyMod
 
 import qualified Data.Set as Set
 import qualified Data.Map as Map
+import qualified Data.IntMap as IntMap
 import Data.Maybe ( listToMaybe, catMaybes )
 
 import HTab.Formula( Formula(..), PrFormula(..), showLess, neg,
@@ -23,7 +24,7 @@ import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewNomTestRe
                     getUnappliedUBPairs, updateUBBookKeep,
                     getUrfatherAndDeps, isNotBlocked, merge,
                     diaAlreadyDone,  diaXAlreadyDone, downAlreadyDone,
-                    ReducedDisjunct(..),
+                    ReducedDisjunct(..), getUrfather,
                     ScheduledRule(..), TodoList(..),
                     deleteUEV, insertUEV_addFormula )
 import HTab.CommandLine(CmdLineParams, semBranch, unitProp, strategyStr, uBlocking, noLoopCheck)
@@ -218,11 +219,11 @@ ruleToId r = case r of
 
 -- the rules application strategy is defined here:
 -- the first rule is the one that will be applied at the next tableau step
-applicableRule :: Branch -> CmdLineParams -> Dependency -> Maybe (Rule,TodoList)
+applicableRule :: Branch -> CmdLineParams -> Dependency -> Maybe (Rule,TodoList,Branch)
 applicableRule br clp d =
  case todoList br of
   Fair [] -> Nothing
-  Fair (sr:tl) -> Just (scheduledRuleToRule br clp d sr, Fair tl)
+  Fair (sr:tl) -> Just (scheduledRuleToRule br clp d sr, Fair tl, br)
   _        ->  listToMaybe $ catMaybes $ map (ruleByChar br clp d) (strategyStr clp)
 
 scheduledRuleToRule :: Branch -> CmdLineParams -> Dependency -> ScheduledRule -> Rule
@@ -240,7 +241,7 @@ scheduledRuleToRule br clp d (SR_Formula pf@(PrFormula _ _ f2)) =
   D _       -> DiffRule pf d
   _         -> error "scheduledRuleToRule, incorrect formula kind"
 
-ruleByChar :: Branch -> CmdLineParams -> Dependency -> Char -> Maybe (Rule,TodoList)
+ruleByChar :: Branch -> CmdLineParams -> Dependency -> Char -> Maybe (Rule,TodoList,Branch)
 ruleByChar br clp d char =
  case char of
   'm' -> applicableMergeRule
@@ -256,41 +257,50 @@ ruleByChar br clp d char =
   _   -> error "ruleByChar"
  where
   todos  = todoList br
-  applicableDiaRule   = case [ f | f@(PrFormula pr _ _) <- Set.toAscList $ diaStr todos,
-                                    noLoopCheck clp || isNotBlocked br pr] of
-                           []    -> Nothing
-                           (f:_) -> Just (DiaRule f, todos{diaStr = Set.delete f $ diaStr todos})
+
+  applicableDiaRule
+   = do (f@(PrFormula pr _ _),new) <- Set.minView $ diaStr todos
+        if noLoopCheck clp
+         then return (DiaRule f, todos{diaStr = new},br)
+         else if diaAlreadyDone br f
+               then return (DiscardRule f, todos{diaStr = new} , br )
+               else let brBlocked = br{blockedDias = IntMap.insertWith (++) ur [f] (blockedDias br)}
+                        ur = getUrfather br (DS.Prefix pr)
+                    in
+                      if isNotBlocked br pr
+                       then return ( DiaRule f,     todos{diaStr = new}, br )
+                       else return ( DiscardRule f, todos{diaStr = new}, brBlocked)
 
   applicableDiaXRule  = do (f,new) <- Set.minView $ diaXStr todos
-                           return (diaXRule f br d, todos{diaXStr = new})
+                           return (diaXRule f br d, todos{diaXStr = new},br)
 
   applicableAtRule    = do (f,new) <- Set.minView $ atStr todos
-                           return (AtRule f, todos{atStr = new})
+                           return (AtRule f, todos{atStr = new},br)
 
   applicableDownRule  = do (f,new) <- Set.minView $ downStr todos
-                           return (DownRule f, todos{downStr = new})
+                           return (DownRule f, todos{downStr = new},br)
 
   applicableExistRule = do (f,new) <- Set.minView $ existStr todos
-                           return (ExistRule f, todos{existStr = new})
+                           return (ExistRule f, todos{existStr = new},br)
 
   applicableDiffRule  = do (f,new) <- Set.minView $ diffStr todos
-                           return (DiffRule f d, todos{diffStr = new})
+                           return (DiffRule f d, todos{diffStr = new},br)
 
   applicableRoleIncRule = do ((ds, p1, p2, rs),new) <- Set.minView $ roleIncStr todos
-                             return (RoleIncRule p1 rs p2 (dsInsert d ds), todos{roleIncStr = new})
+                             return (RoleIncRule p1 rs p2 (dsInsert d ds), todos{roleIncStr = new},br)
 
   applicableUBlockRule = case getUnappliedUBPairs br of
                             []          -> Nothing
-                            ((p1,p2):_) -> Just (UBlockRule p1 p2 d, todos)
+                            ((p1,p2):_) -> Just (UBlockRule p1 p2 d, todos,br)
 
   applicableMergeRule  = do ((ds,p,po),new) <- Set.minView $ mergeStr todos
-                            return (MergeRule p po ds, todos{mergeStr = new})
+                            return (MergeRule p po ds, todos{mergeStr = new},br)
 
   applicableDisjRule
    =  if semBranch clp then do (f,new) <- Set.minView $ disjStr todos
-                               return (semBrRule clp f br d, todos{disjStr = new})
+                               return (semBrRule clp f br d, todos{disjStr = new},br)
                        else do (f,new) <- Set.minView $ disjStr todos
-                               return (disjRule clp f br d,  todos{disjStr = new})
+                               return (disjRule clp f br d,  todos{disjStr = new},br)
 
 applyRule :: CmdLineParams -> Rule -> Branch -> TodoList -> [BranchInfo]
 applyRule clp rule br_ todo
