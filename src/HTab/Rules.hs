@@ -259,48 +259,48 @@ ruleByChar br clp d char =
   todos  = todoList br
 
   applicableDiaRule
-   = do (f@(PrFormula pr _ _),new) <- Set.minView $ diaStr todos
+   = do (f@(PrFormula pr _ _),new) <- Set.minView $ diaTodo todos
         if noLoopCheck clp
-         then return (DiaRule f, todos{diaStr = new},br)
+         then return (DiaRule f, todos{diaTodo = new},br)
          else if diaAlreadyDone br f
-               then return (DiscardRule f, todos{diaStr = new} , br )
+               then return (DiscardRule f, todos{diaTodo = new} , br )
                else let brBlocked = br{blockedDias = IntMap.insertWith (++) ur [f] (blockedDias br)}
                         ur = getUrfather br (DS.Prefix pr)
                     in
                       if isNotBlocked br pr
-                       then return ( DiaRule f,     todos{diaStr = new}, br )
-                       else return ( DiscardRule f, todos{diaStr = new}, brBlocked)
+                       then return ( DiaRule f,     todos{diaTodo = new}, br )
+                       else return ( DiscardRule f, todos{diaTodo = new}, brBlocked)
 
-  applicableDiaXRule  = do (f,new) <- Set.minView $ diaXStr todos
-                           return (diaXRule f br d, todos{diaXStr = new},br)
+  applicableDiaXRule  = do (f,new) <- Set.minView $ diaXTodo todos
+                           return (diaXRule f br d, todos{diaXTodo = new},br)
 
-  applicableAtRule    = do (f,new) <- Set.minView $ atStr todos
-                           return (AtRule f, todos{atStr = new},br)
+  applicableAtRule    = do (f,new) <- Set.minView $ atTodo todos
+                           return (AtRule f, todos{atTodo = new},br)
 
-  applicableDownRule  = do (f,new) <- Set.minView $ downStr todos
-                           return (DownRule f, todos{downStr = new},br)
+  applicableDownRule  = do (f,new) <- Set.minView $ downTodo todos
+                           return (DownRule f, todos{downTodo = new},br)
 
-  applicableExistRule = do (f,new) <- Set.minView $ existStr todos
-                           return (ExistRule f, todos{existStr = new},br)
+  applicableExistRule = do (f,new) <- Set.minView $ existTodo todos
+                           return (ExistRule f, todos{existTodo = new},br)
 
-  applicableDiffRule  = do (f,new) <- Set.minView $ diffStr todos
-                           return (DiffRule f d, todos{diffStr = new},br)
+  applicableDiffRule  = do (f,new) <- Set.minView $ diffTodo todos
+                           return (DiffRule f d, todos{diffTodo = new},br)
 
-  applicableRoleIncRule = do ((ds, p1, p2, rs),new) <- Set.minView $ roleIncStr todos
-                             return (RoleIncRule p1 rs p2 (dsInsert d ds), todos{roleIncStr = new},br)
+  applicableRoleIncRule = do ((ds, p1, p2, rs),new) <- Set.minView $ roleIncTodo todos
+                             return (RoleIncRule p1 rs p2 (dsInsert d ds), todos{roleIncTodo = new},br)
 
   applicableUBlockRule = case getUnappliedUBPairs br of
                             []          -> Nothing
                             ((p1,p2):_) -> Just (UBlockRule p1 p2 d, todos,br)
 
-  applicableMergeRule  = do ((ds,p,po),new) <- Set.minView $ mergeStr todos
-                            return (MergeRule p po ds, todos{mergeStr = new},br)
+  applicableMergeRule  = do ((ds,p,po),new) <- Set.minView $ mergeTodo todos
+                            return (MergeRule p po ds, todos{mergeTodo = new},br)
 
   applicableDisjRule
-   =  if semBranch clp then do (f,new) <- Set.minView $ disjStr todos
-                               return (semBrRule clp f br d, todos{disjStr = new},br)
-                       else do (f,new) <- Set.minView $ disjStr todos
-                               return (disjRule clp f br d,  todos{disjStr = new},br)
+   =  if semBranch clp then do (f,new) <- Set.minView $ disjTodo todos
+                               return (semBrRule clp f br d, todos{disjTodo = new},br)
+                       else do (f,new) <- Set.minView $ disjTodo todos
+                               return (disjRule clp f br d,  todos{disjTodo = new},br)
 
 applyRule :: CmdLineParams -> Rule -> Branch -> TodoList -> [BranchInfo]
 applyRule clp rule br_ todo

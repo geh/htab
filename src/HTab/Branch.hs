@@ -60,38 +60,9 @@ data BranchInfo = BranchOK Branch |
                   BranchClash Branch Prefix DependencySet Formula
 
 type Clashable_info   = DMap {- Prefix Literal -} DependencySet
-type Disj_structure   = Set.Set PrFormula
-type Dia_structure    = Set.Set PrFormula
-type DiaX_structure   = Set.Set PrFormula
-type At_structure     = Set.Set PrFormula
-type Down_structure   = Set.Set PrFormula
-type Exist_structure  = Set.Set PrFormula
-type Diff_structure   = Set.Set PrFormula
-type Merge_structure  = Set.Set (DependencySet, Prefix, DS.Pointer)
-type RoleInc_structure= Set.Set (DependencySet, Prefix, Prefix, [Rel])
 type Box_constraints  = DMap {- Prefix Rel -} [(Formula,DependencySet)]
-
-type Dia_rule_chart    = IntMap {- Prefix -} (Set.Set Formula)
-type DiaX_rule_chart   = IntMap {- Prefix -} (Set.Set (Rel,Formula))
-type BoxX_rule_chart   = IntMap {- Prefix -} (Set.Set Formula)
-type Down_rule_chart   = IntMap {- Prefix -} (Set.Set Formula)
-type At_rule_chart     = Set.Set Formula
-type Exist_rule_chart  = Set.Set Formula
-type Diff_Dia_rule_chart   = Map.Map Formula (Maybe Prop)
-type DownVarRelevant_chart = Map.Map Formula Bool
-
-type Univ_constraints  = [(DependencySet,Formula)]
-
-type PrefToFormulas   = IntMap {- Prefix -} (Set.Set Formula)
-type PrefToDepSet     = IntMap {- Prefix -} DependencySet
-type Eventualities    = IntMap DependencySet
-
 type EquivClasses = DS.DisjSet DS.Pointer
-
-type PrefixParent = IntMap {- Prefix -} Prefix
-
-data BlockingMode = AnywhereBlocking | ChainTwinBlocking
- deriving (Eq,Show)
+data BlockingMode = AnywhereBlocking | ChainTwinBlocking  deriving (Eq,Show)
 
 data Branch =
               Branch {clashStr :: Clashable_info,
@@ -100,19 +71,19 @@ data Branch =
                  -- immediate rules constraints
                   boxConstrFwd :: Box_constraints,
                   boxConstrBwd :: Box_constraints,
-                      univCons :: Univ_constraints,
+                      univCons :: [(DependencySet,Formula)],
                  -- saturation of rules
-                       diaRlCh :: Dia_rule_chart,       -- saturation of the diamond rule
-                      diaXRlCh :: DiaX_rule_chart,      -- saturation of the diamondX rule
-                      boxXRlCh :: BoxX_rule_chart,      -- saturation of the boxX rule
-                      downRlCh :: Down_rule_chart,      -- saturation of the down-arrow rule
-                        atRlCh :: At_rule_chart,        -- saturation of the @ rule
-                     existRlCh :: Exist_rule_chart,     -- saturation of the exist rule
-                      dDiaRlCh :: Diff_Dia_rule_chart,  -- saturation of the diff diamond rule chart (D)
+                       diaRlCh :: IntMap {- Prefix -} (Set Formula),
+                      diaXRlCh :: IntMap {- Prefix -} (Set (Rel,Formula)),
+                      boxXRlCh :: IntMap {- Prefix -} (Set Formula),
+                      downRlCh :: IntMap {- Prefix -} (Set Formula),
+                        atRlCh :: Set Formula,
+                     existRlCh :: Set Formula,
+                      dDiaRlCh :: Map Formula (Maybe Prop),
                  -- formulas true in an equivalence class
-                   prefToForms :: PrefToFormulas,
+                   prefToForms :: IntMap {- Prefix -} (Set Formula),
                  -- backjumping data attached to equivalence classes
-                    prToDepSet :: PrefToDepSet,
+                    prToDepSet :: IntMap {- Prefix -} DependencySet,
                  -- other data
                         accStr :: Relations,
                  -- equivalence classes
@@ -121,17 +92,17 @@ data Branch =
                       lastPref :: Prefix,
                        nextNom :: Nom,
                       nextProp :: Prop,
-                 eventualities :: Eventualities,
+                 eventualities :: IntMap DependencySet,
                     bookKeepUB :: (Prefix,Prefix),
                  -- caching / memoisation data
-             downVarRelevantCh :: DownVarRelevant_chart,
+             downVarRelevantCh :: Map Formula Bool,
                  -- information about language of input formula and blocking mode
                  inputLanguage :: LanguageInfo,
                      blockMode :: BlockingMode,
              unblockedPrefsLim :: Prefix,
                    blockedDias :: IntMap {- Prefix -} [PrFormula],
-                    prefParent :: PrefixParent,
-              relevantNominals :: Set.Set Nom,
+                    prefParent :: IntMap {- Prefix -} Prefix,
+              relevantNominals :: Set Nom,
                        relInfo :: RelInfo,
                       encoding :: Encoding}
 
@@ -242,15 +213,15 @@ instance Emptyable (Set a) where
  empty = Set.null
 
 
-data TodoList =  Unfair{disjStr :: Disj_structure,
-                         diaStr :: Dia_structure,
-                        diaXStr :: DiaX_structure,
-                       existStr :: Exist_structure,
-                          atStr :: At_structure,
-                        downStr :: Down_structure,
-                        diffStr :: Diff_structure,
-                       mergeStr :: Merge_structure,
-                     roleIncStr :: RoleInc_structure }
+data TodoList =  Unfair{disjTodo :: Set PrFormula,
+                         diaTodo :: Set PrFormula,
+                        diaXTodo :: Set PrFormula,
+                       existTodo :: Set PrFormula,
+                          atTodo :: Set PrFormula,
+                        downTodo :: Set PrFormula,
+                        diffTodo :: Set PrFormula,
+                       mergeTodo :: Set (DependencySet, Prefix, DS.Pointer),
+                     roleIncTodo :: Set (DependencySet, Prefix, Prefix, [Rel]) }
                | Fair [ScheduledRule]
 
 instance Show TodoList where
@@ -275,16 +246,15 @@ emptyTodoList :: CmdLineParams -> TodoList
 emptyTodoList clp =
  if fairStrategy clp
    then Fair []
-   else Unfair {
-                  disjStr= Set.empty::Disj_structure,
-                  diaStr = Set.empty::Dia_structure,
-                  diaXStr = Set.empty::DiaX_structure,
-                  existStr = Set.empty::Exist_structure,
-                  atStr = Set.empty::At_structure,
-                  downStr = Set.empty::Down_structure,
-                  diffStr = Set.empty::Diff_structure,
-                  mergeStr = Set.empty::Merge_structure,
-                  roleIncStr = Set.empty::RoleInc_structure
+   else Unfair {  disjTodo = Set.empty,
+                   diaTodo = Set.empty,
+                  diaXTodo = Set.empty,
+                 existTodo = Set.empty,
+                    atTodo = Set.empty,
+                  downTodo = Set.empty,
+                  diffTodo = Set.empty,
+                 mergeTodo = Set.empty,
+               roleIncTodo = Set.empty
                }
 
 {-
@@ -349,15 +319,15 @@ addToTodo pf@(PrFormula p ds f2) br =
                    _   -> Fair ( srs ++ [SR_Formula pf])
       utodo    ->
        case f2 of
-         Dis _              -> utodo{disjStr  = Set.insert pf (disjStr utodo)}
-         Dia _ _            -> utodo{diaStr   = Set.insert pf (diaStr utodo)}
-         DiaX _ _ _         -> utodo{diaXStr  = Set.insert pf (diaXStr utodo)}
-         E _                -> utodo{existStr = Set.insert pf (existStr utodo)}
-         D _                -> utodo{diffStr  = Set.insert pf (diffStr utodo)}
-         At _ _             -> utodo{atStr    = Set.insert pf (atStr utodo)}
-         Down _ _           -> utodo{downStr  = Set.insert pf (downStr utodo)}
+         Dis _              -> utodo{ disjTodo = Set.insert pf ( disjTodo utodo)}
+         Dia _ _            -> utodo{  diaTodo = Set.insert pf (  diaTodo utodo)}
+         DiaX _ _ _         -> utodo{ diaXTodo = Set.insert pf ( diaXTodo utodo)}
+         E _                -> utodo{existTodo = Set.insert pf (existTodo utodo)}
+         D _                -> utodo{ diffTodo = Set.insert pf ( diffTodo utodo)}
+         At _ _             -> utodo{   atTodo = Set.insert pf (   atTodo utodo)}
+         Down _ _           -> utodo{ downTodo = Set.insert pf ( downTodo utodo)}
          Lit l
-          | isPositiveNom l -> utodo{mergeStr   = Set.insert (ds,p,(DS.Nominal l)) (mergeStr utodo)}
+          | isPositiveNom l -> utodo{mergeTodo = Set.insert (ds,p,(DS.Nominal l)) (mergeTodo utodo)}
          _                  -> error "addToTodo"
    alreadyDone =
     case f2 of
@@ -455,9 +425,9 @@ nubAndMergeDeps :: [PrFormula] -> [PrFormula]
 -- as several prefixed formulas with different branching dependencies. This functions takes
 -- a list of prefixes formulas, looks which inner formulas are the same and merge their
 -- branching dependencies.
-nubAndMergeDeps prfs =  namd prfs (Map.empty::Map.Map (Prefix,Formula) DependencySet)
+nubAndMergeDeps prfs =  namd prfs (Map.empty::Map (Prefix,Formula) DependencySet)
 
-namd :: [PrFormula] -> Map.Map (Prefix,Formula) DependencySet -> [PrFormula]
+namd :: [PrFormula] -> Map (Prefix,Formula) DependencySet -> [PrFormula]
 namd ((PrFormula p ds f):prfs) theMap =
   namd prfs (Map.insertWith dsUnion (p,f) ds theMap)
 
@@ -634,7 +604,7 @@ scheduleInclusionRule p1 p2 r ds br -- todo get all included
          newTodoList =
           case todoList br of
            Fair srs -> Fair (srs ++ map (\(ds_,p1_,p2_,parents_) -> SR_Inclusion p1_ parents_ p2_ ds_) toschedule )
-           utodo    -> utodo{roleIncStr  = Set.union (Set.fromList toschedule) (roleIncStr utodo)}
+           utodo    -> utodo{roleIncTodo  = Set.union (Set.fromList toschedule) (roleIncTodo utodo)}
 
 insertRelationBranch :: Branch -> Prefix -> Rel -> Prefix -> DependencySet -> Branch
 insertRelationBranch br p1 r p2 ds
@@ -645,7 +615,7 @@ insertRelationBranch br p1 r p2 ds
 
 isNotBlocked :: Branch -> Prefix -> Bool
 isNotBlocked br pr
- | ( pr <= (unblockedPrefsLim br) ) && isNominalUrfather br pr = True
+ | pr <= (unblockedPrefsLim br) = True
  | otherwise =
  case blockMode br of
    AnywhereBlocking   -> null $ filter isSubsumer labels
@@ -722,7 +692,7 @@ areTwins :: Branch -> Prefix -> Prefix -> Bool
 areTwins br p1 p2 = (formulasOf br p1) == (formulasOf br p2)
 
 -- maybe should get the urfather of given prefix, so that the caller functions won't have to do it
-formulasOf :: Branch -> Prefix -> Set.Set Formula
+formulasOf :: Branch -> Prefix -> Set Formula
 formulasOf br p = IntMap.findWithDefault Set.empty p (prefToForms br)
 
 -- is the formula useful to calculate inclusion urfathers ?
