@@ -27,7 +27,7 @@ import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewNomTestRe
                     ReducedDisjunct(..), getUrfather,
                     ScheduledRule(..), TodoList(..),
                     deleteUEV, insertUEV_addFormula )
-import HTab.CommandLine(CmdLineParams, semBranch, unitProp, strategyStr, uBlocking, noLoopCheck)
+import HTab.CommandLine(CmdLineParams, UnitProp(..), semBranch, unitProp, strategyStr, uBlocking, noLoopCheck)
 import HTab.RuleMetadata(RuleId(..))
 import qualified HTab.DisjSet as DS
 
@@ -297,10 +297,29 @@ ruleByChar br clp d char =
                             return (MergeRule p po ds, todos{mergeTodo = new},br)
 
   applicableDisjRule
+   = case unitProp clp of
+      Eager -> {- scan all disjuncts until one can be discarded, reduced to one disjunct or clashes -}
+                case catMaybes $ map (makeInteresting br d) $ Set.toList $ disjTodo todos of
+                  ((r,pf):_) -> return (r, todos{disjTodo = Set.delete pf $ disjTodo todos},br)
+                  [] -> regularApplicableDisjRule
+      _     ->  regularApplicableDisjRule
+
+  regularApplicableDisjRule
    =  if semBranch clp then do (f,new) <- Set.minView $ disjTodo todos
                                return (semBrRule clp f br d, todos{disjTodo = new},br)
                        else do (f,new) <- Set.minView $ disjTodo todos
                                return (disjRule clp f br d,  todos{disjTodo = new},br)
+
+
+makeInteresting :: Branch -> Dependency -> PrFormula ->  Maybe (Rule,PrFormula)
+makeInteresting br d df@(PrFormula pr ds (Dis fs))
+ = case reduceDisjunctionAgainstBranch br pr fs of
+          Triviality               -> Just (DiscardRule df,df)
+          Contradiction ds_clash   -> Just (ClashRule (dsUnion ds ds_clash) df,df)
+          Reduced new_ds disjuncts -> if Set.size disjuncts == 1
+                                       then Just (DisjRule df (prefix pr (dsInsert d $ dsUnion ds new_ds) disjuncts), df)
+                                       else Nothing
+makeInteresting _ _ _ = error "makeInteresting on a non disjunction"
 
 applyRule :: CmdLineParams -> Rule -> Branch -> TodoList -> [BranchInfo]
 applyRule clp rule br_ todo
@@ -352,7 +371,7 @@ getNewPref br = (lastPref br)+1
 -- disjunction
 disjRule :: CmdLineParams -> PrFormula -> Branch -> Dependency -> Rule
 disjRule clp df@(PrFormula pr ds (Dis fs)) br d
-  = if not $ unitProp clp
+  = if unitProp clp == UPNo
      then DisjRule df $ prefix pr (dsInsert d ds) fs
      else case reduceDisjunctionAgainstBranch br pr fs of
              Triviality               -> DiscardRule df
@@ -364,7 +383,7 @@ disjRule _ _ _ _ = error "disjRule"
 -- semantic branching
 semBrRule :: CmdLineParams -> PrFormula -> Branch -> Dependency -> Rule    -- todo : unit propagation, part 2 (b)
 semBrRule clp df@(PrFormula pr ds (Dis fs)) br d
- = if not $ unitProp clp
+ = if unitProp clp == UPNo
     then SemBrRule df $ sbModList $ prefix pr (dsInsert d ds) fs
     else case reduceDisjunctionAgainstBranch br pr fs of
             Triviality               -> DiscardRule df

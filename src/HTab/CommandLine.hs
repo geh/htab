@@ -10,7 +10,7 @@
 
 module HTab.CommandLine (
     CmdLineParams(..), getCmdLineParams, defaultParams,
-    usage, configureMetrics,
+    usage, configureMetrics, UnitProp(..)
 ) where
 
 import Data.Char(isDigit)
@@ -39,7 +39,7 @@ data CmdLineParams = CLP {
            strategyStr     :: String,
            fairStrategy    :: Bool,
            semBranch       :: Bool,
-           unitProp        :: Bool,
+           unitProp        :: UnitProp,
            backJumping     :: Bool,
            uBlocking       :: Bool,
            noLoopCheck     :: Bool,
@@ -56,6 +56,7 @@ data CmdLineParams = CLP {
 
 type CLPModifier   = CmdLineParams -> Either ParsingErrMsg CmdLineParams
 type ParsingErrMsg = String
+data UnitProp = Eager | UPYes | UPNo deriving (Eq, Show)
 
 parseCmds :: [String] -> CmdLineParams -> Either ParsingErrMsg CmdLineParams
 parseCmds argv clp = case getOpt RequireOrder options argv of
@@ -106,8 +107,8 @@ options =
           "disable/enable semantic branching optimisation",
    Option ['u']
           ["unit-propagation"]
-          (ReqArg setUnitProp "[0|1]")
-          "disable/enable unit propagation optimisation",
+          (ReqArg setUnitProp "[0|1|2]")
+          "disable/enable/eager unit propagation optimisation",
    Option ['j']
           ["backjumping"]
           (ReqArg setBackJumping "[0|1]")
@@ -209,13 +210,16 @@ setSemanticBranching :: String -> CLPModifier
 setSemanticBranching = is0or1 ?-> \s c -> return c{semBranch = intToBool $ read s}
 
 setUnitProp :: String -> CLPModifier
-setUnitProp = is0or1 ?->  \s c -> return c{unitProp = intToBool $ read s}
+setUnitProp = is0or1or2 ?->  \s c -> return c{unitProp = case read s::Int of {2 -> Eager; 1 -> UPYes ; 0 -> UPNo ; _ -> error "unitprop param"}}
 
 setBackJumping :: String -> CLPModifier
 setBackJumping = is0or1 ?->  \s c -> return c{backJumping = intToBool $ read s}
 
 is0or1 :: String -> Bool
 is0or1 s = (s == "1") || (s == "0")
+
+is0or1or2 :: String -> Bool
+is0or1or2 s = (s == "2") || (s == "1") || (s == "0")
 
 setStrategy :: String -> CLPModifier
 setStrategy = permutationOf strategyStrVal ?->
@@ -237,7 +241,7 @@ defaultParams = CLP {showHelp = False,
                      strategyStr = strategyStrVal,
                      fairStrategy = False,
                      semBranch   = True,
-                     unitProp    = True,
+                     unitProp    = Eager,
                      backJumping = True,
                      uBlocking   = False,
                      noLoopCheck = False,
