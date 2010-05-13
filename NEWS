@@ -1,3 +1,8 @@
+* 2009.05.13 : 1.5.3
+      o eager unit propagation by default
+      o remove unsat caching
+      o functional and injective modalities support broken for now (non terminating)
+      o some flag changes (see --help)
 * 2009.11.10 : 1.5.2
       o fix bug that made 1.5.1 nearly unusable
       o instance retrieval handling (return all nominals making true a given formula)
