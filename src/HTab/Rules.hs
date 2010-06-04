@@ -264,12 +264,16 @@ ruleByChar br clp d char =
          then return (DiaRule f, todos{diaTodo = new},br)
          else if diaAlreadyDone br f
                then return (DiscardRule f, todos{diaTodo = new} , br )
-               else let brBlocked = br{blockedDias = IntMap.insertWith (++) ur [f] (blockedDias br)}
-                        ur = getUrfather br (DS.Prefix pr)
-                    in
-                      if isNotBlocked br pr
-                       then return ( DiaRule f,     todos{diaTodo = new}, br )
-                       else return ( DiscardRule f, todos{diaTodo = new}, brBlocked)
+               else if isNotBlocked br pr
+                     then return ( DiaRule f,     todos{diaTodo = new}, br )
+                     else let ur = getUrfather br (DS.Prefix pr)
+                              brBlocked = br{blockedDias = IntMap.insertWith (++) ur [f] (blockedDias br)}
+                              -- blocked formulas are added one by one to the blockedDias list.
+                              -- a better way would be to put every formula of a given blocked prefix
+                              -- to that list, but as we do not index todo formulas by prefix we can
+                              -- not do it.
+                          in
+                          return ( DiscardRule f, todos{diaTodo = new}, brBlocked)
 
   applicableDiaXRule  = do (f,new) <- Set.minView $ diaXTodo todos
                            return (diaXRule f br d, todos{diaXTodo = new},br)
