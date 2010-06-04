@@ -103,8 +103,8 @@ isTop            = (==0)
 isBottom         = (==1)
 isPositiveNom a  = ((a `mod` 4) == 0) && (a > 1)
 isNominal a      = ((a `mod` 4) < 2)  && (a > 1)
-isPositiveProp a = ((a `mod` 4) == 2)
-isProp a         = ((a `mod` 4) >= 2)
+isPositiveProp a = (a `mod` 4) == 2
+isProp a         = (a `mod` 4) >= 2
 isNegative a     = testBit a 0
 isPositive       = not . isNegative
 
@@ -237,7 +237,7 @@ forceProperties clp encoding relI
                                  (allInjective  clp, Injective )]
 
 convertToOurType :: PRelInfo -> Encoding -> RelInfo -- and add for each relation in the formula, the relevant key
-convertToOurType prelI e = foldr insertRelProp (Map.empty) (concatMap convertOne prelI)
+convertToOurType prelI e = foldr insertRelProp Map.empty (concatMap convertOne prelI)
  where insertRelProp (rs,pr) = Map.insertWith (++) rs [pr]
        convertOne (r,props)  = concatMap (c r) props
        c r P.Reflexive       = [(int e r,Reflexive    )]
@@ -257,7 +257,7 @@ simpleParse clp s = parse clp $ "signature { automatic } theory { " ++ removeBeg
  where removeBeginEnd = unwords . delete "begin" . delete "end" . words
 
 convert :: RelInfo -> Encoding -> [F.Formula S.NomSymbol S.PropSymbol S.RelSymbol] -> Formula
-convert relI e = conv_ relI e . foldr (\f1 f2 -> f1 F.:&: f2) F.Top
+convert relI e = conv_ relI e . foldr (F.:&:) F.Top
 
 conv_ :: RelInfo -> Encoding -> F.Formula S.NomSymbol S.PropSymbol S.RelSymbol -> Formula
 conv_  _   _ F.Top               = taut
@@ -265,12 +265,12 @@ conv_  _   _ F.Bot               = neg taut
 conv_  _   e (F.Prop p)          = prop e p
 conv_  _   e (F.Nom  n)          = nom e n
 conv_ relI e (F.Neg  f)          = neg $ conv_ relI e f
-conv_ relI e (f1 F.:&:    f2)    = (conv_ relI e f1) `conj` (conv_ relI e f2)
-conv_ relI e (f1 F.:|:    f2)    = (conv_ relI e f1) `disj` (conv_ relI e f2)
-conv_ relI e (f1 F.:-->:  f2)    = (conv_ relI e f1) `imp`  (conv_ relI e f2)
-conv_ relI e (f1 F.:<-->: f2)    = (conv_ relI e f1) `dimp` (conv_ relI e f2)
-conv_ relI e (F.Diam r f)        = (specialiseDia r relI e) (conv_ relI e f)
-conv_ relI e (F.Box  r f)        = (specialiseBox r relI e) (conv_ relI e f)
+conv_ relI e (f1 F.:&:    f2)    = conv_ relI e f1 `conj` conv_ relI e f2
+conv_ relI e (f1 F.:|:    f2)    = conv_ relI e f1 `disj` conv_ relI e f2
+conv_ relI e (f1 F.:-->:  f2)    = conv_ relI e f1 `imp`  conv_ relI e f2
+conv_ relI e (f1 F.:<-->: f2)    = conv_ relI e f1 `dimp` conv_ relI e f2
+conv_ relI e (F.Diam r f)        = specialiseDia r relI e (conv_ relI e f)
+conv_ relI e (F.Box  r f)        = specialiseBox r relI e (conv_ relI e f)
 conv_ relI e (F.At   n f)        = at        e n (conv_ relI e f)
 conv_ relI e (F.Down v f)        = downArrow e v (conv_ relI e f)
 conv_ relI e (F.A f)             = univMod     (conv_ relI e f)
@@ -376,9 +376,9 @@ getProperties ri r
 
 getAncestors :: Rel -> RelInfo -> [Rel]
 getAncestors r_ relI =
- list $ go r_ (Set.singleton r_)
+ list $ go (Set.singleton r_) r_
  where
-  go r seen =
+  go seen r =
    let props = Map.findWithDefault [] r relI
        parents = concatMap extractParent props
        extractParent (InverseOf rp)   = [rp]
@@ -389,7 +389,7 @@ getAncestors r_ relI =
    in
      case todo of
       [] -> Set.singleton r
-      _  -> Set.insert r $ Set.unions $ map (\pa -> go pa newSeen) todo
+      _  -> Set.insert r $ Set.unions $ map (go newSeen) todo
 
 -- ==========================================================================
 --
@@ -434,12 +434,12 @@ handleFunInj relI =
        parentsWithInv props status
                    = case concatZip $ map extractParent props of
                          ([],[])      -> Nothing
-                         ((par:_),_)  -> Just $ (par, invert status)
+                         ((par:_),_)  -> Just (par, invert status)
                                          where invert Not    = Not
                                                invert FunInj = FunInj
                                                invert Fun    = Inj
                                                invert Inj    = Fun
-                         (_,(par:_))  -> Just $ (par, status)
+                         (_,(par:_))  -> Just (par, status)
                      where extractParent (InverseOf rp)   = ([rp],[])
                            extractParent (TRClosureOf rp) = ([]  ,[rp])
                            extractParent _                = ([]  ,[])
@@ -472,8 +472,8 @@ nom  :: Encoding -> S.NomSymbol -> Formula
 prop :: Encoding -> S.PropSymbol -> Formula
 
 taut                    = Lit 0
-nom  e (S.NomSymbol n)  = Lit $ ( (nomMap e)  Map.! n )
-prop e (S.PropSymbol p) = Lit $ ( (propMap e) Map.! p )
+nom  e (S.NomSymbol n)  = Lit ( nomMap e  Map.! n )
+prop e (S.PropSymbol p) = Lit ( propMap e Map.! p )
 
 {- Modalities -}
 box, diamond, boxX, diamondX :: Encoding -> S.RelSymbol -> Formula -> Formula
@@ -721,7 +721,7 @@ checkIfVariableNegatedOnce (Down v_ f_)
  = go v_ f_
    where go :: Int -> Formula -> Bool
          go v (Down v2 f)           = if v == v2 then False {- variable capture -} else go v f
-         go v (Lit v2)              = (atom v == atom v2) && (isNegative v2)
+         go v (Lit v2)              = (atom v == atom v2) && isNegative v2
          go v f                     = composeFold False (||) (go v) f
 
 checkIfVariableNegatedOnce _ = error "checkIfVariableNegatedOnce : only down-arrow formulas"

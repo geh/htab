@@ -14,13 +14,13 @@ import Data.Version        ( showVersion )
 import Paths_HTab ( version )
 
 import Prelude hiding ( catch )
-import Control.Exception   ( catch )
+import Control.Exception   ( catch, SomeException )
 
 import HTab.Main ( runWithParams, TaskRunFlag(..) )
 
 main :: IO ()
 main = do r <- runCmdLineVersion
-                `catch` \e -> do
+                `catch` \(e::SomeException) -> do
                     hPrint stderr (show e)
                     exit r_RUNTIME_ERROR
           --

@@ -29,6 +29,8 @@ deleteUEV, insertUEV_addFormula
 import Control.Monad.Reader(ReaderT, MonadReader)
 import Control.Monad.State(StateT)
 import Data.List(minimumBy)
+import Data.Maybe( mapMaybe )
+import Data.Ord ( comparing )
 
 import Data.Map ( Map )
 import qualified Data.Map as Map
@@ -37,10 +39,7 @@ import qualified Data.Set as Set
 import Data.IntMap ( IntMap)
 import qualified Data.IntMap as IntMap
 
-import qualified Data.List as List
 import qualified HTab.DisjSet as DS
-
-import Data.Maybe( catMaybes )
 
 import HTab.Timeout( TimeoutSignal )
 import HTab.Statistics(Statistics)
@@ -327,7 +326,7 @@ addToTodo pf@(PrFormula p ds f2) br =
          At _ _             -> utodo{   atTodo = Set.insert pf (   atTodo utodo)}
          Down _ _           -> utodo{ downTodo = Set.insert pf ( downTodo utodo)}
          Lit l
-          | isPositiveNom l -> utodo{mergeTodo = Set.insert (ds,p,(DS.Nominal l)) (mergeTodo utodo)}
+          | isPositiveNom l -> utodo{mergeTodo = Set.insert (ds,p,DS.Nominal l) (mergeTodo utodo)}
          _                  -> error "addToTodo"
    alreadyDone =
     case f2 of
@@ -371,7 +370,7 @@ merge clp br pr fDs pointer -- pointer is a nominal or a prefix
             let
                oldUr                    = max ur1 ur2
                newUr                    = min ur1 ur2
-               clashableInfoSlots       = catMaybes $ map (\ur -> DMap.lookup1 ur (clashStr br))  [ur1,ur2]
+               clashableInfoSlots       = mapMaybe (\ur -> DMap.lookup1 ur (clashStr br))  [ur1,ur2]
                currentDeps              = dsUnions $ fDs:(map (findDeps br) [ur1,ur2])
                newPrToDepSet            = IntMap.insert newUr currentDeps (prToDepSet br)
                newClashableSlotUrfather = cisAddDeps currentDeps $ cisUnions clashableInfoSlots
@@ -489,7 +488,7 @@ inSameClass br p n
 deleteUEV :: Branch -> Int -> Branch
 deleteUEV br idx = br{eventualities = IntMap.delete idx (eventualities br)}
 
-insertUEV_addFormula :: Branch -> CmdLineParams -> (Maybe Int) -> DependencySet -> (Int -> PrFormula) -> BranchInfo
+insertUEV_addFormula :: Branch -> CmdLineParams -> Maybe Int -> DependencySet -> (Int -> PrFormula) -> BranchInfo
 insertUEV_addFormula br clp mi ds ff
  = addFormula clp br2 f
   where idxToUse = case mi of
@@ -522,7 +521,7 @@ addBoxConstraint pr_ r f ds clp br
              transApplications = if isTransitive (relInfo br) r
                                  then map (\(p,ds2) -> PrFormula p (dsUnion ds ds2) (Box r f)) accessiblePrDs
                                  else []
-             symApplications = if isSymmetric (relInfo br) r then [PrFormula pr ds $ Box (invRel r) f] else []
+             symApplications = [PrFormula pr ds $ Box (invRel r) f | isSymmetric (relInfo br) r]
              boxApplications = map (\(p,ds2) -> PrFormula p (dsUnion ds ds2) f) accessiblePrDs
       in
          addFormulas clp newBr toAdd
@@ -615,7 +614,7 @@ insertRelationBranch br p1 r p2 ds
 
 isNotBlocked :: Branch -> Prefix -> Bool
 isNotBlocked br pr
- | pr <= (unblockedPrefsLim br) = True
+ | pr <= unblockedPrefsLim br = True
  | otherwise =
  case blockMode br of
    AnywhereBlocking   -> null $ filter isSubsumer labels
@@ -639,7 +638,7 @@ getAllParents br pr = (getUrfather br (DS.Prefix pr)):rest
 
 
 test2equal :: (Ord a) => [Set a] -> Bool -- inefficient
-test2equal (s:sets) = any ((==) s) sets || test2equal sets
+test2equal (s:sets) = any (s ==) sets || test2equal sets
 test2equal [] = False
 
 
@@ -648,7 +647,7 @@ test2equal [] = False
 isInTheModel :: Branch -> Prefix -> Bool
 isInTheModel br pr | isNominalUrfather br pr
  = case blockMode br of
-    AnywhereBlocking  ->  (getModelRepresentative br pr) == pr
+    AnywhereBlocking  ->  getModelRepresentative br pr == pr
     ChainTwinBlocking ->  case findModelRepresentativeChainTwinBlocking br pr of
                                  Nothing   -> False
                                  Just repr -> repr == pr
@@ -689,7 +688,7 @@ findModelRepresentativeChainTwinBlocking br pr
                    else go br_ initial (current+1)
 
 areTwins :: Branch -> Prefix -> Prefix -> Bool
-areTwins br p1 p2 = (formulasOf br p1) == (formulasOf br p2)
+areTwins br p1 p2 = formulasOf br p1 == formulasOf br p2
 
 -- maybe should get the urfather of given prefix, so that the caller functions won't have to do it
 formulasOf :: Branch -> Prefix -> Set Formula
@@ -796,7 +795,7 @@ addUnivConstraint f ds clp br
 
 b_rule :: Prefix -> Formula -> DependencySet -> CmdLineParams -> Branch -> BranchInfo
 b_rule  pr f ds clp br
- = addFormula clp br2 (PrFormula pr ds $ Down newNom $ A ((Lit newNom) `disj` f))
+ = addFormula clp br2 (PrFormula pr ds $ Down newNom $ A (Lit newNom `disj` f))
     where newNom = nextNom br
           br2 = br{nextNom = nextNom br + 4}
 --
@@ -815,7 +814,7 @@ getUnappliedUBPairs br =
  ]
  where (i,j) = bookKeepUB br -- i > j
        lastP = lastPref br
-       ur = (getUrfather br) . DS.Prefix
+       ur = getUrfather br . DS.Prefix
 
 updateUBBookKeep :: Prefix -> Prefix -> Branch -> Branch
 updateUBBookKeep p1 p2 br
@@ -940,7 +939,7 @@ data Slot_UpdateResult =   Slot_UpdateSuccess Clashable_info_slot
 
 -- Union a list of clashable info slots
 cisUnions :: [Clashable_info_slot] -> Slot_UpdateResult
-cisUnions []              = Slot_UpdateSuccess (IntMap.empty)
+cisUnions []              = Slot_UpdateSuccess IntMap.empty
 cisUnions [cis]           = Slot_UpdateSuccess cis
 cisUnions (cis1:cis2:tl)
  = case cisUnion cis1 cis2 of
@@ -967,8 +966,8 @@ cisUnion cis1 cis2
                  result = case clashing_ds_s of
                               []   -> updateStatus                                    -- is 'success'
                               ds_s -> Slot_UpdateFailure $ findEarliestSet ds_s
-                                         where findEarliestSet ds_s_ = minimumBy compareBPSets ds_s_
-                                               compareBPSets ds1 ds2 = compare (dsMin ds1) (dsMin ds2)
+                                         where findEarliestSet = minimumBy compareBPSets
+                                               compareBPSets ds1 ds2 = comparing dsMin ds1 ds2
              in
                 result
 
@@ -1037,7 +1036,7 @@ prefixes :: Branch -> [Prefix]
 prefixes br = [0..(lastPref br)]
 
 oneIs :: RelInfo -> RelProperty -> Bool
-oneIs relI p = any ( (elem p) . snd) $ Map.toList relI
+oneIs relI p = any ( elem p . snd) $ Map.toList relI
 
 hasProperty :: RelProperty -> RelInfo -> Rel -> Bool
 hasProperty p relI r = case Map.lookup r relI of

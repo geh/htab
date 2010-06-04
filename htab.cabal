@@ -15,7 +15,7 @@ Flag static
 
 Executable          htab
   Main-is:             htab.hs
-  Build-Depends:       base >= 3, base < 4,
+  Build-Depends:       base >= 4, base < 5,
                        mtl >= 1, mtl < 2,
                        containers < 1,
                        filepath > 1, filepath <= 2,

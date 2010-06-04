@@ -34,14 +34,14 @@ allRels rels = [ (p1,r,p2) | ((p1,r),ds_out_s) <-  DMap.flatten $ outRel rels,
 
 
 successors :: Relations -> Prefix -> IntMap {- Rel -} [(Prefix,DependencySet)]
-successors rels p = IntMap.findWithDefault (IntMap.empty) p (DMap.toMap $ outRel rels)
+successors rels p = IntMap.findWithDefault IntMap.empty p (DMap.toMap $ outRel rels)
 
 predecessors :: Relations -> Prefix -> IntMap {- Rel -} [(Prefix,DependencySet)]
-predecessors rels p = IntMap.findWithDefault (IntMap.empty) p (DMap.toMap $ inRel rels)
+predecessors rels p = IntMap.findWithDefault IntMap.empty p (DMap.toMap $ inRel rels)
 
 linksFromTo :: Relations -> Prefix -> Prefix -> [Rel]
 linksFromTo rels p1 p2
-  = map fst $ filter (\(_,p_d_s) -> p2 `elem` (map fst p_d_s) ) outs  where outs = IntMap.toList $ successors rels p1
+  = map fst $ filter (\(_,p_d_s) -> p2 `elem` map fst p_d_s ) outs  where outs = IntMap.toList $ successors rels p1
 
 -- assumes you never add twice the same relation
 insertRelation :: Relations -> Prefix -> Rel -> Prefix -> DependencySet -> Relations

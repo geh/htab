@@ -29,21 +29,21 @@ buildModel branch =
        e = encoding branch
        bias = if null $ languageNoms $ inputLanguage branch
                then 0
-               else 1 + (length $ languageNoms $ inputLanguage branch)
+               else 1 + length ( languageNoms $ inputLanguage branch )
        es = Set.union
              (Set.fromList
                [(S.NomSymbol $ show (getUrfather branch (DS.Nominal n) + bias), toNomSymbol e n)
-               | n <- (languageNoms $ inputLanguage branch)]
+               | n <- languageNoms $ inputLanguage branch]
              )
              (Set.fromList
                [(S.NomSymbol $ show (p + bias), S.NomSymbol $ show (p + bias))
-               | p <- (prefixes branch), isInTheModel branch p]
+               | p <- prefixes branch, isInTheModel branch p]
              )
        ps = Set.fromList
              [(S.NomSymbol $ show (pre + bias), pro)
              | (pre,pro) <- prefixAndProps branch]
        rs = Set.fromList $ map (toSimpSig e)
-              $ map (\(p1,r,p2) -> ((getModelRepresentative branch p1) + bias, r, (getModelRepresentative branch p2) + bias))
+              $ map (\(p1,r,p2) -> (getModelRepresentative branch p1 + bias, r, getModelRepresentative branch p2 + bias))
                     $ filter (relationIsInTheModel branch) $ allRels $ accStr branch
 
 toSimpSig :: Encoding -> (Prefix,Rel,Prefix) -> (S.NomSymbol,S.RelSymbol,S.NomSymbol)
@@ -79,9 +79,9 @@ getTransClos succs_ r_ w_
         = case Set.minView todo1 of
            Nothing                -> seen
            Just (nextWorld,todo2) -> go (Set.insert nextWorld seen) todo2 succs r nextWorld
-          where todo1  = (Set.union (succs r w) todo) `Set.difference` seen
+          where todo1  = ((succs r w) `Set.union` todo) `Set.difference` seen
 
-getSymClos :: (Ord w) => (Set w) -> (r -> w -> Set w) -> r -> w -> Set w
+getSymClos :: (Ord w) => Set w -> (r -> w -> Set w) -> r -> w -> Set w
 getSymClos worlds succs_ r_ w_
  = Set.union (succs_ r_ w_) syms
     where syms = Set.filter (hasAsSuccessor r_ w_) worlds

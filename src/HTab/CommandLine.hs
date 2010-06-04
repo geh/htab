@@ -14,7 +14,6 @@ module HTab.CommandLine (
 ) where
 
 import Data.Char(isDigit)
-import System.FilePath(FilePath)
 import System.Console.GetOpt ( OptDescr(..), ArgDescr(..), ArgOrder(..),
                                getOpt, usageInfo )
 
@@ -67,7 +66,7 @@ parseCmds argv clp = case getOpt RequireOrder options argv of
 
 
 thread :: Monad m => [a -> m a] -> a -> m a
-thread = foldr (\f g -> \a -> f a >>= g) return
+thread = foldr (\f g a -> f a >>= g) return
 
 options :: [OptDescr CLPModifier]
 options =
@@ -203,7 +202,7 @@ p ?-> m = \s -> if (not $ null s) && p s
                   else \_ -> throwError ("Invalid argument: '" ++ s ++ "'")
 
 setTimeout :: String -> CLPModifier
-setTimeout = (all isDigit) ?-> \s c -> return c{maxtimeout = read s}
+setTimeout = all isDigit ?-> \s c -> return c{maxtimeout = read s}
 
 
 setSemanticBranching :: String -> CLPModifier
@@ -216,10 +215,10 @@ setBackJumping :: String -> CLPModifier
 setBackJumping = is0or1 ?->  \s c -> return c{backJumping = intToBool $ read s}
 
 is0or1 :: String -> Bool
-is0or1 s = (s == "1") || (s == "0")
+is0or1 s = s `elem` ["0","1"]
 
 is0or1or2 :: String -> Bool
-is0or1or2 s = (s == "2") || (s == "1") || (s == "0")
+is0or1or2 s = s `elem` ["0","1","2"]
 
 setStrategy :: String -> CLPModifier
 setStrategy = permutationOf strategyStrVal ?->
@@ -307,12 +306,12 @@ parseStats :: String -> Maybe (String, Maybe (Int, String))
 parseStats s
     | allMetricsExist fmIds &&
       (null opIms ||
-       if (null inter)
-           then (null imIds)
-           else (all isDigit inter &&
-                 allMetricsExist imIds')) = Just (fmIds,inspectionStats)
+       if null inter
+           then null imIds
+           else all isDigit inter &&
+                allMetricsExist imIds') = Just (fmIds,inspectionStats)
     -- | otherwise                           = Nothing
-    | otherwise                          = error (show (fmIds, opIms))
+    | otherwise                         = error (show (fmIds, opIms))
     where (fmIds,opIms)   = break (== ':') s
           (inter,imIds)   = break (== ':') (tail opIms)
           imIds'          = tail imIds
@@ -339,4 +338,4 @@ configureMetrics clp = do
                                  setPrintOutInterval i
 
 filterMetrics :: String -> [Metric]
-filterMetrics s = map snd (filter ((flip elem s) . fst) metrics)
+filterMetrics s = map snd (filter ((`elem` s) . fst) metrics)

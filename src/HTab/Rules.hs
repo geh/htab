@@ -8,7 +8,7 @@ applyMod
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.IntMap as IntMap
-import Data.Maybe ( listToMaybe, catMaybes )
+import Data.Maybe ( listToMaybe, mapMaybe )
 
 import HTab.Formula( Formula(..), PrFormula(..), showLess, neg,
                      Dependency, DependencySet, dsUnion, dsInsert, dsEmpty,
@@ -224,7 +224,7 @@ applicableRule br clp d =
  case todoList br of
   Fair [] -> Nothing
   Fair (sr:tl) -> Just (scheduledRuleToRule br clp d sr, Fair tl, br)
-  _        ->  listToMaybe $ catMaybes $ map (ruleByChar br clp d) (strategyStr clp)
+  _        ->  listToMaybe $ mapMaybe (ruleByChar br clp d) (strategyStr clp)
 
 scheduledRuleToRule :: Branch -> CmdLineParams -> Dependency -> ScheduledRule -> Rule
 scheduledRuleToRule _ _ d (SR_Inclusion p1 rs p2 ds) = RoleIncRule p1 rs p2 (dsInsert d ds)
@@ -299,7 +299,7 @@ ruleByChar br clp d char =
   applicableDisjRule
    = case unitProp clp of
       Eager -> {- scan all disjuncts until one can be discarded, reduced to one disjunct or clashes -}
-                case catMaybes $ map (makeInteresting br d) $ Set.toList $ disjTodo todos of
+                case mapMaybe (makeInteresting br d) $ Set.toList $ disjTodo todos of
                   ((r,pf):_) -> return (r, todos{disjTodo = Set.delete pf $ disjTodo todos},br)
                   [] -> regularApplicableDisjRule
       _     ->  regularApplicableDisjRule
@@ -361,12 +361,12 @@ diaXRule f@(PrFormula pr _ (DiaX _ r f2)) br d
      then DiscardRule f
      else DiaXRule f d
 
-diaXRule _ _ _ = error $ "diaXRule"
+diaXRule _ _ _ = error "diaXRule"
 
 --
 
 getNewPref :: Branch -> Prefix
-getNewPref br = (lastPref br)+1
+getNewPref br = lastPref br + 1
 
 -- disjunction
 disjRule :: CmdLineParams -> PrFormula -> Branch -> Dependency -> Rule

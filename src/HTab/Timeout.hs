@@ -26,7 +26,7 @@ signalTimeout = flip putMVar () . unTS
 
 notifyOnTimeout :: Int -> (TimeoutSignal -> IO a) -> IO a
 notifyOnTimeout secs action = do timeout_signal <- newTimeoutSignal
-                                 forkIO $ watchdog_thread timeout_signal
+                                 _ <- forkIO $ watchdog_thread timeout_signal
                                  action timeout_signal
     --
     where watchdog_thread ts = do threadDelay (secs * 1000000)

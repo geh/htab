@@ -6,12 +6,11 @@ import Control.Monad.Reader(ask)
 import Control.Monad.State(StateT,lift,modify)
 import HTab.Base(vPutStrLn)
 import HTab.Statistics(updateStep,printOutInspectionMetrics,
-                       recordClosedBranch, recordFiredRule)
+                       recordClosedBranch, recordFiredRule, Statistics)
 import HTab.Branch(BranchInfo(..),Branch(..),BranchMonad, BranchData(..),
                    unfulfilledEventualities)
 import HTab.CommandLine(logState,backJumping,CmdLineParams,configureMetrics)
 import HTab.Rules(Rule,applyRule,applicableRule,ruleToId)
-import HTab.Statistics(Statistics)
 import HTab.Formula(Prefix,DependencySet,Formula,dsEmpty,dsMember,dsUnion)
 import HTab.ModelGen ( Model, buildModel )
 import HTab.Timeout( isTimeout )
@@ -20,7 +19,7 @@ type Depth = Int
 data OpenFlag = OPEN Model | CLOSED DependencySet | TIMEOUT
 
 tableauStart :: CmdLineParams -> BranchInfo -> BranchMonad OpenFlag
-tableauStart clp bi = (liftStats $ configureMetrics clp) >> tableau 0 bi
+tableauStart clp bi = liftStats (configureMetrics clp) >> tableau 0 bi
 
 
 tableau :: Depth -> BranchInfo -> BranchMonad OpenFlag
@@ -34,7 +33,7 @@ tableau depth branchInfo =
            case branchInfo of
               BranchClash br pr bprs f ->
                do debugMsg_BranchClash br pr bprs f depth
-                  liftStats $ recordClosedBranch
+                  liftStats recordClosedBranch
                   return (CLOSED bprs)
               BranchOK br ->
                do debugMsg_BranchOK br
@@ -70,7 +69,7 @@ chooseBranch currentDepSet [] _ = return $ CLOSED currentDepSet
 --
 
 logMe :: BranchMonad ()
-logMe = do liftStats $ printOutInspectionMetrics
+logMe = do liftStats printOutInspectionMetrics
            liftStats $ modify updateStep
 
 debugMsg_NewSection :: Depth -> BranchMonad ()

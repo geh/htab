@@ -29,9 +29,9 @@ toMap :: DMap c -> IntMap (IntMap c)
 toMap (DMap m) = m
 
 empty :: DMap c
-empty = DMap $ IM.empty
+empty = DMap IM.empty
 
-insert1 :: Int -> (IntMap c) -> DMap c -> DMap c
+insert1 :: Int -> IntMap c -> DMap c -> DMap c
 insert1 k1 v (DMap m) = DMap $ IM.insert k1 v m
 
 insert :: Int -> Int -> c -> DMap c -> DMap c
