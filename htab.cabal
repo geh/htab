@@ -20,7 +20,6 @@ Executable          htab
                        containers < 1,
                        filepath > 1, filepath <= 2,
                        directory > 1, directory <= 2,
-                       array,
                        hylolib == 1.3
   Hs-Source-Dirs:      src
   ghc-options:         -O2 -Wall -fglasgow-exts
