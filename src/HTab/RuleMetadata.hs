@@ -33,6 +33,7 @@ module HTab.RuleMetadata(RuleId(..))
 
 where
 
+import Control.Parallel.Strategies ( NFData, rnf )
 import Data.Ix
 
 data RuleId = R_Dia     -- Diamond <r>
@@ -50,3 +51,7 @@ data RuleId = R_Dia     -- Diamond <r>
             | R_Merge   -- Equivalence classes merge
             | R_RoleInc -- Role inclusion
         deriving(Eq, Ord, Ix, Show)
+
+
+instance NFData RuleId where
+ rnf ruleId = ruleId `seq` ()

@@ -48,6 +48,7 @@ import Control.Monad.State(MonadState , MonadIO, modify, unless,
                            get, gets, guard, when)
 
 import qualified Control.Monad.State as State(liftIO)
+import Control.Parallel.Strategies ( NFData, rnf )
 
 import Data.Map(Map)
 import qualified Data.Map as Map(insertWith, toList, empty)
@@ -65,12 +66,17 @@ data Statistics = Stat{metrics::[Metric],
                        count::Int,
                        step::Maybe Int}
 
+instance NFData Statistics where
+ rnf (Stat sM sI sC sS) = rnf sM `seq` rnf sI `seq` rnf sC `seq`  rnf sS
+
 type StatisticsState a   = forall m. (MonadState Statistics m) => m a
 type StatisticsStateIO a = forall m. (MonadState Statistics m, MonadIO m) => m a
 
 updateMetrics :: (Metric -> Metric) -> Statistics -> Statistics
-updateMetrics f stat = stat{metrics           = map (f $!) (metrics stat),
-                            inspectionMetrics = map (f $!) (inspectionMetrics stat)}
+updateMetrics f stat = let s = stat{metrics           = map (f $!) (metrics stat),
+                                    inspectionMetrics = map (f $!) (inspectionMetrics stat)}
+                       in
+                            (rnf s) `seq` s
 
 updateStep :: Statistics -> Statistics
 updateStep s@(Stat _ [] _     _)         = s
@@ -153,6 +159,10 @@ printOutList ms = unless ( null ms ) $ do
 --------------------------------------------
 data Metric = RC  (Map RuleId Int) -- Rule application count
              |CB  !Int             -- Number of closed branched
+
+instance NFData Metric where
+ rnf (CB b) = rnf b
+ rnf (RC m) = rnf m
 
 type MetricModificator = Metric -> Metric
 
