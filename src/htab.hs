@@ -62,7 +62,8 @@ runCmdLineVersion =
 
 header :: String
 header = unlines ["HTab " ++ showVersion version,
-                  "G. Hoffmann, C. Areces, D.Gorin and J. Heguiabehere. (c) 2002-2009."]
+                  "G. Hoffmann, C. Areces, D.Gorin and J. Heguiabehere. (c) 2002-2010.",
+                  "http://code.google.com/p/intohylo/"]
 
 gpl_tag :: String
 gpl_tag = unlines [
