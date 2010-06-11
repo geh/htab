@@ -1,6 +1,6 @@
 ----------------------------------------------------
 --                                                --
--- RuleMetadata.hs:                               --
+-- RuleId.hs:                               --
 -- Miscelaneous rule data/info, that probably     --
 -- should go in Rules.hs but didn't work due to   --
 -- mutually recursive modules and the 'deriving'  --
@@ -29,7 +29,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307,
 USA.
 -}
 
-module HTab.RuleMetadata(RuleId(..))
+module HTab.RuleId(RuleId(..))
 
 where
 

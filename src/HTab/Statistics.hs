@@ -54,7 +54,7 @@ import Data.Map(Map)
 import qualified Data.Map as Map(insertWith, toList, empty)
 import Data.List ( intercalate )
 
-import HTab.RuleMetadata(RuleId(..))
+import HTab.RuleId(RuleId(..))
 
 
 -------------------------------------------

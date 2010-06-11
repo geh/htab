@@ -28,7 +28,7 @@ import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewNomTestRe
                     ScheduledRule(..), TodoList(..),
                     deleteUEV, insertUEV_addFormula )
 import HTab.CommandLine(CmdLineParams, UnitProp(..), semBranch, unitProp, strategyStr, uBlocking, noLoopCheck)
-import HTab.RuleMetadata(RuleId(..))
+import HTab.RuleId(RuleId(..))
 import qualified HTab.DisjSet as DS
 
 -- a "rule" is basically a list of modifications of the structures
