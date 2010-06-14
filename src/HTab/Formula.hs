@@ -730,56 +730,32 @@ checkIfVariableNegatedOnce _ = error "checkIfVariableNegatedOnce : only down-arr
 -- backjumping
 
 type Dependency = Int
-type DependencySet = (Int,  -- smallest element of the set (or 0 if empty set)
-                      IntSet.IntSet)
+type DependencySet = IntSet.IntSet
 
 instance Ord PrFormula where
  compare (PrFormula pr1 ds1 f1) (PrFormula pr2 ds2 f2) =
-  case fst ds1 `compare` fst ds2 of
+  case dsMin ds1 `compare` dsMin ds2 of
    LT -> LT
    GT -> GT
    EQ -> compare (pr1,f1) (pr2,f2)
 
 dsUnion :: DependencySet -> DependencySet -> DependencySet
-dsUnion ds1 ds2 = let u = IntSet.union (snd ds1) (snd ds2)
-                      m = if fst ds1 == 0 || fst ds2 == 0
-                           then maybe 0 fst $ IntSet.minView u
-                           else min (fst ds1) (fst ds2)
-                  in (m,u)
+dsUnion = IntSet.union
 
 dsUnions :: [DependencySet] -> DependencySet
-dsUnions dss = let u = IntSet.unions $ map snd dss
-                   m = minExceptOneZero (map fst dss)
-                                        (maybe 0 fst $ IntSet.minView u )
-               in (m,u)
- where
-       minExceptOneZero []  _  = error "minExceptOneZero"
-       minExceptOneZero [0] d  = d
-       minExceptOneZero (x0:xs0) d
-        = go x0 xs0
-           where
-              go m []     = m
-              go _ (0:_)  = d
-              go m (x:xs) = go (min m x) xs
-
-
+dsUnions = IntSet.unions
 
 dsInsert :: Dependency -> DependencySet -> DependencySet
-dsInsert d ds = let s = IntSet.insert d (snd ds)
-                    m = if fst ds == 0 -- in case that 0 was for an empty dependency set
-                         then maybe 0 fst $ IntSet.minView s
-                         else min d (fst ds)
-                in (m,s)
+dsInsert = IntSet.insert
 
 dsMember :: Dependency -> DependencySet -> Bool
-dsMember d ds = IntSet.member d (snd ds)
+dsMember = IntSet.member
 
 dsEmpty :: DependencySet
-dsEmpty = (0,IntSet.empty)
+dsEmpty = IntSet.empty
 
 dsMin :: DependencySet -> Int
-dsMin = fst
+dsMin ds = maybe 0 fst $ IntSet.minView ds
 
 dsShow :: DependencySet -> String
-dsShow = show . IntSet.toList . snd
-
+dsShow = show . IntSet.toList
