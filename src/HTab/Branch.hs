@@ -1012,7 +1012,7 @@ data ReducedDisjunct = Triviality | Contradiction DependencySet | Reduced Depend
 
 reduceDisjunctionAgainstBranch :: Branch -> Prefix -> Set Formula -> ReducedDisjunct
 reduceDisjunctionAgainstBranch br pr fs =
-         case foldr scanDisjunctAndTest (Just ( Set.empty , dsEmpty )) (list fs) of
+         case Set.fold scanDisjunctAndTest (Just ( Set.empty , dsEmpty )) fs of
           Nothing                      ->  Triviality
           Just  (  disjuncts , ds ) | Set.null disjuncts -> Contradiction ds
                                     | otherwise          -> Reduced       ds disjuncts
