@@ -10,6 +10,8 @@ import Control.Monad.Reader( runReaderT )
 
 import System.IO           ( hSetBuffering, stdin, BufferMode(LineBuffering)) 
 import System.CPUTime( getCPUTime )
+import System.IO.Strict ( readFile )
+import Prelude hiding ( readFile )
 
 import HyLo.InputFile.Parser ( QueryType(..) )
 
@@ -127,8 +129,8 @@ runOneTask (query,mOutFile,fs) relInfo encoding theory clp ts=
                         Satisfiable -> encodeSatTest      relInfo encoding theory fs
                         _           -> error "never happens"
                --
-               f `seq` when (showFormula clp)
-                        $ myPutStrLn
+               when (showFormula clp)
+                  $ myPutStrLn
                          $ unlines ["Input for SAT test:",
                                     "{ " ++ show f ++ " }",
                                     "End of input",
