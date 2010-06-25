@@ -16,7 +16,8 @@ addParentPrefix, addFirstFormulas,
 updateUBBookKeep, ScheduledRule(..), TodoList(..),
 BranchData(..),
 emptyBranch,initialBranchStateFor,prefixes,
-reduceDisjunctionAgainstBranch, merge,
+reduceDisjunctionProposeLazy, doLazyBranching,
+merge,
 getUrfather, getUrfatherAndDeps, isInTheModel, relationIsInTheModel,
 getModelRepresentative, isNotBlocked,
 BlockingMode(..), diaAlreadyDone, diaXAlreadyDone,
@@ -58,8 +59,9 @@ import qualified HTab.Relations as Relations
 data BranchInfo = BranchOK Branch |
                   BranchClash Branch Prefix DependencySet Formula
 
-type Clashable_info   = DMap {- Prefix Literal -} DependencySet
-type Box_constraints  = DMap {- Prefix Rel -} [(Formula,DependencySet)]
+type Clashable_info      = DMap {- Prefix Literal -} DependencySet
+type Box_constraints     = DMap {- Prefix Rel -} [(Formula,DependencySet)]
+type Branching_witnesses = DMap {- Prefix Literal -} [PrFormula]
 type EquivClasses = DS.DisjSet DS.Pointer
 data BlockingMode = AnywhereBlocking | ChainTwinBlocking  deriving (Eq,Show)
 
@@ -93,6 +95,8 @@ data Branch =
                       nextProp :: Prop,
                  eventualities :: IntMap DependencySet,
                     bookKeepUB :: (Prefix,Prefix),
+                 -- lazy branching
+                   brWitnesses :: Branching_witnesses,
                  -- caching / memoisation data
              downVarRelevantCh :: Map Formula Bool,
                  -- information about language of input formula and blocking mode
@@ -131,6 +135,7 @@ emptyBranch clp fLang relInfo_ encoding_ =
                   prToDepSet        = IntMap.empty,
                   eventualities     = IntMap.empty,
                   bookKeepUB        = (0,0),
+                  brWitnesses       = DMap.empty,
                   nomPrefClasses    = DS.mkDSet,
                   inputLanguage     = fLang,
                   blockMode         = blockingMode,
@@ -161,6 +166,8 @@ instance Show Branch where
                          (\c -> "\nBox fwd: " ++ showIMap (\v -> "(" ++ showMap_rel v ++ ")") "\n " (toMap c)),
               ifNotEmpty (boxConstrBwd br)
                          (\c -> "\nBox bwd: " ++ showIMap (\v -> "(" ++ showMap_rel v ++ ")") "\n " (toMap c)),
+              ifNotEmpty (brWitnesses br)
+                         (\c -> "\nWitnesses: " ++ showIMap (\v  -> "(" ++ showMap_lits2 v ++ ")") "\n " (toMap c)),
               showl "\nDia rule chart: "  (diaRlCh br),
               showl "\nDown rule chart: " (downRlCh br),
               showl "\n@ rule chart: "     (list $ atRlCh br),
@@ -187,6 +194,7 @@ instance Show Branch where
                   showIMap vShow sep = IntMap.foldWithKey (\k v -> (++ sep ++ show k ++ " -> " ++ vShow v )) ""
                   showMap vShow sep  = Map.foldWithKey (\k v -> (++ sep ++ show k ++ " -> " ++ vShow v )) ""
                   showMap_lits       = IntMap.foldWithKey (\l d   -> (++ showLit l ++ " " ++ dsShow d  ++ ", ")) ""
+                  showMap_lits2      = IntMap.foldWithKey (\l fs  -> (++ showLit l ++ " " ++ ":" ++ show fs ++ ", ")) ""
                   showMap_rel        = IntMap.foldWithKey (\r dxs -> (++ "-" ++ showRel r ++ "-> " ++ show dxs ++ ", ")) ""
 
 class Emptyable a where
@@ -274,21 +282,49 @@ addFormulas clp br fs =
 addFormula :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
 addFormula clp br pf
  =   putAwayFormula  clp pf
-   $ bookKeepFormula pf br
+   $ bookKeepFormula clp pf br
 
-bookKeepFormula :: PrFormula -> Branch -> Branch
-bookKeepFormula pf_ br
+bookKeepFormula :: CmdLineParams -> PrFormula -> Branch -> Branch
+bookKeepFormula clp pf_ br
  =   addToPrefToForms         pf
+   $ rescheduleLazyBranching  clp pf
    $ rescheduleBlockedDias    ur br
   where
     (ur,pf) = toUrfather br pf_
+
+rescheduleLazyBranching :: CmdLineParams -> PrFormula -> Branch -> Branch
+rescheduleLazyBranching clp (PrFormula pr ds (Lit l)) br   -- pr already urfather
+ | lazyBranching clp && isProp l
+   =
+     let (Just innerMap) = DMap.lookup1 pr (brWitnesses br)
+     in
+
+     case DMap.lookup pr l (brWitnesses br) of
+      Just _
+        -> let innerMap2 = IntMap.delete l innerMap
+               newBrW = DMap.insert1 pr innerMap2 (brWitnesses br)
+               newBr = br{brWitnesses = newBrW}
+           in
+            newBr -- forget  the disjunctions, they are really satisfied
+      Nothing
+       -> case DMap.lookup pr (negLit l) (brWitnesses br) of
+           Just fs
+             -> let innerMap2 = IntMap.delete (negLit l) innerMap
+                    newBrW = DMap.insert1 pr innerMap2 (brWitnesses br)
+                    newBr = br{brWitnesses = newBrW}
+                in
+                 foldr addToTodo newBr (map (addDeps ds) fs) --reschedule
+           Nothing
+            -> br -- do nothing
+
+rescheduleLazyBranching _ _ br = br
 
 
 putAwayFormula :: CmdLineParams -> PrFormula -> Branch -> BranchInfo
 putAwayFormula clp pf@(PrFormula pr ds f2) br =
  case f2 of
    Con fs     -> addFormulas clp br (prefix pr ds fs)
-   Dis _      -> BranchOK $ addToTodo pf br
+   Dis _      -> putAwayDisjunction clp pf br
    Dia _ _    -> BranchOK $ addToTodo pf br
    DiaX _ _ _ -> BranchOK $ addToTodo pf br
    Box r f    -> addBoxConstraint      pr r f ds clp br
@@ -301,6 +337,44 @@ putAwayFormula clp pf@(PrFormula pr ds f2) br =
    Down _ _   -> BranchOK $ addToTodo pf br
    Lit l | isPositiveNom l -> addToClashable pr ds l $ addToTodo pf br
    Lit l                   -> addToClashable pr ds l br
+
+putAwayDisjunction :: CmdLineParams -> PrFormula -> Branch -> BranchInfo -- TODO use clp to disable lazy branching
+putAwayDisjunction clp pf@(PrFormula pr ds f@(Dis fs)) br
+ | lazyBranching clp
+  = case reduceDisjunctionProposeLazy br pr fs of
+     Contradiction dsClash -> BranchClash br pr (dsUnion ds dsClash) f
+     Triviality -> BranchOK br
+     Reduced new_ds disjuncts mProposed
+      -> let ur = getUrfather br (DS.Prefix pr)
+             fNew = PrFormula pr (dsUnion ds new_ds) (Dis disjuncts) --todo if there was no reduction, leave ds
+         in
+          case mProposed of
+            Nothing -> BranchOK $ addToTodo fNew br
+            Just p -- add pr, atom prop, (isPositive prop, (++) disjuncts) aux witnesses
+             -> BranchOK $ doLazyBranching ur p [fNew] br
+ | otherwise
+  = BranchOK $ addToTodo pf br
+putAwayDisjunction _ pf _ = error ("putAwayDisjunction " ++ show pf)
+
+doLazyBranching :: Prefix -> Literal -> [PrFormula] -> Branch -> Branch
+doLazyBranching pr lit pfs br -- assume the tests have been done beforehand
+ = case DMap.lookup1 pr (brWitnesses br) of
+    Nothing -> let newBrW = DMap.insert pr lit pfs (brWitnesses br)
+               in br{brWitnesses = newBrW}
+    Just innerMap
+     -> case IntMap.lookup lit innerMap of -- assume this is the only place where l or (negLit l) occur
+         Nothing -> let newInner = IntMap.insert lit pfs innerMap
+                        newBrW = DMap.insert1 pr newInner (brWitnesses br)
+                    in br{brWitnesses = newBrW}
+         Just fs -- assume the test was already done
+          -> let newInner = IntMap.insert lit (pfs++fs) innerMap
+                 newBrW = DMap.insert1 pr newInner (brWitnesses br)
+             in br{brWitnesses = newBrW}
+
+
+-- TODO
+-- when doing a merge, do all the witness checks!
+-- when formula is sat and doing model building, add all witnesses!
 
 {- todo list functions -}
 
@@ -327,7 +401,7 @@ addToTodo pf@(PrFormula p ds f2) br =
          Down _ _           -> utodo{ downTodo = Set.insert pf ( downTodo utodo)}
          Lit l
           | isPositiveNom l -> utodo{mergeTodo = Set.insert (ds,p,DS.Nominal l) (mergeTodo utodo)}
-         _                  -> error "addToTodo"
+         _                  -> error $ "addToTodo: " ++ show f2
    alreadyDone =
     case f2 of
      E  _               -> existAlreadyDone br f2
@@ -339,7 +413,7 @@ addToTodo pf@(PrFormula p ds f2) br =
      Dis _              -> False
      Lit l
       | isPositiveNom l -> inSameClass br p l
-     _                  -> error "alreadyDone"
+     _                  -> error $ "alreadyDone: " ++ show f2
    brWithSaturation =
     case f2 of
      E _         -> br{existRlCh = Set.insert f2 (existRlCh br)}
@@ -392,6 +466,7 @@ merge clp br pr fDs pointer -- pointer is a nominal or a prefix
                       newDiaXRlCh     = moveInMap (diaXRlCh br) oldUr newUr Set.union
                       newBoxXRlCh     = moveInMap (boxXRlCh br) oldUr newUr Set.union
                       newBlockedDias  = moveInMap (blockedDias br) oldUr newUr (++)
+                      (newBrWitnesses,unwitnessedToAdd) = mergeWitnesses oldUr newUr urfatherSlot (brWitnesses br)
 
                       -- structures that combine
                       mapBoxFwd = map (\idx -> IntMap.findWithDefault IntMap.empty idx (toMap $ boxConstrFwd br) ) [ur1,ur2]
@@ -404,6 +479,7 @@ merge clp br pr fDs pointer -- pointer is a nominal or a prefix
 
                       formulasToAdd   = nubAndMergeDeps $     formulasToSend1
                                                            ++ formulasToSend2
+                                                           ++ unwitnessedToAdd
 
                       newBr           = br{nomPrefClasses = classes3,
                                            boxConstrFwd   = newBoxConstrFwd,
@@ -415,9 +491,40 @@ merge clp br pr fDs pointer -- pointer is a nominal or a prefix
                                            diaXRlCh       = newDiaXRlCh,
                                            boxXRlCh       = newBoxXRlCh,
                                            blockedDias    = newBlockedDias,
-                                           clashStr       = newClashStr}
+                                           clashStr       = newClashStr,
+                                           brWitnesses    = newBrWitnesses}
                   in
                       addFormulas clp newBr formulasToAdd
+
+mergeWitnesses :: Prefix -> Prefix -> Clashable_info_slot -> Branching_witnesses -> (Branching_witnesses, [PrFormula])
+mergeWitnesses oldUr newUr urfatherSlot dbrWits@(DMap brWits)
+ =( DMap.insert1 newUr newDest2 ( DMap.delete oldUr dbrWits ), toAdd1 ++ toAdd2 )
+  where
+   srcInnerMap  = maybe IntMap.empty id (IntMap.lookup oldUr brWits)
+   destInnerMap = maybe IntMap.empty id (IntMap.lookup newUr brWits)
+   (newDest1,toAdd1) = mergeWitnesses_WitnessesMap srcInnerMap destInnerMap
+   (newDest2,toAdd2) = mergeWitnesses_AgainstClashable newDest1 urfatherSlot
+
+mergeWitnesses_WitnessesMap :: IntMap [PrFormula] -> IntMap [PrFormula] -> (IntMap [PrFormula], [PrFormula])
+mergeWitnesses_WitnessesMap srcWitMap destWitMap
+ = foldr go (destWitMap,[]) $ IntMap.assocs srcWitMap
+   where
+      go (l,fs) (destMap,toAddAgain)
+         = case IntMap.lookup l destMap of
+            Just fs2 -> (IntMap.insert l (fs2++fs) destMap, toAddAgain)
+            Nothing
+             -> case IntMap.lookup (negLit l) destMap of -- (negLit l) is just one bit away from l in the map, but we don't use it
+                  Just fs2 -> (IntMap.delete (negLit l) destMap, fs++fs2++toAddAgain)
+                  Nothing ->  (IntMap.insert l fs destMap, toAddAgain)
+
+mergeWitnesses_AgainstClashable :: IntMap [PrFormula] -> Clashable_info_slot -> (IntMap [PrFormula],[PrFormula])
+mergeWitnesses_AgainstClashable  witMap cis
+ = foldr go (witMap,[]) $ IntMap.assocs witMap
+   where
+    go (lit,fs) (destMap,toAddAgain)
+      | lit `IntMap.member` cis = (IntMap.delete lit destMap,toAddAgain)
+      | negLit lit `IntMap.member` cis = (IntMap.delete lit destMap,fs++toAddAgain) -- same remark as above
+      | otherwise = (destMap,toAddAgain)
 
 nubAndMergeDeps :: [PrFormula] -> [PrFormula]
 -- Rationale : because of the equivalence classes, a same formula can be added to a branch
@@ -621,7 +728,7 @@ isNotBlocked br pr
                            where ur = getUrfather br (DS.Prefix pr)
                                  fs = formulasOf br ur
                                  isSubsumer fs_ = fs `Set.isSubsetOf` fs_
-                                 labels = map snd $ takeWhile ((< ur).fst) $  IntMap.toAscList (prefToForms br)
+                                 labels = map snd $ takeWhile ((< ur).fst) $  ascPrefToFormAndWit br
    ChainTwinBlocking  -> isNotChainTwinBlocked br pr
 
 isNotChainTwinBlocked :: Branch -> Prefix -> Bool
@@ -664,11 +771,11 @@ relationIsInTheModel br (p1,_,p2)
 getModelRepresentative :: Branch -> Prefix -> Prefix  -- which is also an inclusion representative
 getModelRepresentative br pr
  = case blockMode br of
-    AnywhereBlocking-> case map fst $ filter (Set.isSubsetOf fs . snd) $ IntMap.toAscList (prefToForms br) of
+    AnywhereBlocking-> case map fst $ filter (Set.isSubsetOf fs . snd) $ ascPrefToFormAndWit br of
                          []     -> pr
                          (hd:_) -> hd
                          where ur = getUrfather br (DS.Prefix pr)
-                               fs = formulasOf br ur
+                               fs = formulasOf br ur -- this is the difference
     ChainTwinBlocking -> case findModelRepresentativeChainTwinBlocking br pr of
                           Nothing -> error ("found an interesting counter example " ++ show pr)
                           Just repr -> repr
@@ -690,9 +797,20 @@ findModelRepresentativeChainTwinBlocking br pr
 areTwins :: Branch -> Prefix -> Prefix -> Bool
 areTwins br p1 p2 = formulasOf br p1 == formulasOf br p2
 
+
+ascPrefToFormAndWit :: Branch -> [(Prefix,Set Formula)]
+ascPrefToFormAndWit br
+ = [ (pr,formulasOf br pr) | pr <- prefixes br ]
+
 -- maybe should get the urfather of given prefix, so that the caller functions won't have to do it
 formulasOf :: Branch -> Prefix -> Set Formula
-formulasOf br p = IntMap.findWithDefault Set.empty p (prefToForms br)
+formulasOf br p = Set.union (IntMap.findWithDefault Set.empty p (prefToForms br))
+                            (witnesses br p)
+
+witnesses :: Branch -> Prefix -> Set Formula
+witnesses br p
+ = let witMap = maybe IntMap.empty id (DMap.lookup1 p (brWitnesses br))
+   in Set.fromList [ Lit l | l <- IntMap.keys witMap]
 
 -- is the formula useful to calculate inclusion urfathers ?
 forInclusion :: Branch -> Formula -> Bool
@@ -893,7 +1011,7 @@ addFirstFormulas clp br_ fLang f
                               (zip [1..] ns)
           br2 = br{nomPrefClasses = newClasses,
                          clashStr = newClashStr}
-          br3 = foldr (\(pr,n) -> bookKeepFormula (PrFormula pr dsEmpty (Lit n)))
+          br3 = foldr (\(pr,n) -> bookKeepFormula clp (PrFormula pr dsEmpty (Lit n)))
                       br2
                       (zip [1..] ns)
           funUniv = map (\r -> PrFormula 0 dsEmpty
@@ -1008,27 +1126,36 @@ cisQuery br pr l
 
 {-     function used for unit propagation     -}
 
-data ReducedDisjunct = Triviality | Contradiction DependencySet | Reduced DependencySet (Set Formula)
 
-reduceDisjunctionAgainstBranch :: Branch -> Prefix -> Set Formula -> ReducedDisjunct
-reduceDisjunctionAgainstBranch br pr fs =
-         case Set.fold scanDisjunctAndTest (Just ( Set.empty , dsEmpty )) fs of
-          Nothing                      ->  Triviality
-          Just  (  disjuncts , ds ) | Set.null disjuncts -> Contradiction ds
-                                    | otherwise          -> Reduced       ds disjuncts
+data ReducedDisjunct
+ =   Triviality
+   | Contradiction DependencySet
+   | Reduced DependencySet (Set Formula) (Maybe Prop) -- proposable witness for lazy branching
+ deriving Show
 
-         where -- for each removed literal of the disjunction, add dependencies of the removed literal
-               -- if the resulting is empty -> clash
-               -- if the formula is "trivial" (= one disjunct is already there) we just remove the formula
-           ur = getUrfather br (DS.Prefix pr)
-           scanDisjunctAndTest :: Formula -> Maybe (Set Formula,DependencySet) -> Maybe (Set Formula,DependencySet)
-           scanDisjunctAndTest       _                Nothing               =    Nothing
-           scanDisjunctAndTest  l@(Lit current) (Just (disjuncts,ds_))    =
-             case cisQuery br ur current of
-                Nothing          -> Just (Set.insert l disjuncts,ds_)
-                Just (True,_)    -> Nothing
-                Just (False,ds2) -> Just (disjuncts,dsUnion ds_ ds2)
-           scanDisjunctAndTest       f          (Just (disjuncts,ds_))    =    Just (Set.insert f disjuncts,ds_)
+reduceDisjunctionProposeLazy :: Branch -> Prefix -> Set Formula -> ReducedDisjunct
+reduceDisjunctionProposeLazy br pr fs
+ =  case Set.fold go (Just ( Set.empty , dsEmpty, Nothing )) fs of
+     Nothing -> Triviality
+     Just (disjuncts,ds,proposed)
+       | Set.null disjuncts -> Contradiction ds
+       | otherwise -> Reduced ds disjuncts proposed -- what if not reduced ? and no proposed witness ?
+   where
+      ur = getUrfather br (DS.Prefix pr)
+      go _ Nothing = Nothing
+      go l@(Lit current) (Just (disjuncts,ds_,proposed))
+       = case (cisQuery br ur current, proposed) of
+          (Just (True,_)    ,_) -> Nothing
+          (Just (False,ds2) ,_) -> Just (disjuncts,dsUnion ds_ ds2, proposed)
+          (Nothing, Nothing)
+           -> if not $ isProp current
+               then Just (Set.insert l disjuncts,ds_,Nothing) -- no lazy branching with nominals
+               else case DMap.lookup ur (negLit current) (brWitnesses br) of
+                     Just _  -> Just (Set.insert l disjuncts,ds_,Nothing) -- there's an opposed witness
+                     Nothing -> Just (Set.insert l disjuncts,ds_, Just current) -- propose for witness
+          _ {- already a proposed witness -}
+           -> Just (Set.insert l disjuncts,ds_,proposed)
+      go f               (Just (disjuncts,ds_,proposed)) = Just (Set.insert f disjuncts, ds_,proposed)
 
 
 {-     other functions     -}

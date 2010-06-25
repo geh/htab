@@ -13,7 +13,7 @@ module HTab.Formula
 Rel, Prefix, Formula(..),
 DependencySet, Dependency,
 dsUnion, dsUnions, dsInsert, dsMember,
-dsEmpty, dsMin, dsShow,
+dsEmpty, dsMin, dsShow, addDeps,
 PrFormula(..),showLess, AccFormula(..),
 LanguageInfo(..), neg,
 conj, disj, taut,
@@ -533,7 +533,14 @@ disj    f          f'
     | otherwise            = skipSingleton Dis (set [f,f'])
 
 dimp :: Formula -> Formula -> Formula
-dimp f1 f2 = (f1 `conj` f2) `disj` (neg f1 `conj` neg f2)
+dimp f1 f2 = (neg f1 `disj` f2) `conj` (f1 `disj` neg f2)
+-- this form is preferred so as to enhance lazy branching
+
+-- TODO
+-- ala Spartacus:
+-- when there is no literal in the double implication,
+-- use the following form:
+--dimp f1 f2 = (f1 `conj` f2) `disj` (neg f1 `conj` neg f2)
 
 imp :: Formula -> Formula -> Formula
 imp f1 f2 = neg f1 `disj` f2
@@ -759,3 +766,6 @@ dsMin ds = maybe 0 fst $ IntSet.minView ds
 
 dsShow :: DependencySet -> String
 dsShow = show . IntSet.toList
+
+addDeps :: DependencySet -> PrFormula -> PrFormula
+addDeps ds1 (PrFormula p ds2 f) = PrFormula p (dsUnion ds1 ds2) f

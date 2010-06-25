@@ -40,6 +40,7 @@ data CmdLineParams = CLP {
            semBranch       :: Bool,
            unitProp        :: UnitProp,
            backJumping     :: Bool,
+           lazyBranching   :: Bool,
            uBlocking       :: Bool,
            noLoopCheck     :: Bool,
            genModel        :: Maybe FilePath,
@@ -112,6 +113,10 @@ options =
           ["backjumping"]
           (ReqArg setBackJumping "[0|1]")
           "disable/enable backjumping optimisation",
+   Option ['l']
+          ["lazy-branching"]
+          (ReqArg setLazyBranching "[0|1]")
+          "disable/enable lazy branching optimisation",
    Option ['s']
           ["strategy"]
           (ReqArg setStrategy "PAT")
@@ -214,6 +219,9 @@ setUnitProp = is0or1or2 ?->  \s c -> return c{unitProp = case read s::Int of {2 
 setBackJumping :: String -> CLPModifier
 setBackJumping = is0or1 ?->  \s c -> return c{backJumping = intToBool $ read s}
 
+setLazyBranching :: String -> CLPModifier
+setLazyBranching = is0or1 ?->  \s c -> return c{lazyBranching = intToBool $ read s}
+
 is0or1 :: String -> Bool
 is0or1 s = s `elem` ["0","1"]
 
@@ -242,6 +250,7 @@ defaultParams = CLP {showHelp = False,
                      semBranch   = True,
                      unitProp    = Eager,
                      backJumping = True,
+                     lazyBranching = True,
                      uBlocking   = False,
                      noLoopCheck = False,
                      genModel    = Nothing,

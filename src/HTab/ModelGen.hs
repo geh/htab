@@ -51,10 +51,15 @@ toSimpSig e (p1,r,p2) = (S.NomSymbol (show p1), toRelSymbol e r, S.NomSymbol (sh
 
 prefixAndProps :: Branch -> [(Prefix,S.PropSymbol)]
 prefixAndProps br =
-  [(pr, toPropSymbol e p_) | (pr , p_) <- prPosLitProp]
+  [(pr, toPropSymbol e p_) | (pr , p_) <- prPosLitProp ++ prefWitPositive]
  where clashable             = toMap $ clashStr br
        clashableRelevant     = IntMap.filterWithKey (\k _ -> isInTheModel br k) clashable
        prPosLitProp          = filter (isPositiveProp . snd) $ map fst $ flatten $ DMap clashableRelevant
+       --
+       witMap = toMap $ brWitnesses br
+       witMapRelevant = IntMap.filterWithKey (\k _ -> isInTheModel br k) witMap
+       prefWitPositive = filter (isPositiveProp . snd) $ map fst $ flatten $ DMap witMapRelevant
+       --
        e = encoding br
 
 completeModel :: Encoding -> RelInfo -> Model -> Model

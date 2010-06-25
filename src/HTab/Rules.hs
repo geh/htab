@@ -14,20 +14,21 @@ import HTab.Formula( Formula(..), PrFormula(..), showLess, neg,
                      Dependency, DependencySet, dsUnion, dsInsert, dsEmpty,
                      prefix, AccFormula(..), Rel,
                      Prefix,
-                     conj, replaceVar, Prop )
+                     conj, replaceVar, Prop, Literal )
 import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewNomTestRelevance,
                     BranchInfo(..),
                     addFormulas, addAccFormula,
                     addDiaRuleCheck, addDiaXRuleCheck,
                     addDownRuleCheck, addDiffRuleCheck,
-                    addParentPrefix, reduceDisjunctionAgainstBranch,
+                    addParentPrefix,
+                    reduceDisjunctionProposeLazy, doLazyBranching,
                     getUnappliedUBPairs, updateUBBookKeep,
                     getUrfatherAndDeps, isNotBlocked, merge,
                     diaAlreadyDone,  diaXAlreadyDone, downAlreadyDone,
                     ReducedDisjunct(..), getUrfather,
                     ScheduledRule(..), TodoList(..),
                     deleteUEV, insertUEV_addFormula )
-import HTab.CommandLine(CmdLineParams, UnitProp(..), semBranch, unitProp, strategyStr, uBlocking, noLoopCheck)
+import HTab.CommandLine(CmdLineParams, UnitProp(..), lazyBranching, semBranch, unitProp, strategyStr, uBlocking, noLoopCheck)
 import HTab.RuleId(RuleId(..))
 import qualified HTab.DisjSet as DS
 
@@ -48,12 +49,14 @@ data BranchModification =    BM_AddFormulas   [PrFormula]
                            | BM_DeleteUEV Int
                            | BM_InsertUEV_addFormula (Maybe Int) DependencySet (Int -> PrFormula)
                            | BM_Merge Prefix DS.Pointer DependencySet
+                           | BM_DoLazyBranch Prefix Literal [PrFormula]
 
 -- each rule constructor contains exactly the needed data to know the effect of the rule
 data Rule =  DiaRule    PrFormula -- creates a prefix
            | DiaXRule   PrFormula Dependency
            | DisjRule   PrFormula [PrFormula]
            | SemBrRule  PrFormula [[PrFormula]]
+           | LazyBranchRule PrFormula Prefix Literal [PrFormula]
            | AtRule     PrFormula
            | DownRule   PrFormula
            | DiffRule   PrFormula Dependency
@@ -131,6 +134,9 @@ getMods _ (DisjRule _ toadds) =
 getMods _ (SemBrRule _ toaddss) =
  [[BM_AddFormulas toadds] | toadds <- toaddss]
 
+getMods _ (LazyBranchRule _ pr lit pfs) =
+ [[BM_DoLazyBranch pr lit pfs]]
+
 getMods br (AtRule (PrFormula _ ds (At n f))) =
  [[BM_AddFormulas [toadd]]]
   where toadd = PrFormula earliestPrefix (dsUnion ds ds2) f
@@ -199,6 +205,8 @@ instance Show Rule where
    show (ClashRule bprs f)         = "Clash:              " ++ show bprs ++ " " ++ show f
    show (UBlockRule p1 p2 _ )      = "Unrestricted blocking " ++ show (p1,p2)
    show (RoleIncRule p1 rs p2 _)   = "Role inclusion      " ++ show (p1,rs,p2)
+   show (LazyBranchRule todelete _ _ _)
+                                   = "Lazy Branch "         ++ showLess todelete
 
 --
 ruleToId :: Rule -> RuleId
@@ -216,6 +224,7 @@ ruleToId r = case r of
               (ClashRule _ _)    -> R_Clash
               (UBlockRule _ _ _) -> R_UBlocking
               (RoleIncRule _ _ _ _) -> R_RoleInc
+              (LazyBranchRule _ _ _ _) -> R_LazyBranch
 
 -- the rules application strategy is defined here:
 -- the first rule is the one that will be applied at the next tableau step
@@ -303,9 +312,9 @@ ruleByChar br clp d char =
   applicableDisjRule
    = case unitProp clp of
       Eager -> {- scan all disjuncts until one can be discarded, reduced to one disjunct or clashes -}
-                case mapMaybe (makeInteresting br d) $ Set.toList $ disjTodo todos of
+                case mapMaybe (makeInteresting clp br d) $ Set.toList $ disjTodo todos of
                   ((r,pf):_) -> return (r, todos{disjTodo = Set.delete pf $ disjTodo todos},br)
-                  [] -> regularApplicableDisjRule
+                  [] -> regularApplicableDisjRule --todo: update counter (CurCount, MaxCount) step 10 until which space out unit propagation
       _     ->  regularApplicableDisjRule
 
   regularApplicableDisjRule
@@ -315,15 +324,23 @@ ruleByChar br clp d char =
                                return (disjRule clp f br d,  todos{disjTodo = new},br)
 
 
-makeInteresting :: Branch -> Dependency -> PrFormula ->  Maybe (Rule,PrFormula)
-makeInteresting br d df@(PrFormula pr ds (Dis fs))
- = case reduceDisjunctionAgainstBranch br pr fs of
+makeInteresting :: CmdLineParams -> Branch -> Dependency -> PrFormula ->  Maybe (Rule,PrFormula)
+makeInteresting clp br d df@(PrFormula pr ds (Dis fs))
+ = case reduceDisjunctionProposeLazy br pr fs of
           Triviality               -> Just (DiscardRule df,df)
           Contradiction ds_clash   -> Just (ClashRule (dsUnion ds ds_clash) df,df)
-          Reduced new_ds disjuncts -> if Set.size disjuncts == 1
-                                       then Just (DisjRule df (prefix pr (dsInsert d $ dsUnion ds new_ds) disjuncts), df)
-                                       else Nothing
-makeInteresting _ _ _ = error "makeInteresting on a non disjunction"
+          Reduced new_ds disjuncts mProposed
+            | Set.size disjuncts == 1 -> Just (DisjRule df ( prefix pr newDeps disjuncts ), df)
+            | lazyBranching clp -> case mProposed of
+                                    Nothing  -> Nothing
+                                    Just lit -> Just (LazyBranchRule df pr lit [PrFormula pr newDeps (Dis disjuncts)], df)
+            | otherwise  -> Nothing
+              where newDeps = dsInsert d $ dsUnion ds new_ds
+            -- TODO should not insert d if the formula was actually not changed
+               -- --> reduceDisjunctionProposeLazy should return a boolean
+               -- -->  or have a constructor "Unchanged" ?
+
+makeInteresting _ _ _ _ = error "makeInteresting on a non disjunction"
 
 applyRule :: CmdLineParams -> Rule -> Branch -> TodoList -> [BranchInfo]
 applyRule clp rule br_ todo
@@ -354,8 +371,7 @@ applyMod  _  br (BM_UpdateUBBookKeep p1 p2)        = BranchOK $ updateUBBookKeep
 applyMod  _  br (BM_DeleteUEV i)                   = BranchOK $ deleteUEV br i
 applyMod clp br (BM_InsertUEV_addFormula mi ds ff) = insertUEV_addFormula br clp mi ds ff
 applyMod clp br (BM_Merge pr p ds)                 = merge clp br pr ds p
-
-
+applyMod  _  br (BM_DoLazyBranch pr l pfs)         = BranchOK $ doLazyBranching pr l pfs br
 -- the actual rules and their helper functions
 
 -- diaX (may create a discard rule)
@@ -377,10 +393,11 @@ disjRule :: CmdLineParams -> PrFormula -> Branch -> Dependency -> Rule
 disjRule clp df@(PrFormula pr ds (Dis fs)) br d
   = if unitProp clp == UPNo
      then DisjRule df $ prefix pr (dsInsert d ds) fs
-     else case reduceDisjunctionAgainstBranch br pr fs of
+     else case reduceDisjunctionProposeLazy br pr fs of
              Triviality               -> DiscardRule df
              Contradiction ds_clash   -> ClashRule (dsUnion ds ds_clash) df
-             Reduced new_ds disjuncts -> DisjRule df (prefix pr (dsInsert d $ dsUnion ds new_ds) disjuncts)
+             Reduced new_ds disjuncts _
+               -> DisjRule df (prefix pr (dsInsert d $ dsUnion ds new_ds) disjuncts)
 -- todo: if only one conjunct remaining, do not add d , but still create a DisjRule
 disjRule _ _ _ _ = error "disjRule"
 
@@ -389,10 +406,11 @@ semBrRule :: CmdLineParams -> PrFormula -> Branch -> Dependency -> Rule    -- to
 semBrRule clp df@(PrFormula pr ds (Dis fs)) br d
  = if unitProp clp == UPNo
     then SemBrRule df $ sbModList $ prefix pr (dsInsert d ds) fs
-    else case reduceDisjunctionAgainstBranch br pr fs of
+    else case reduceDisjunctionProposeLazy br pr fs of
             Triviality               -> DiscardRule df
             Contradiction ds_clash   -> ClashRule (dsUnion ds ds_clash) df
-            Reduced new_ds disjuncts -> SemBrRule df (sbModList $ prefix pr (dsInsert d $ dsUnion ds new_ds) disjuncts)
+            Reduced new_ds disjuncts _
+              -> SemBrRule df (sbModList $ prefix pr (dsInsert d $ dsUnion ds new_ds) disjuncts)
 -- todo same remark as above
 semBrRule _ _ _ _ = error "sembrRule"
 
