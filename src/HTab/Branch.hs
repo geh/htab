@@ -149,7 +149,6 @@ emptyBranch clp fLang relInfo_ encoding_ =
  where blockingMode =
          if    languagePast fLang
             || languageTrans fLang
-            || languageDown fLang
             || relInfo_ `oneIs` Symmetric
             || relInfo_ `oneIs` Functional
             || relInfo_ `oneIs` Injective
