@@ -24,7 +24,7 @@ import HTab.Base( vPutStrLn )
 import HTab.Tableau( OpenFlag(..), tableauStart )
 import HTab.Formula( formulaLanguageInfo, languageTrans, Theory, RelInfo, Encoding, Task,
                      Formula, encodeValidityTest, encodeSatTest, encodeRetrieveTask,
-                     showRelInfo )
+                     toNomSymbol, showRelInfo )
 import qualified HTab.Formula as F
 import HTab.ModelGen ( Model )
 
@@ -115,7 +115,7 @@ runOneTask (query,mOutFile,fs) relInfo encoding theory clp ts=
                if not $ null [ TIMEOUT | (TIMEOUT,_)  <- results]
                  then do myPutStrLn "TIMEOUT"
                          return TIMEOUT_
-                 else do let goodnoms = [ n | (n,(CLOSED _ ,_))  <- zip noms results]
+                 else do let goodnoms = [ toNomSymbol encoding n | (n,(CLOSED _ ,_))  <- zip noms results]
                          myPutStrLn $ show goodnoms
                          let doWrite f = do writeFile f (show goodnoms ++ "\n")
                                             unless (quietMode clp) $ vPutStrLn ("Nominals saved as " ++ f) (logState clp)
