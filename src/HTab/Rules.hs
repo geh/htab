@@ -28,7 +28,7 @@ import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewNomTestRe
                     ReducedDisjunct(..), getUrfather,
                     ScheduledRule(..), TodoList(..),
                     deleteUEV, insertUEV_addFormula )
-import HTab.CommandLine(CmdLineParams, UnitProp(..), lazyBranching, semBranch, unitProp, strategyStr, uBlocking, noLoopCheck)
+import HTab.CommandLine(CmdLineParams, UnitProp(..), noLazyBranching, noSemBranch, unitProp, strategy, unrestrictedBlocking, noLoopCheck)
 import HTab.RuleId(RuleId(..))
 import qualified HTab.DisjSet as DS
 
@@ -233,7 +233,7 @@ applicableRule br clp d =
  case todoList br of
   Fair [] -> Nothing
   Fair (sr:tl) -> Just (scheduledRuleToRule br clp d sr, Fair tl, br)
-  _        ->  listToMaybe $ mapMaybe (ruleByChar br clp d) (strategyStr clp)
+  _        ->  listToMaybe $ mapMaybe (ruleByChar br clp d) (strategy clp)
 
 scheduledRuleToRule :: Branch -> CmdLineParams -> Dependency -> ScheduledRule -> Rule
 scheduledRuleToRule _ _ d (SR_Inclusion p1 rs p2 ds) = RoleIncRule p1 rs p2 (dsInsert d ds)
@@ -241,7 +241,7 @@ scheduledRuleToRule _ _ d (SR_UBlocking p1 p2) = UBlockRule p1 p2 d
 scheduledRuleToRule _ _ _ (SR_Merge pr po ds)  = MergeRule pr po ds
 scheduledRuleToRule br clp d (SR_Formula pf@(PrFormula _ _ f2)) =
  case f2 of
-  Dis _     -> if semBranch clp then semBrRule clp pf br d else disjRule clp pf br d
+  Dis _     -> if noSemBranch clp then disjRule clp pf br d else semBrRule clp pf br d
   Dia _ _   -> DiaRule pf
   DiaX _ _ _-> diaXRule pf br d
   At _ _    -> AtRule pf
@@ -253,15 +253,15 @@ scheduledRuleToRule br clp d (SR_Formula pf@(PrFormula _ _ f2)) =
 ruleByChar :: Branch -> CmdLineParams -> Dependency -> Char -> Maybe (Rule,TodoList,Branch)
 ruleByChar br clp d char =
  case char of
-  'm' -> applicableMergeRule
-  'o' -> applicableDisjRule
-  'd' -> applicableDiaRule
-  't' -> applicableDiaXRule
-  's' -> applicableAtRule
-  'e' -> applicableExistRule
+  'n' -> applicableMergeRule
+  '|' -> applicableDisjRule
+  '<' -> applicableDiaRule
+  '*' -> applicableDiaXRule
+  '@' -> applicableAtRule
+  'E' -> applicableExistRule
   'D' -> applicableDiffRule
   'b' -> applicableDownRule
-  'u' -> if uBlocking clp then applicableUBlockRule else Nothing
+  'u' -> if unrestrictedBlocking clp then applicableUBlockRule else Nothing
   'r' -> applicableRoleIncRule
   _   -> error "ruleByChar"
  where
@@ -318,11 +318,11 @@ ruleByChar br clp d char =
       _     ->  regularApplicableDisjRule
 
   regularApplicableDisjRule
-   =  if semBranch clp then do (f,new) <- Set.minView $ disjTodo todos
-                               return (semBrRule clp f br d, todos{disjTodo = new},br)
-                       else do (f,new) <- Set.minView $ disjTodo todos
-                               return (disjRule clp f br d,  todos{disjTodo = new},br)
-
+   =  if noSemBranch clp
+       then do (f,new) <- Set.minView $ disjTodo todos
+               return (disjRule clp f br d,  todos{disjTodo = new},br)
+       else do (f,new) <- Set.minView $ disjTodo todos
+               return (semBrRule clp f br d, todos{disjTodo = new},br)
 
 makeInteresting :: CmdLineParams -> Branch -> Dependency -> PrFormula ->  Maybe (Rule,PrFormula)
 makeInteresting clp br d df@(PrFormula pr ds (Dis fs))
@@ -331,9 +331,9 @@ makeInteresting clp br d df@(PrFormula pr ds (Dis fs))
           Contradiction ds_clash   -> Just (ClashRule (dsUnion ds ds_clash) df,df)
           Reduced new_ds disjuncts mProposed
             | Set.size disjuncts == 1 -> Just (DisjRule df ( prefix pr newDeps disjuncts ), df)
-            | lazyBranching clp -> case mProposed of
-                                    Nothing  -> Nothing
-                                    Just lit -> Just (LazyBranchRule df pr lit [PrFormula pr newDeps (Dis disjuncts)], df)
+            | not (noLazyBranching clp) -> case mProposed of
+                                            Nothing  -> Nothing
+                                            Just lit -> Just (LazyBranchRule df pr lit [PrFormula pr newDeps (Dis disjuncts)], df)
             | otherwise  -> Nothing
               where newDeps = dsInsert d $ dsUnion ds new_ds
             -- TODO should not insert d if the formula was actually not changed

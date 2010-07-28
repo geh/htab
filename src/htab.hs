@@ -2,13 +2,13 @@ module Main (main)
 
 where
 
-import HTab.CommandLine( getCmdLineParams, usage, showHelp)
-
+import Control.Monad ( unless )
 import Control.Applicative ( (<$>) )
+
+import System.Console.CmdArgs ( cmdArgs )
 
 import System.IO           ( hPrint, stderr ) 
 import System.Exit         ( exitWith, ExitCode(ExitFailure) )
-import System.Environment( getProgName )
 
 import Data.Version        ( showVersion )
 import Paths_HTab ( version )
@@ -17,11 +17,13 @@ import Prelude hiding ( catch )
 import Control.Exception   ( catch, SomeException )
 
 import HTab.Main ( runWithParams, TaskRunFlag(..) )
+import HTab.CommandLine( defaultParams, checkParams )
 
 main :: IO ()
 main = do r <- runCmdLineVersion
                 `catch` \(e::SomeException) -> do
-                    hPrint stderr (show e)
+                    let msg = show e
+                    unless (msg == "ExitSuccess") $ hPrint stderr msg
                     exit r_RUNTIME_ERROR
           --
           case r of
@@ -39,36 +41,17 @@ main = do r <- runCmdLineVersion
 exit :: Int -> IO a
 exit = exitWith . ExitFailure
 
-
 runCmdLineVersion :: IO (Maybe TaskRunFlag)
 runCmdLineVersion =
-    do p_clp <- getCmdLineParams
-       case p_clp of
-         Left  err -> do putStrLn header
-                         putStrLn err
-                         progName <- getProgName
-                         putStrLn $ "Try `" ++ progName ++ " --help' " ++
-                                     "for more information"
-                         return Nothing
-         --
-         Right clp -> if showHelp clp
-                        then do putStrLn header
-                                progName <- getProgName
-                                putStrLn $ usage (progName ++ " [OPTIONS]")
-                                putStrLn gpl_tag
-                                return Nothing
-                        --
-                        else Just <$> runWithParams clp
+ do  clp  <- cmdArgs header [defaultParams]
+     clpOK <- checkParams clp
+     if clpOK
+      then Just <$> runWithParams clp
+      else return Nothing
 
 header :: String
 header = unlines ["HTab " ++ showVersion version,
                   "G. Hoffmann, C. Areces, D.Gorin and J. Heguiabehere. (c) 2002-2010.",
                   "http://code.google.com/p/intohylo/"]
 
-gpl_tag :: String
-gpl_tag = unlines [
-    "This program is distributed in the hope that it will be useful,",
-    "but WITHOUT ANY WARRANTY; without even the implied warranty of",
-    "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
-    "GNU General Public License for more details."]
 

@@ -1,5 +1,3 @@
-{-# OPTIONS_GHC -fglasgow-exts #-}
-
 ----------------------------------------------------
 --                                                --
 -- CommandLine.hs:                                --
@@ -9,342 +7,95 @@
 ----------------------------------------------------
 
 module HTab.CommandLine (
-    CmdLineParams(..), getCmdLineParams, defaultParams,
-    usage, configureMetrics, UnitProp(..)
+    CmdLineParams(..), UnitProp(..),
+    defaultParams, configureStats, checkParams
 ) where
 
-import Data.Char(isDigit)
-import System.Console.GetOpt ( OptDescr(..), ArgDescr(..), ArgOrder(..),
-                               getOpt, usageInfo )
+import System.Console.CmdArgs
 
-import System.Directory      ( getHomeDirectory, doesFileExist )
-import System.FilePath       ( (</>) )
-import System.Environment    ( getArgs )
-import Data.Maybe ( isJust )
-import Control.Monad.Error (MonadError(..))
-import Control.Applicative ( (<$>) )
-
-import HTab.Base(intToBool, permutationOf)
-import HTab.Statistics(Metric,closedBranches,StatisticsState,
-                       addMetric, addInspectionMetric, setPrintOutInterval,
-                       ruleApplicationCount)
+import HTab.Base( permutationOf )
+import HTab.Statistics( StatisticsState, setPrintOutInterval )
 
 data CmdLineParams = CLP {
-           showHelp        :: Bool,
-           filename        :: Maybe FilePath,
-           logState        :: Bool,
-           maxtimeout      :: Int,
-           statsStr        :: String,
-           strategyStr     :: String,
+           filename        :: [FilePath],
+           genModel        :: [FilePath],
+           timeout         :: Int,
+           stats           :: Int,
+           strategy        :: String,
            fairStrategy    :: Bool,
-           semBranch       :: Bool,
+-- optimizations enabled by default
+           noSemBranch     :: Bool,
+           noBackjumping   :: Bool,
+           noLazyBranching :: Bool,
+--
            unitProp        :: UnitProp,
-           backJumping     :: Bool,
-           lazyBranching   :: Bool,
-           uBlocking       :: Bool,
+           unrestrictedBlocking :: Bool,
            noLoopCheck     :: Bool,
-           genModel        :: Maybe FilePath,
-           quietMode       :: Bool,
            showFormula     :: Bool,
-           simpleInput     :: Bool,
            allTransitive   :: Bool,
            allReflexive    :: Bool,
            allSymmetric    :: Bool,
            allFunctional   :: Bool,
            allInjective    :: Bool
-         } deriving (Show)
+         } deriving (Show, Data, Typeable)
 
-type CLPModifier   = CmdLineParams -> Either ParsingErrMsg CmdLineParams
-type ParsingErrMsg = String
-data UnitProp = Eager | UPYes | UPNo deriving (Eq, Show)
+data UnitProp = Eager | UPYes | UPNo deriving (Data, Typeable, Eq, Show)
 
-parseCmds :: [String] -> CmdLineParams -> Either ParsingErrMsg CmdLineParams
-parseCmds argv clp = case getOpt RequireOrder options argv of
-                       (clpMods, [],  []) -> thread clpMods clp
-                       (      _,unk,  []) -> fail $ "Unknown option: " ++
-                                                   unwords unk
-                       (     _,   _,errs) -> fail $ unlines errs
+defaultCLP :: CmdLineParams
+defaultCLP
+ = CLP{
+       filename        = [] &= flag "f" & typFile &  text "input file",
+       genModel        = [] &= flag "m" & typFile & text "output model file",
+       timeout         = 0 &= flag "t" & text "timeout (in seconds, default=none)",
+       stats           = 0 &= text "display statistics every n steps (default=none)",
+       strategy        = strategyVal &= text "specify rule order",
+       fairStrategy    = False &= text "enable fair strategy",
+       noSemBranch     = False &= text "disable semantic branching (default enabled)",
+       noBackjumping   = False &= text "disable backjumping (default enabled)",
+       noLazyBranching = False &= text "disable lazy branching (default enabled)" ,
+       unitProp        = enum Eager [Eager &= explicit & flag "eager"        & text "unit propagation: eager (default)",
+                                     UPYes &= explicit & flag "unit-prop"    & text "unit propagation: enabled",
+                                     UPNo  &= explicit & flag "no-unit-prop" & text "unit propagation: disabled"] ,
+       unrestrictedBlocking = False &= text "enable unrestricted blocking",
+       noLoopCheck     = False &=  text "disable all loop check",
+       showFormula     = False &= text "display formula",
+       allTransitive   = False &= text "make all relations transitive",
+       allReflexive    = False &= text "make all relations reflexive",
+       allSymmetric    = False &= text "make all relations symmetric",
+       allFunctional   = False &= text "make all relations functional",
+       allInjective    = False &= text "make all relations injective"
+      }
 
+defaultParams :: Mode CmdLineParams
+defaultParams = mode $ defaultCLP &= helpSuffix gpl_tag
 
-thread :: Monad m => [a -> m a] -> a -> m a
-thread = foldr (\f g a -> f a >>= g) return
+strategyVal :: String
+strategyVal = "n@E<Db|*ru"
 
-options :: [OptDescr CLPModifier]
-options =
-  [Option ['h','?']
-          ["help"]
-          (NoArg $ \c -> return c{showHelp = True})
-          "display this help and exit",
-   Option ['f']
-          ["input-file"]
-          (ReqArg ((not . null) ?-> \s c -> return c{filename = Just s}) "FILE")
-          "obtain input formulas from FILE instead of STDIN",
-   Option ['q']
-          ["quiet", "silent"]
-          (NoArg $ \c -> return c{quietMode = True})
-          "suppress all normal output",
-   Option []
-         ["show-formula"]
-          (NoArg $ \c -> return c{showFormula = True})
-          "display the input formula(s)",
-   Option ['t']
-          ["timeout"]
-          (ReqArg setTimeout "T")
-          "run for at most T seconds",
-   Option ['m']
-          ["save-model"]
-          (ReqArg ((not . null) ?-> \s c -> return c{genModel = Just s}) "FILE")
-          (unlines [
-          "if the theory is satisfiable, output a model",
-          "to FILE"]),
-   Option ['v']
-          ["verbose"]
-          (NoArg $ \c -> return c{logState = True})
-          "display more information",
-   Option ['b']
-          ["semantic-branching"]
-          (ReqArg setSemanticBranching "[0|1]")
-          "disable/enable semantic branching optimisation",
-   Option ['u']
-          ["unit-propagation"]
-          (ReqArg setUnitProp "[0|1|2]")
-          "disable/enable/eager unit propagation optimisation",
-   Option ['j']
-          ["backjumping"]
-          (ReqArg setBackJumping "[0|1]")
-          "disable/enable backjumping optimisation",
-   Option ['l']
-          ["lazy-branching"]
-          (ReqArg setLazyBranching "[0|1]")
-          "disable/enable lazy branching optimisation",
-   Option ['s']
-          ["strategy"]
-          (ReqArg setStrategy "PAT")
-          (unlines [
-          "PAT configures the strategy of rules applications",
-          "A valid PAT is a permutation of the following list",
-          "of values (priority in PAT goes from left to right):",
-          "  m = merge",
-          "  o = or",
-          "  d = diamond",
-          "  t = transitive closure diamond",
-          "  s = satisfaction operator",
-          "  e = existential modality",
-          "  D = difference modality",
-          "  b = down-arrow binder",
-          "  r = role inclusion",
-          "  u = unrestricted blocking",
-          "",
-          "The default is `" ++ strategyStr defaultParams ++ "'",
-          "The rules conjunction, box, universal modality and converse difference",
-          "modality are immediate, thus have the highest precedence.",
-          ""]),
-   Option ['U']
-          ["unrestricted-blocking"]
-          (NoArg $ \c -> return c{uBlocking = True})
-          "enable unrestricted blocking (disabled by default)",
-   Option ['N']
-          ["no-loop-check"]
-          (NoArg $ \c -> return c{noLoopCheck = True})
-          "disable all loop checks",
-   Option ['F']
-          ["fair-strategy"]
-          (NoArg $ \c -> return c{fairStrategy = True})
-          "enable fair strategy, ie single to-do list (disabled by default)",
-   Option ['S']
-          ["statistics"]
-          (ReqArg setStats "PAT")
-          (unlines [
-           "PAT configures the collecting of statistics.",
-           "A valid PAT is of the form:",
-           "",
-           "   METRICS:INTERVAL:METRICS",
-           "",
-           "The `:INTERVAL:METRICS` argument is optional",
-           "and declares metrics that will be printed at",
-           "regular intervals (e.g. `:100:r' shows the",
-           "number of rules applied so far, every 100",
-           "iterations of the algorithm).",
-           "",
-           "METRICS is made of one or more of the following",
-           "values:",
-           "  c = number of closed branches",
-           "  r = number of rules applied",
-           "",
-           "The default is `" ++ statsStr defaultParams ++ "'",
-           ""]),
-  Option []
-         ["simple"]
-         (NoArg $ \c -> return c{simpleInput = True})
-         "read formula in the simple input format",
-  Option []
-         ["all-transitive"]
-         (NoArg $ \c -> return c{allTransitive = True})
-         "make all relations transitive",
-  Option []
-         ["all-reflexive"]
-         (NoArg $ \c -> return c{allReflexive = True})
-         "make all relations reflexive",
-  Option []
-         ["all-symmetric"]
-         (NoArg $ \c -> return c{allSymmetric = True})
-         "make all relations symmetric",
-  Option []
-         ["all-functional"]
-         (NoArg $ \c -> return c{allFunctional = True})
-         "make all relations functional",
-  Option []
-         ["all-injective"]
-         (NoArg $ \c -> return c{allInjective = True})
-         "make all relations injective"
-  ]
+checkParams :: CmdLineParams -> IO Bool
+checkParams clp
+ = if (strategy clp) `permutationOf` strategyVal
+    then return True
+    else do putStrLn
+             $ unlines ["ERROR",
+                        "strategy should contain all of the following characters: ",
+                        "  n = nominals               @ = satisfaction operator",
+                        "  E = existential modality   < = diamond",
+                        "  D = difference modality    b = down-arrow binder",
+                        "  | = or                     * = transitive closure diamond",
+                        "  r = role inclusion         u = unrestricted blocking",
+                        "",
+                        "The default is `" ++ strategyVal ++ "'",
+                        "The rules conjunction, box, universal modality and converse difference",
+                        "modality are immediate, thus do not belong to the strategy."]
+            return False
 
+gpl_tag :: [String]
+gpl_tag = [
+    "This program is distributed in the hope that it will be useful,",
+    "but WITHOUT ANY WARRANTY; without even the implied warranty of",
+    "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
+    "GNU General Public License for more details."]
 
-
-(?->) :: (String -> Bool) -> (String -> CLPModifier) -> String -> CLPModifier
-p ?-> m = \s -> if (not $ null s) && p s
-                  then m s
-                  else \_ -> throwError ("Invalid argument: '" ++ s ++ "'")
-
-setTimeout :: String -> CLPModifier
-setTimeout = all isDigit ?-> \s c -> return c{maxtimeout = read s}
-
-
-setSemanticBranching :: String -> CLPModifier
-setSemanticBranching = is0or1 ?-> \s c -> return c{semBranch = intToBool $ read s}
-
-setUnitProp :: String -> CLPModifier
-setUnitProp = is0or1or2 ?->  \s c -> return c{unitProp = case read s::Int of {2 -> Eager; 1 -> UPYes ; 0 -> UPNo ; _ -> error "unitprop param"}}
-
-setBackJumping :: String -> CLPModifier
-setBackJumping = is0or1 ?->  \s c -> return c{backJumping = intToBool $ read s}
-
-setLazyBranching :: String -> CLPModifier
-setLazyBranching = is0or1 ?->  \s c -> return c{lazyBranching = intToBool $ read s}
-
-is0or1 :: String -> Bool
-is0or1 s = s `elem` ["0","1"]
-
-is0or1or2 :: String -> Bool
-is0or1or2 s = s `elem` ["0","1","2"]
-
-setStrategy :: String -> CLPModifier
-setStrategy = permutationOf strategyStrVal ?->
-                   \s c -> return c{strategyStr = s}
-
-strategyStrVal :: String
-strategyStrVal = "msedDbotru"
-
-setStats :: String -> CLPModifier
-setStats = (isJust . parseStats) ?->
-             \s c -> return c{statsStr = s}
-
-defaultParams :: CmdLineParams
-defaultParams = CLP {showHelp = False,
-                     filename = Nothing,
-                     logState = False,
-                     maxtimeout  = 0,
-                     statsStr    = ":0:c",
-                     strategyStr = strategyStrVal,
-                     fairStrategy = False,
-                     semBranch   = True,
-                     unitProp    = Eager,
-                     backJumping = True,
-                     lazyBranching = True,
-                     uBlocking   = False,
-                     noLoopCheck = False,
-                     genModel    = Nothing,
-                     quietMode   = False,
-                     showFormula = False,
-                     simpleInput   = False,
-                     allTransitive = False,
-                     allReflexive  = False,
-                     allSymmetric  = False,
-                     allFunctional = False,
-                     allInjective  = False
-}
-
-getCmdLineParams :: IO (Either ParsingErrMsg CmdLineParams)
-getCmdLineParams =
-    do let clp_0 = defaultParams
-       m_rcfile <- findRc
-       parse_clp_1 <- case m_rcfile of
-                        Nothing -> return $ return clp_0
-                        Just f  -> do rc_args <- words <$> readFile f
-                                      return $  parseCmds rc_args clp_0
-                                              `catchError`
-                                                (\e -> fail $ f ++ ":\n" ++ e)
-       --
-       cmdline_args   <- getArgs
-       --
-       return $ do clp_1 <- parse_clp_1
-                   parseCmds cmdline_args clp_1
-
-
-rcfile :: FilePath
-rcfile = ".htabrc"
-
-
-findRc :: IO (Maybe FilePath)
-findRc =
-    do existsInCurrent <- doesFileExist rcfile
-       if existsInCurrent
-         then return (Just rcfile)
-         else do
-             home <- getHomeDirectory
-             let inHome = home </> rcfile
-             --
-             existsInHome <- doesFileExist inHome
-             if existsInHome then return (Just inHome) else return Nothing
-
-
-
-usage :: String -> String
-usage header = unlines [
-    usageInfo header options,
-    "",
-    "If a file called `" ++  "." </> rcfile ++ "' or `" ++ "~" </> rcfile
-    ++ "' exists, it will be scanned for arguments first"
-    ]
-
-metrics :: [(Char,Metric)]
-metrics = [('c',closedBranches),
-           ('r',ruleApplicationCount)]
-
-parseStats :: String -> Maybe (String, Maybe (Int, String))
-parseStats s
-    | allMetricsExist fmIds &&
-      (null opIms ||
-       if null inter
-           then null imIds
-           else all isDigit inter &&
-                allMetricsExist imIds') = Just (fmIds,inspectionStats)
-    -- | otherwise                           = Nothing
-    | otherwise                         = error (show (fmIds, opIms))
-    where (fmIds,opIms)   = break (== ':') s
-          (inter,imIds)   = break (== ':') (tail opIms)
-          imIds'          = tail imIds
-          allMetricsExist = (all (flip elem validMetrics))
-          validMetrics    = (fst . unzip) metrics
-          inspectionStats = if ( null inter )
-                                then Nothing
-                                else Just (read inter, imIds)
-
-
-{- statistics: Given
-    - a CmdLineParams clp with a valid statistics string
-  configures the proper metrics inside the StatisticsState -}
-configureMetrics :: CmdLineParams -> StatisticsState ()
-configureMetrics clp = do
-                         let Just (fmIds,ims) = parseStats (statsStr clp)
-                         let fms = filterMetrics fmIds
-                         mapM_ addMetric fms
-                         case ims of
-                             Nothing          -> return ()
-                             Just (i, ifmIds) -> do
-                                 let ifms = filterMetrics ifmIds
-                                 mapM_ addInspectionMetric ifms
-                                 setPrintOutInterval i
-
-filterMetrics :: String -> [Metric]
-filterMetrics s = map snd (filter ((`elem` s) . fst) metrics)
+configureStats :: CmdLineParams -> StatisticsState ()
+configureStats clp = setPrintOutInterval $ stats clp

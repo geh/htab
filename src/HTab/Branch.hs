@@ -293,7 +293,7 @@ bookKeepFormula clp pf_ br
 
 rescheduleLazyBranching :: CmdLineParams -> PrFormula -> Branch -> Branch
 rescheduleLazyBranching clp (PrFormula pr ds (Lit l)) br   -- pr already urfather
- | lazyBranching clp && isProp l
+ | not (noLazyBranching clp) && isProp l
    =
      let (Just innerMap) = DMap.lookup1 pr (brWitnesses br)
      in
@@ -339,7 +339,7 @@ putAwayFormula clp pf@(PrFormula pr ds f2) br =
 
 putAwayDisjunction :: CmdLineParams -> PrFormula -> Branch -> BranchInfo -- TODO use clp to disable lazy branching
 putAwayDisjunction clp pf@(PrFormula pr ds f@(Dis fs)) br
- | lazyBranching clp
+ | not (noLazyBranching clp)
   = case reduceDisjunctionProposeLazy br pr fs of
      Contradiction dsClash -> BranchClash br pr (dsUnion ds dsClash) f
      Triviality -> BranchOK br

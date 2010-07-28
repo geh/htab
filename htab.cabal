@@ -22,6 +22,7 @@ Executable          htab
                        directory > 1, directory <= 2,
                        parallel,
                        strict,
+                       cmdargs == 0.1,
                        hylolib == 1.3
   Hs-Source-Dirs:      src
   ghc-options:         -O2 -Wall -fglasgow-exts

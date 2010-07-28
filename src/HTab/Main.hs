@@ -4,9 +4,13 @@ module HTab.Main
 
 where
 import Control.Applicative ( (<$>) )
-import Control.Monad       ( unless, when )
+import Control.Monad       ( when )
 import Control.Monad.State( runStateT )
 import Control.Monad.Reader( runReaderT )
+
+import Data.Maybe ( listToMaybe )
+
+import System.Console.CmdArgs ( isNormal, isLoud )
 
 import System.IO           ( hSetBuffering, stdin, BufferMode(LineBuffering)) 
 import System.CPUTime( getCPUTime )
@@ -15,11 +19,11 @@ import Prelude hiding ( readFile )
 
 import HyLo.InputFile.Parser ( QueryType(..) )
 
-import HTab.CommandLine( filename, maxtimeout, CmdLineParams, logState, genModel, backJumping,
-                         quietMode, simpleInput, showFormula )
+import HTab.CommandLine( filename, timeout, CmdLineParams, genModel, noBackjumping,
+                         showFormula )
 import HTab.Branch( BranchInfo(..),initialBranchStateFor, BranchData(..),
                     emptyBranch, addFirstFormulas)
-import HTab.Statistics( Statistics, initialStatisticsStateFor, printOutAllMetrics' )
+import HTab.Statistics( Statistics, initialStatisticsStateFor, printOutMetricsFinal )
 import HTab.Base( vPutStrLn )
 import HTab.Tableau( OpenFlag(..), tableauStart )
 import HTab.Formula( formulaLanguageInfo, languageTrans, Theory, RelInfo, Encoding, Task,
@@ -35,22 +39,20 @@ data TaskRunFlag = SUCCESS | FAILURE | TIMEOUT_
 
 runWithParams :: CmdLineParams -> IO TaskRunFlag
 runWithParams clp =
- time clp "Total time: "
+ time "Total time: "
   $ do
-     let myPutStrLn str = vPutStrLn str (not $ quietMode clp)
-     --
      let fromStdIn = do myPutStrLn $ "Reading from stdin (run again with" ++
                                      "`--help' for usage options)"
                         hSetBuffering stdin LineBuffering
                         getContents
 
-     let parse = \i -> if simpleInput clp || head (words i)  == "begin"
+     let parse = \i -> if head (words i)  == "begin"
                         then F.simpleParse clp i else F.parse clp i
-     allTasks <- parse <$> maybe fromStdIn readFile (filename clp)
+     allTasks <- parse <$> maybe fromStdIn readFile (listToMaybe $ filename clp)
      --
      let handleTimeout
-          | maxtimeout clp > 0 = notifyOnTimeout (maxtimeout clp)
-          | otherwise          = withNoTimeout
+          | timeout clp > 0 = notifyOnTimeout (timeout clp)
+          | otherwise       = withNoTimeout
      --
      result <- handleTimeout (runTasks allTasks clp)
      --
@@ -66,9 +68,8 @@ runWithParams clp =
 runTasks :: (Theory,RelInfo,Encoding,[Task]) -> CmdLineParams -> TimeoutSignal ->  IO TaskRunFlag
 runTasks allTasks@(theory,relInfo,encoding,tasks) clp ts =
  do
-    let myPutStrLn str = vPutStrLn str (not $ quietMode clp)
     myPutStrLn "== Checking theory satisfiability =="
-    res <- runOneTask (Satisfiable, genModel clp,[]) relInfo encoding theory clp ts
+    res <- runOneTask (Satisfiable, listToMaybe $ genModel clp,[]) relInfo encoding theory clp ts
     case res of
      SUCCESS | null tasks -> return SUCCESS
              | otherwise  -> do myPutStrLn "\n==         Starting tasks         =="
@@ -93,10 +94,8 @@ runTasks2 (theory,relInfo,encoding,(hd:tl)) clp ts =
 
 runOneTask :: Task -> RelInfo -> Encoding -> Formula -> CmdLineParams -> TimeoutSignal -> IO TaskRunFlag
 runOneTask (query,mOutFile,fs) relInfo encoding theory clp ts=
- time clp "Task time:"
+ time "Task time:"
  $ do
-     let myPutStrLn str = vPutStrLn str (not $ quietMode clp)
-     --
      myPutStrLn $ "\n* " ++ case query of {Valid       -> "Validity task";
                                            Satisfiable -> "Satisfiability task";
                                            Retrieve    -> "Instance retrieval task"}
@@ -118,7 +117,8 @@ runOneTask (query,mOutFile,fs) relInfo encoding theory clp ts=
                  else do let goodnoms = [ toNomSymbol encoding n | (n,(CLOSED _ ,_))  <- zip noms results]
                          myPutStrLn $ show goodnoms
                          let doWrite f = do writeFile f (show goodnoms ++ "\n")
-                                            unless (quietMode clp) $ vPutStrLn ("Nominals saved as " ++ f) (logState clp)
+                                            noQuiet <- isNormal
+                                            vPutStrLn ("Nominals saved as " ++ f) noQuiet
                          maybe (return ()) doWrite mOutFile
                          return SUCCESS
 
@@ -139,7 +139,7 @@ runOneTask (query,mOutFile,fs) relInfo encoding theory clp ts=
                let fLang         = formulaLanguageInfo f
                let initialBranch = emptyBranch clp fLang relInfo encoding
                let branchInfo    = addFirstFormulas clp initialBranch fLang f
-               let clp2          = if languageTrans fLang then clp{backJumping=False} else clp
+               let clp2          = if languageTrans fLang then clp{noBackjumping=True} else clp
                --
                result <- tableauInit clp2 ts branchInfo
                --
@@ -149,21 +149,21 @@ runOneTask (query,mOutFile,fs) relInfo encoding theory clp ts=
                                                 Valid       -> "The formula is not valid."
                                                 Satisfiable -> "The formula is satisfiable."
                                                 _           -> error "never happens"
-                                          saveGenModel clp mOutFile m
-                                          unless (quietMode clp) $
-                                             printOutAllMetrics' stats
+                                          saveGenModel mOutFile m
+                                          noQuiet <- isNormal
+                                          when noQuiet $ printOutMetricsFinal stats
                                           return SUCCESS
                   (CLOSED _, stats) -> do myPutStrLn $
                                             case query of
                                                 Valid       -> "The formula is valid."
                                                 Satisfiable -> "The formula is unsatisfiable."
                                                 _           -> error "never happens"
-                                          unless (quietMode clp) $
-                                             printOutAllMetrics' stats
+                                          noQuiet <- isNormal
+                                          when noQuiet $ printOutMetricsFinal stats
                                           return FAILURE
                   (TIMEOUT, stats)  -> do myPutStrLn "TIMEOUT"
-                                          unless (quietMode clp) $
-                                             printOutAllMetrics' stats
+                                          noQuiet <- isNormal
+                                          when noQuiet $ printOutMetricsFinal stats
                                           return TIMEOUT_
      --
      return $ case (query, result) of
@@ -176,14 +176,16 @@ runOneTask (query,mOutFile,fs) relInfo encoding theory clp ts=
 
 --
 
-saveGenModel :: CmdLineParams -> Maybe FilePath -> Model -> IO ()
-saveGenModel clp mOutFile m = maybe (return ()) doWrite mOutFile
+saveGenModel :: Maybe FilePath -> Model -> IO ()
+saveGenModel mOutFile m = maybe (return ()) doWrite mOutFile
     where doWrite f = do writeFile f (show m)
-                         unless (quietMode clp) $ vPutStrLn ("Model saved as " ++ f) (logState clp)
+                         noQuiet <- isNormal
+                         vPutStrLn ("Model saved as " ++ f) noQuiet
 
 tableauInit :: CmdLineParams -> TimeoutSignal -> BranchInfo -> IO (OpenFlag,Statistics)
 tableauInit clp ts bi =
-        do vPutStrLn ">> Starting rules application" (logState clp)
+        do verbose <- isLoud
+           vPutStrLn ">> Starting rules application" verbose
            initStatsState $ initBranchState bd $ tableauStart clp bi
  where initStatsState  = initialStatisticsStateFor runStateT
        initBranchState = initialBranchStateFor runReaderT
@@ -194,13 +196,17 @@ tableauInit clp ts bi =
 
 --
 
-time :: CmdLineParams -> String -> IO a -> IO a
-time clp message action =
+time :: String -> IO a -> IO a
+time message action =
   do start  <- getCPUTime
      result <- action
      end <- getCPUTime
      let elapsedTime = fromInteger (end - start) / 1000000000000.0
-     let myPutStrLn str = vPutStrLn str (not $ quietMode clp)
      myPutStrLn $ message ++ show (elapsedTime :: Double)
      return result
+
+
+myPutStrLn :: String -> IO ()
+myPutStrLn str = do notQuiet <- isNormal
+                    vPutStrLn str notQuiet
 

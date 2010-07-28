@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -fglasgow-exts #-}
 ----------------------------------------------------
 --                                                --
 -- Statistics.hs:                                 --
@@ -33,19 +32,17 @@ module HTab.Statistics
 (   Statistics, StatisticsState, StatisticsStateIO,
     recordFiredRule, recordClosedBranch,
 
-    printOutAllMetrics, printOutAllMetrics', printOutInspectionMetrics,
+    printOutMetricsFinal, printOutMetrics,
 
     initialStatisticsStateFor,
-    addMetric, addInspectionMetric, setPrintOutInterval,
+    setPrintOutInterval,
 
-    Metric,
-    ruleApplicationCount, closedBranches,
-    updateStep
+    Metric, updateStep
 
 ) where
 
 import Control.Monad.State(MonadState , MonadIO, modify, unless,
-                           get, gets, guard, when)
+                           gets, when)
 
 import qualified Control.Monad.State as State(liftIO)
 import Control.Parallel.Strategies ( NFData, rnf )
@@ -56,66 +53,41 @@ import Data.List ( intercalate )
 
 import HTab.RuleId(RuleId(..))
 
-
--------------------------------------------
--- Statistics are collections of Metrics
--- which can be printed out (at regular intervals)
--------------------------------------------
 data Statistics = Stat{metrics::[Metric],
-                       inspectionMetrics::[Metric],
                        count::Int,
-                       step::Maybe Int}
+                       step::Int}
 
 instance NFData Statistics where
- rnf (Stat sM sI sC sS) = rnf sM `seq` rnf sI `seq` rnf sC `seq`  rnf sS
+ rnf (Stat sM sC sS) = rnf sM  `seq` rnf sC `seq`  rnf sS
 
 type StatisticsState a   = forall m. (MonadState Statistics m) => m a
 type StatisticsStateIO a = forall m. (MonadState Statistics m, MonadIO m) => m a
 
 updateMetrics :: (Metric -> Metric) -> Statistics -> Statistics
-updateMetrics f stat = let s = stat{metrics           = map (f $!) (metrics stat),
-                                    inspectionMetrics = map (f $!) (inspectionMetrics stat)}
+updateMetrics f stat = let s = stat{metrics           = map (f $!) (metrics stat)}
                        in
                             (rnf s) `seq` s
 
 updateStep :: Statistics -> Statistics
-updateStep s@(Stat _ [] _     _)         = s
-updateStep s@(Stat _ _  _     Nothing)   = s
-updateStep stat                          = stat{count = count stat + 1}
+updateStep s@(Stat _  _     0)   = s
+updateStep stat                  = stat{count = count stat + 1}
 
 needsToPrintOut :: Statistics -> Bool
-needsToPrintOut (Stat _ [] _     _)         = False
-needsToPrintOut (Stat _ _  _     Nothing)   = False
-needsToPrintOut (Stat _ _  iter (Just toi)) = iter > 0 && iter `mod` toi == 0
+needsToPrintOut (Stat _  _     0)  = False
+needsToPrintOut (Stat _  iter toi) = iter > 0 && iter `mod` toi == 0
 
-noStats :: Statistics -> Bool
-noStats (Stat [] [] _ _) = True
-noStats  _               = False
-
-emptyStats :: Statistics
-emptyStats = Stat{metrics=[],
-                  inspectionMetrics=[],
-                  count=0,
-                  step=Nothing}
+defaultStats :: Statistics
+defaultStats = Stat{metrics=[closedBranches, ruleApplicationCount],
+                    count=0, step=0}
 
 --------------------------- Monadic Statistics functions follow ------------------------------
 
 
 initialStatisticsStateFor :: (MonadState Statistics m) => (m a -> Statistics -> b) -> m a -> b
-initialStatisticsStateFor f = flip f emptyStats
-
-{- addMetric: - Adds a metric at the end of the list (thus,
-   metrics are printed out in the order in which they were added -}
-addMetric :: Metric -> StatisticsState ()
-addMetric newMetric  = modify (\stat -> stat{metrics = metrics stat ++[newMetric]})
-
-{- addInspectionMetric: - Adds a metric that will be printed out
-   at regular intervals -}
-addInspectionMetric :: Metric -> StatisticsState ()
-addInspectionMetric newMetric = modify (\stat -> stat{inspectionMetrics = inspectionMetrics stat ++[newMetric]})
+initialStatisticsStateFor f = flip f defaultStats
 
 setPrintOutInterval :: Int -> StatisticsState ()
-setPrintOutInterval i = modify $ \s -> s{step = guard (i > 0) >> return i}
+setPrintOutInterval i = modify $ \s -> s{step = i}
 
 recordFiredRule :: RuleId -> StatisticsState ()
 recordFiredRule rule = modify (updateMetrics $ recordFiredRuleM rule)
@@ -124,41 +96,35 @@ recordClosedBranch :: StatisticsState ()
 recordClosedBranch = modify (updateMetrics recordClosedBranchM)
 
 
-printOutAllMetrics :: StatisticsStateIO ()
-printOutAllMetrics = get >>= (liftIO . printOutAllMetrics')
+printOutMetricsFinal :: Statistics -> IO ()
+printOutMetricsFinal stats =
+        do liftIO $ putStrLn "(final statistics)"
+           liftIO $ printOutList (metrics stats)
 
-printOutAllMetrics' :: Statistics -> IO ()
-printOutAllMetrics' stats =
-        unless (noStats stats) $ do
-            liftIO $ putStrLn "(final statistics)"
-            liftIO $ printOutList (inspectionMetrics stats ++ metrics stats)
-
-printOutInspectionMetrics :: StatisticsStateIO ()
-printOutInspectionMetrics = do  shouldPrint <- gets needsToPrintOut
-                                when shouldPrint  $ do
-                                    liftIO $ putStr "(partial statistics: iteration "
-                                    iter <- gets count
-                                    liftIO . putStr . show $ iter
-                                    liftIO $ putStrLn ")"
-                                    ims <- gets inspectionMetrics
-                                    liftIO $ printOutList ims
+printOutMetrics :: StatisticsStateIO ()
+printOutMetrics = do  shouldPrint <- gets needsToPrintOut
+                      when shouldPrint  $ do
+                          liftIO $ putStr "(partial statistics: iteration "
+                          iter <- gets count
+                          liftIO . putStr . show $ iter
+                          liftIO $ putStrLn ")"
+                          ms <- gets metrics
+                          liftIO $ printOutList ms
 
 
 printOutList :: Show a => [a] -> IO ()
 printOutList ms = unless ( null ms ) $ do
                           let separator = "\n----------------------------------\n"
                           let separate sep l = intercalate sep $ map show l
-                          putStr "begin"
                           putStr separator
                           putStr (separate separator ms)
                           putStr separator
-                          putStr "end\n"
 
 --------------------------------------------
 -- Metrics
 --------------------------------------------
 data Metric = RC  (Map RuleId Int) -- Rule application count
-             |CB  !Int             -- Number of closed branched
+             |CB  !Int             -- Number of closed branches
 
 instance NFData Metric where
  rnf (CB b) = rnf b
