@@ -2,16 +2,15 @@ module HTab.Tableau
  (OpenFlag(..), tableauStart)
 where
 
-import System.Console.CmdArgs ( isLoud )
+import System.Console.CmdArgs ( whenLoud )
 
 import Control.Monad.Reader(ask)
 import Control.Monad.State(StateT,lift,modify)
-import HTab.Base(vPutStrLn)
 import HTab.Statistics(updateStep,printOutMetrics,
                        recordClosedBranch, recordFiredRule, Statistics)
 import HTab.Branch(BranchInfo(..),Branch(..),BranchMonad, BranchData(..),
                    unfulfilledEventualities)
-import HTab.CommandLine(noBackjumping,CmdLineParams,configureStats)
+import HTab.CommandLine(backjumping,CmdLineParams,configureStats)
 import HTab.Rules(Rule,applyRule,applicableRule,ruleToId)
 import HTab.Formula(Prefix,DependencySet,Formula,dsEmpty,dsMember,dsUnion)
 import HTab.ModelGen ( Model, buildModel )
@@ -62,7 +61,7 @@ chooseBranch currentDepSet (hd:tl) depth =
      o@(OPEN _)    -> return o
      CLOSED depSet ->
       do bd <- ask
-         if (not $ noBackjumping $ branch_clp bd) && (not $ dsMember depth depSet)
+         if (backjumping $ branch_clp bd) && (not $ dsMember depth depSet)
           then return $ CLOSED depSet
           else chooseBranch (dsUnion currentDepSet depSet) tl depth
 
@@ -75,31 +74,24 @@ logMe = do liftStats printOutMetrics
            liftStats $ modify updateStep
 
 debugMsg_NewSection :: Depth -> BranchMonad ()
-debugMsg_NewSection depth =
- do showState <- liftIO isLoud
-    let traceMsg = "Depth " ++ show depth
-    liftIO $ vPutStrLn ("\n>> " ++ traceMsg) showState
+debugMsg_NewSection depth
+ = liftIO $ whenLoud $ putStrLn ("\n>> Depth " ++ show depth)
 
 debugMsg_BranchClash :: Branch -> Prefix -> DependencySet -> Formula -> Depth -> BranchMonad ()
-debugMsg_BranchClash br pr bprs f depth =
- do showState <- liftIO isLoud
-    liftIO $ vPutStrLn (show br ++ "\nClasher : " ++ show (pr,bprs,depth,f)) showState
+debugMsg_BranchClash br pr bprs f depth
+ = liftIO $ whenLoud $ putStrLn (show br ++ "\nClasher : " ++ show (pr,bprs,depth,f))
 
 debugMsg_BranchOK :: Branch -> BranchMonad ()
-debugMsg_BranchOK br =
- do showState <- liftIO isLoud
-    liftIO $ vPutStrLn (show br) showState
+debugMsg_BranchOK br
+ = liftIO $ whenLoud $ putStrLn (show br)
 
 debugMsg_BranchOK_applicableRule :: Rule -> BranchMonad ()
-debugMsg_BranchOK_applicableRule rule =
- do showState <- liftIO isLoud
-    liftIO $ vPutStrLn ("\n>> Rule : " ++ show rule) showState
+debugMsg_BranchOK_applicableRule rule
+ = liftIO $ whenLoud $ putStrLn ("\n>> Rule : " ++ show rule)
 
 debugMsg_BranchOK_saturated :: BranchMonad ()
-debugMsg_BranchOK_saturated =
- do showState <- liftIO isLoud
-    let traceMsg = "Saturated open branch"
-    liftIO $ vPutStrLn ("\n>> " ++ traceMsg) showState
+debugMsg_BranchOK_saturated
+ = liftIO $ whenLoud $ putStrLn ("\n>> Saturated open branch")
 
 liftStats :: StateT Statistics IO a -> BranchMonad a
 liftStats  = lift

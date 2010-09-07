@@ -30,15 +30,11 @@ USA.
 module HTab.Base
 
 where
-import Control.Monad ( when )
 import qualified Data.Map as Map
 import Data.IntMap ( IntMap )
 import qualified Data.IntMap as IntMap
 import Data.List ( sort )
 import qualified Data.Set as Set
-
-vPutStrLn :: String -> Bool -> IO ()
-vPutStrLn s b = when b $ putStrLn s
 
 intToBool :: Int -> Bool
 intToBool i | i == 0 = False

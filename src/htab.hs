@@ -5,7 +5,7 @@ where
 import Control.Monad ( unless )
 import Control.Applicative ( (<$>) )
 
-import System.Console.CmdArgs ( cmdArgs )
+import System.Console.CmdArgs
 
 import System.IO           ( hPrint, stderr ) 
 import System.Exit         ( exitWith, ExitCode(ExitFailure) )
@@ -43,7 +43,7 @@ exit = exitWith . ExitFailure
 
 runCmdLineVersion :: IO (Maybe TaskRunFlag)
 runCmdLineVersion =
- do  clp  <- cmdArgs header [defaultParams]
+ do  clp  <- cmdArgs $ defaultParams &= summary header &= details gpl_tag
      clpOK <- checkParams clp
      if clpOK
       then Just <$> runWithParams clp
@@ -53,5 +53,12 @@ header :: String
 header = unlines ["HTab " ++ showVersion version,
                   "G. Hoffmann, C. Areces, D.Gorin and J. Heguiabehere. (c) 2002-2010.",
                   "http://code.google.com/p/intohylo/"]
+
+gpl_tag :: [String]
+gpl_tag = [
+    "This program is distributed in the hope that it will be useful,",
+    "but WITHOUT ANY WARRANTY; without even the implied warranty of",
+    "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
+    "GNU General Public License for more details."]
 
 

@@ -8,9 +8,7 @@ import Control.Monad       ( when )
 import Control.Monad.State( runStateT )
 import Control.Monad.Reader( runReaderT )
 
-import Data.Maybe ( listToMaybe )
-
-import System.Console.CmdArgs ( isNormal, isLoud )
+import System.Console.CmdArgs ( whenNormal, whenLoud )
 
 import System.IO           ( hSetBuffering, stdin, BufferMode(LineBuffering)) 
 import System.CPUTime( getCPUTime )
@@ -19,12 +17,11 @@ import Prelude hiding ( readFile )
 
 import HyLo.InputFile.Parser ( QueryType(..) )
 
-import HTab.CommandLine( filename, timeout, CmdLineParams, genModel, noBackjumping,
+import HTab.CommandLine( filename, timeout, CmdLineParams, genModel, backjumping,
                          showFormula )
 import HTab.Branch( BranchInfo(..),initialBranchStateFor, BranchData(..),
                     emptyBranch, addFirstFormulas)
 import HTab.Statistics( Statistics, initialStatisticsStateFor, printOutMetricsFinal )
-import HTab.Base( vPutStrLn )
 import HTab.Tableau( OpenFlag(..), tableauStart )
 import HTab.Formula( formulaLanguageInfo, languageTrans, Theory, RelInfo, Encoding, Task,
                      Formula, encodeValidityTest, encodeSatTest, encodeRetrieveTask,
@@ -48,7 +45,7 @@ runWithParams clp =
 
      let parse = \i -> if head (words i)  == "begin"
                         then F.simpleParse clp i else F.parse clp i
-     allTasks <- parse <$> maybe fromStdIn readFile (listToMaybe $ filename clp)
+     allTasks <- parse <$> maybe fromStdIn readFile (filename clp)
      --
      let handleTimeout
           | timeout clp > 0 = notifyOnTimeout (timeout clp)
@@ -69,7 +66,7 @@ runTasks :: (Theory,RelInfo,Encoding,[Task]) -> CmdLineParams -> TimeoutSignal -
 runTasks allTasks@(theory,relInfo,encoding,tasks) clp ts =
  do
     myPutStrLn "== Checking theory satisfiability =="
-    res <- runOneTask (Satisfiable, listToMaybe $ genModel clp,[]) relInfo encoding theory clp ts
+    res <- runOneTask (Satisfiable, genModel clp,[]) relInfo encoding theory clp ts
     case res of
      SUCCESS | null tasks -> return SUCCESS
              | otherwise  -> do myPutStrLn "\n==         Starting tasks         =="
@@ -117,8 +114,7 @@ runOneTask (query,mOutFile,fs) relInfo encoding theory clp ts=
                  else do let goodnoms = [ toNomSymbol encoding n | (n,(CLOSED _ ,_))  <- zip noms results]
                          myPutStrLn $ show goodnoms
                          let doWrite f = do writeFile f (show goodnoms ++ "\n")
-                                            noQuiet <- isNormal
-                                            vPutStrLn ("Nominals saved as " ++ f) noQuiet
+                                            myPutStrLn ("Nominals saved as " ++ f)
                          maybe (return ()) doWrite mOutFile
                          return SUCCESS
 
@@ -139,7 +135,7 @@ runOneTask (query,mOutFile,fs) relInfo encoding theory clp ts=
                let fLang         = formulaLanguageInfo f
                let initialBranch = emptyBranch clp fLang relInfo encoding
                let branchInfo    = addFirstFormulas clp initialBranch fLang f
-               let clp2          = if languageTrans fLang then clp{noBackjumping=True} else clp
+               let clp2          = if languageTrans fLang then clp{backjumping=False} else clp
                --
                result <- tableauInit clp2 ts branchInfo
                --
@@ -150,20 +146,17 @@ runOneTask (query,mOutFile,fs) relInfo encoding theory clp ts=
                                                 Satisfiable -> "The formula is satisfiable."
                                                 _           -> error "never happens"
                                           saveGenModel mOutFile m
-                                          noQuiet <- isNormal
-                                          when noQuiet $ printOutMetricsFinal stats
+                                          whenNormal $ printOutMetricsFinal stats
                                           return SUCCESS
                   (CLOSED _, stats) -> do myPutStrLn $
                                             case query of
                                                 Valid       -> "The formula is valid."
                                                 Satisfiable -> "The formula is unsatisfiable."
                                                 _           -> error "never happens"
-                                          noQuiet <- isNormal
-                                          when noQuiet $ printOutMetricsFinal stats
+                                          whenNormal $ printOutMetricsFinal stats
                                           return FAILURE
                   (TIMEOUT, stats)  -> do myPutStrLn "TIMEOUT"
-                                          noQuiet <- isNormal
-                                          when noQuiet $ printOutMetricsFinal stats
+                                          whenNormal $ printOutMetricsFinal stats
                                           return TIMEOUT_
      --
      return $ case (query, result) of
@@ -179,13 +172,11 @@ runOneTask (query,mOutFile,fs) relInfo encoding theory clp ts=
 saveGenModel :: Maybe FilePath -> Model -> IO ()
 saveGenModel mOutFile m = maybe (return ()) doWrite mOutFile
     where doWrite f = do writeFile f (show m)
-                         noQuiet <- isNormal
-                         vPutStrLn ("Model saved as " ++ f) noQuiet
+                         myPutStrLn ("Model saved as " ++ f)
 
 tableauInit :: CmdLineParams -> TimeoutSignal -> BranchInfo -> IO (OpenFlag,Statistics)
 tableauInit clp ts bi =
-        do verbose <- isLoud
-           vPutStrLn ">> Starting rules application" verbose
+        do whenLoud $ putStrLn ">> Starting rules application"
            initStatsState $ initBranchState bd $ tableauStart clp bi
  where initStatsState  = initialStatisticsStateFor runStateT
        initBranchState = initialBranchStateFor runReaderT
@@ -207,6 +198,5 @@ time message action =
 
 
 myPutStrLn :: String -> IO ()
-myPutStrLn str = do notQuiet <- isNormal
-                    vPutStrLn str notQuiet
+myPutStrLn str = do whenNormal $ putStrLn str
 
