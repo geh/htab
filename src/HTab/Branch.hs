@@ -349,8 +349,8 @@ putAwayDisjunction clp pf@(PrFormula pr ds f@(Dis fs)) br
          in
           case mProposed of
             Nothing -> BranchOK $ addToTodo fNew br
-            Just p -- add pr, atom prop, (isPositive prop, (++) disjuncts) aux witnesses
-             -> BranchOK $ doLazyBranching ur p [fNew] br
+            Just lit -- add pr, lit, ((++) disjuncts) aux witnesses
+             -> BranchOK $ doLazyBranching ur lit [fNew] br
  | otherwise
   = BranchOK $ addToTodo pf br
 putAwayDisjunction _ pf _ = error ("putAwayDisjunction " ++ show pf)
@@ -1147,9 +1147,10 @@ reduceDisjunctionProposeLazy br pr fs
           (Just (True,_)    ,_) -> Nothing
           (Just (False,ds2) ,_) -> Just (disjuncts,dsUnion ds_ ds2, proposed)
           (Nothing, Nothing)
-           -> if not $ isProp current
-               then Just (Set.insert l disjuncts,ds_,Nothing) -- no lazy branching with nominals
+           -> if isPositiveNom current
+               then Just (Set.insert l disjuncts,ds_,Nothing) -- no lazy branching with positive nominals
                else case DMap.lookup ur (negLit current) (brWitnesses br) of
+                      -- if current is a negated nominal, we know the "just" case is impossible
                      Just _  -> Just (Set.insert l disjuncts,ds_,Nothing) -- there's an opposed witness
                      Nothing -> Just (Set.insert l disjuncts,ds_, Just current) -- propose for witness
           _ {- already a proposed witness -}
