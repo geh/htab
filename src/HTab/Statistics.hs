@@ -45,7 +45,7 @@ import Control.Monad.State(MonadState , MonadIO, modify, unless,
                            gets, when)
 
 import qualified Control.Monad.State as State(liftIO)
-import Control.Parallel.Strategies ( NFData, rnf )
+import Control.DeepSeq ( NFData, rnf )
 
 import Data.Map(Map)
 import qualified Data.Map as Map(insertWith, toList, empty)

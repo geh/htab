@@ -33,7 +33,7 @@ module HTab.RuleId(RuleId(..))
 
 where
 
-import Control.Parallel.Strategies ( NFData, rnf )
+import Control.DeepSeq ( NFData, rnf )
 import Data.Ix
 
 data RuleId = R_Dia     -- Diamond <r>
