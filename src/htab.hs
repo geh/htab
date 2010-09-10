@@ -10,9 +10,6 @@ import System.Console.CmdArgs
 import System.IO           ( hPrint, stderr ) 
 import System.Exit         ( exitWith, ExitCode(ExitFailure) )
 
-import Data.Version        ( showVersion )
-import Paths_HTab ( version )
-
 import Prelude hiding ( catch )
 import Control.Exception   ( catch, SomeException )
 
@@ -50,7 +47,7 @@ runCmdLineVersion =
       else return Nothing
 
 header :: String
-header = unlines ["HTab " ++ showVersion version,
+header = unlines ["HTab 1.5.4",
                   "G. Hoffmann, C. Areces, D.Gorin and J. Heguiabehere. (c) 2002-2010.",
                   "http://code.google.com/p/intohylo/"]
 
