@@ -34,7 +34,6 @@ module HTab.RuleId(RuleId(..))
 where
 
 import Control.DeepSeq ( NFData, rnf )
-import Data.Ix
 
 data RuleId = R_Dia     -- Diamond <r>
             | R_DiaX    -- DiamondX <r*>
@@ -51,7 +50,7 @@ data RuleId = R_Dia     -- Diamond <r>
             | R_Merge   -- Equivalence classes merge
             | R_RoleInc -- Role inclusion
             | R_LazyBranch -- Lazy Branching
-        deriving(Eq, Ord, Ix, Show)
+        deriving(Eq, Ord, Show)
 
 
 instance NFData RuleId where

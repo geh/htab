@@ -2,7 +2,7 @@ module HTab.DMap
 (DMap(..), empty, toMap, flatten,
  delete, insert, insertWith, (!),
  insert1, lookup, lookup1, lookupInter,
- moveInnerDataDMap, moveInnerDataDMapPlusDeps )
+ moveInnerDataDMapPlusDeps )
 
 where
 
@@ -75,21 +75,8 @@ lookupInter k1 (DMap m) = case IM.lookup k1 m of
 
 -- provided two keys of the DMap and a merge function, merge the inner maps of
 -- both keys using the merge function when needed for inner values
--- and delete the first inner map
-moveInnerDataDMap :: DMap c -> Int -> Int -> (c -> c -> c) -> DMap c 
-moveInnerDataDMap (DMap m) origKey destKey innerInnerMergeF
- = DMap result
-   where mOrigInnerMap = IM.lookup origKey m
-         mDestInnerMap = IM.lookup destKey m
-         prunedM = IM.delete origKey m
-         result = case (mOrigInnerMap, mDestInnerMap) of
-                      (Nothing, _) -> m
-                      (Just origInnerMap, Nothing) -> IM.insert destKey origInnerMap prunedM
-                      (Just origInnerMap, Just destInnerMap)
-                            -> let mergedInnerMap = IM.unionWith innerInnerMergeF origInnerMap destInnerMap in
-                                IM.insert destKey mergedInnerMap prunedM
-
-
+-- delete the first inner map
+-- and add the given dependencies
 moveInnerDataDMapPlusDeps :: DependencySet -> DMap [(c,DependencySet)] -> Int -> Int -> DMap [(c,DependencySet)]
 moveInnerDataDMapPlusDeps newDeps (DMap m) origKey destKey
  = DMap

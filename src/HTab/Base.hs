@@ -36,10 +36,6 @@ import qualified Data.IntMap as IntMap
 import Data.List ( sort )
 import qualified Data.Set as Set
 
-intToBool :: Int -> Bool
-intToBool i | i == 0 = False
-intToBool _          = True
-
 almostCartesianProduct :: [a] -> [b] -> [(a,b)]
 -- example:
 -- acp [a1,a2,a3] [b1,b2,b3] = [(a1,b2),(a1,b3),(a2,b1),(a2,b3),(a3,b1),(a3,b2)]
