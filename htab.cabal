@@ -23,7 +23,8 @@ Executable          htab
                        deepseq >= 1, deepseq <2,
                        strict < 1,
                        cmdargs == 0.5,
-                       hylolib == 1.3
+                       hylolib >= 1.3,
+                       hylolib < 1.4
   Hs-Source-Dirs:      src
   ghc-options:         -O2 -Wall -fglasgow-exts
   ghc-prof-options:    -auto-all
