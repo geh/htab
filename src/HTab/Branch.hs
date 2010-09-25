@@ -23,7 +23,7 @@ getModelRepresentative, isNotBlocked,
 BlockingMode(..), diaAlreadyDone, diaXAlreadyDone,
 downAlreadyDone,
 unfulfilledEventualities, ReducedDisjunct(..), getUnappliedUBPairs,
-isReflexive, isSymmetric, isTransitive,
+isSymmetric, isTransitive,
 deleteUEV, insertUEV_addFormula
 ) where
 
@@ -1180,9 +1180,6 @@ hasProperty :: RelProperty -> RelInfo -> Rel -> Bool
 hasProperty p relI r = case Map.lookup r relI of
                         Nothing         -> False
                         Just properties -> p `elem` properties
-
-isReflexive :: RelInfo -> Rel -> Bool
-isReflexive = hasProperty Reflexive
 
 isSymmetric :: RelInfo -> Rel -> Bool
 isSymmetric = hasProperty Symmetric
