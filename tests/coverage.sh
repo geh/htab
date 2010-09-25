@@ -62,4 +62,4 @@ DATA=../examples/sat_no_mod
 $HTAB --help
 hpc markup htab --destdir=../html
 
-rm -rf htab htab.tix mod *.o *.hi HTab/*.o HTab/*.hi
+rm -rf htab htab.tix mod *.o *.hi HTab/*.o HTab/*.hi out*
