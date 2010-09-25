@@ -36,7 +36,7 @@ import qualified HTab.DisjSet as DS
 
 data BranchModification =    BM_AddFormulas   [PrFormula]
                            | BM_AddAccFormula AccFormula
-                           | BM_AddDiaRuleCheck Prefix Formula
+                           | BM_AddDiaRuleCheck Prefix (Rel,Formula)
                            | BM_AddDiaXRuleCheck Prefix (Rel,Formula)
                            | BM_AddDownRuleCheck Prefix Formula
                            | BM_AddDiffRuleCheck Formula (Maybe Prop)
@@ -76,16 +76,16 @@ getMods _ (MergeRule p n ds)= [[BM_Merge p n ds]]
 
 getMods _ (RoleIncRule p1 rs p2 ds) = [[BM_AddAccFormula (AccFormula ds r p1 p2)] | r <- rs]
 
-getMods br (DiaRule df@(PrFormula pr ds f@(Dia r f2)))
+getMods br (DiaRule df@(PrFormula pr ds (Dia r f)))
  = if diaAlreadyDone br df
     then getMods br (DiscardRule df)
     else  [[BM_AddParentPrefix newPr ur,
             BM_AddAccFormula acctoadd,
             BM_AddFormulas [toadd],
-            BM_AddDiaRuleCheck pr f,
+            BM_AddDiaRuleCheck pr (r,f),
             BM_CreateNewPref]]
  where acctoadd   = AccFormula (dsUnion ds ds2) r ur newPr
-       toadd      = PrFormula newPr ds f2
+       toadd      = PrFormula newPr ds f
        newPr      = getNewPref br
        (ur,ds2,_) = getUrfatherAndDeps br (DS.Prefix pr)
 
@@ -358,7 +358,7 @@ applyMods _ br [] = BranchOK br
 applyMod :: CmdLineParams -> Branch -> BranchModification -> BranchInfo
 applyMod clp br (BM_AddFormulas li)                = addFormulas clp br li
 applyMod clp br (BM_AddAccFormula accFor)          = addAccFormula clp br accFor
-applyMod  _  br (BM_AddDiaRuleCheck pr f)          = BranchOK $ addDiaRuleCheck br pr f
+applyMod  _  br (BM_AddDiaRuleCheck pr (r,f))      = BranchOK $ addDiaRuleCheck br pr (r,f)
 applyMod  _  br (BM_AddDiaXRuleCheck pr (r,f))     = BranchOK $ addDiaXRuleCheck br pr (r,f)
 applyMod  _  br (BM_AddDownRuleCheck pr f)         = BranchOK $ addDownRuleCheck br pr f
 applyMod clp br (BM_CreateNewPref)                 = createNewPref clp br

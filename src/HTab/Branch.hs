@@ -74,9 +74,10 @@ data Branch =
                   boxConstrBwd :: Box_constraints,
                       univCons :: [(DependencySet,Formula)],
                  -- saturation of rules
-                       diaRlCh :: IntMap {- Prefix -} (Set Formula),
+                       diaRlCh :: IntMap {- Prefix -} (Set (Rel,Formula)),
                       diaXRlCh :: IntMap {- Prefix -} (Set (Rel,Formula)),
-                      boxXRlCh :: IntMap {- Prefix -} (Set Formula),
+                       boxRlCh :: IntMap {- Prefix -} (Set (Rel,Formula)),
+                      boxXRlCh :: IntMap {- Prefix -} (Set (Rel,Formula)),
                       downRlCh :: IntMap {- Prefix -} (Set Formula),
                         atRlCh :: Set Formula,
                      existRlCh :: Set Formula,
@@ -121,6 +122,7 @@ emptyBranch clp fLang relInfo_ encoding_ =
                   boxConstrFwd      = DMap.empty,
                   diaRlCh           = IntMap.empty,
                   diaXRlCh          = IntMap.empty,
+                  boxRlCh           = IntMap.empty,
                   boxXRlCh          = IntMap.empty,
                   downRlCh          = IntMap.empty,
                   atRlCh            = Set.empty,
@@ -463,6 +465,7 @@ merge clp br pr fDs pointer -- pointer is a nominal or a prefix
                       newAccStr       = mergePrefixes (accStr br) oldUr newUr fDs
                       newDiaRlCh      = moveInMap (diaRlCh br)  oldUr newUr Set.union
                       newDiaXRlCh     = moveInMap (diaXRlCh br) oldUr newUr Set.union
+                      newBoxRlCh      = moveInMap (boxRlCh br)  oldUr newUr Set.union
                       newBoxXRlCh     = moveInMap (boxXRlCh br) oldUr newUr Set.union
                       newBlockedDias  = moveInMap (blockedDias br) oldUr newUr (++)
                       (newBrWitnesses,unwitnessedToAdd) = mergeWitnesses oldUr newUr urfatherSlot (brWitnesses br)
@@ -488,6 +491,7 @@ merge clp br pr fDs pointer -- pointer is a nominal or a prefix
                                            prefToForms    = newPrefToForms,
                                            diaRlCh        = newDiaRlCh,
                                            diaXRlCh       = newDiaXRlCh,
+                                           boxRlCh        = newBoxRlCh,
                                            boxXRlCh       = newBoxXRlCh,
                                            blockedDias    = newBlockedDias,
                                            clashStr       = newClashStr,
@@ -618,10 +622,10 @@ boxRule deps (mapBox, mapAcc)
                       (p,ds2) <- (IntMap.!) mapAcc r2     ]
 
 addBoxConstraint :: Prefix -> Rel -> Formula -> DependencySet -> CmdLineParams -> Branch -> BranchInfo
-addBoxConstraint pr_ r f ds clp br
+addBoxConstraint pr_ r f ds clp br_
+ | boxAlreadyDone br_ pr (r,f) = BranchOK br_
  | isForward r
-    = let    pr = getUrfather br (DS.Prefix pr_)
-             newBr = br{boxConstrFwd = updateBoxConstr pr r f ds (boxConstrFwd br)}
+    = let    newBr = br{boxConstrFwd = updateBoxConstr pr r f ds (boxConstrFwd br)}
              accessiblePrDs   = IntMap.findWithDefault [] r $ successors (accStr br) pr
              toAdd = symApplications ++ transApplications ++ boxApplications
              transApplications = if isTransitive (relInfo br) r
@@ -633,8 +637,7 @@ addBoxConstraint pr_ r f ds clp br
          addFormulas clp newBr toAdd
 
  | otherwise
-   = let    pr = getUrfather br (DS.Prefix pr_)
-            newBr = br{boxConstrBwd = updateBoxConstr pr (atom r) f ds (boxConstrBwd br)}
+   = let    newBr = br{boxConstrBwd = updateBoxConstr pr (atom r) f ds (boxConstrBwd br)}
             accessiblePrDs          = IntMap.findWithDefault [] (atom r) $ predecessors (accStr br) pr
             toAdd = transApplications ++ boxApplications -- no symApplications cause inv rewritten as forward during parsing
             transApplications = if isTransitive (relInfo br) (atom r)
@@ -643,6 +646,8 @@ addBoxConstraint pr_ r f ds clp br
             boxApplications = map (\(p,ds2) -> PrFormula p (dsUnion ds ds2) f) accessiblePrDs
      in
         addFormulas clp newBr toAdd
+ where pr = getUrfather br_ (DS.Prefix pr_)
+       br = addBoxRuleCheck br_ pr (r,f)
 
 updateBoxConstr :: Prefix -> Rel -> Formula -> DependencySet -> Box_constraints -> Box_constraints
 updateBoxConstr p1_ r_ f_ ds_ (DMap boxConstr_) =
@@ -653,28 +658,34 @@ updateBoxConstr p1_ r_ f_ ds_ (DMap boxConstr_) =
         Nothing             -> DMap $ IntMap.insert p1_ (IntMap.insert r_ [(f_,ds_)] innerMap)                boxConstr_
         Just innerInnerList -> DMap $ IntMap.insert p1_ (IntMap.insert r_ ((f_,ds_):innerInnerList) innerMap) boxConstr_
 
+addBoxRuleCheck :: Branch -> Prefix -> (Rel,Formula) -> Branch
+addBoxRuleCheck br ur (r,f) =
+  br{boxRlCh=IntMap.insertWith Set.union ur (Set.singleton (r,f)) (boxRlCh br)}
+
+boxAlreadyDone :: Branch -> Prefix -> (Rel,Formula) -> Bool
+boxAlreadyDone b ur (r,f) =
+  case IntMap.lookup ur (boxRlCh b) of
+     Nothing  -> False
+     Just fset -> Set.member (r,f) fset
 
 -- [*]phi --> phi & [][*]phi
 -- need not to do all that addBoxConstraint does
 addBoxXConstraint :: Prefix -> Rel -> Formula -> DependencySet -> CmdLineParams ->  Branch -> BranchInfo
 addBoxXConstraint pr r f ds clp br
- = if boxXAlreadyDone br ur (BoxX r f)
-    then BranchOK br
-    else addFormulas clp br2 [PrFormula pr ds f, PrFormula pr ds (Box r (BoxX r f))]
+ | boxXAlreadyDone br ur (r,f) = BranchOK br
+ | otherwise = addFormulas clp br2 [PrFormula pr ds f, PrFormula pr ds (Box r (BoxX r f))]
    where ur = getUrfather br (DS.Prefix pr)
-         br2 = addBoxXRuleCheck br ur (BoxX r f)
+         br2 = addBoxXRuleCheck br ur (r,f)
 
-addBoxXRuleCheck :: Branch -> Prefix -> Formula -> Branch
-addBoxXRuleCheck br ur f =
-  br{boxXRlCh=IntMap.insertWith Set.union ur (Set.singleton f) (boxXRlCh br)}
+addBoxXRuleCheck :: Branch -> Prefix -> (Rel,Formula) -> Branch
+addBoxXRuleCheck br ur (r,f) =
+  br{boxXRlCh=IntMap.insertWith Set.union ur (Set.singleton (r,f)) (boxXRlCh br)}
 
-boxXAlreadyDone :: Branch -> Prefix -> Formula -> Bool
-boxXAlreadyDone b ur f@(BoxX _ _) =
+boxXAlreadyDone :: Branch -> Prefix -> (Rel,Formula) -> Bool
+boxXAlreadyDone b ur (r,f) =
   case IntMap.lookup ur (boxXRlCh b) of
      Nothing  -> False
-     Just fset -> Set.member f fset
-
-boxXAlreadyDone _ _ _ = error "boxX already done : wrong formula kind"
+     Just fset -> Set.member (r,f) fset
 
 addAccFormula :: CmdLineParams -> Branch -> AccFormula -> BranchInfo
 addAccFormula clp br (AccFormula ds r p1_ p2_)
@@ -835,16 +846,16 @@ addParentPrefix br son father =  br{prefParent = IntMap.insert son father (prefP
 
 {-     modifications done by rule application     -}
 
-addDiaRuleCheck :: Branch -> Prefix -> Formula -> Branch
-addDiaRuleCheck br pr f =
-  br{diaRlCh=IntMap.insertWith Set.union ur (Set.singleton f) (diaRlCh br)}
+addDiaRuleCheck :: Branch -> Prefix -> (Rel,Formula) -> Branch
+addDiaRuleCheck br pr (r,f) =
+  br{diaRlCh=IntMap.insertWith Set.union ur (Set.singleton (r,f)) (diaRlCh br)}
    where ur = getUrfather br (DS.Prefix pr)
 
 diaAlreadyDone :: Branch -> PrFormula -> Bool
-diaAlreadyDone b (PrFormula p _ f@(Dia _ _)) =
+diaAlreadyDone b (PrFormula p _ (Dia r f)) =
   case IntMap.lookup ur (diaRlCh b) of
      Nothing  -> False
-     Just fset -> Set.member f fset
+     Just fset -> Set.member (r,f) fset
  where ur = getUrfather b (DS.Prefix p)
 
 diaAlreadyDone _ _ = error "dia already done : wrong formula kind"
