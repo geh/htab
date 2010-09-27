@@ -423,8 +423,9 @@ addToTodo pf@(PrFormula p ds f2) br =
 
 rescheduleBlockedDias :: Prefix -> Branch -> Branch
 rescheduleBlockedDias  pr br
- = foldr addToTodo br toAdd
+ = foldr addToTodo br2 toAdd
   where toAdd =  IntMap.findWithDefault [] pr (blockedDias br)
+        br2 = br{blockedDias = IntMap.delete pr $ blockedDias br}
 
 {-    helper functions for equivalence class merge     -}
 
