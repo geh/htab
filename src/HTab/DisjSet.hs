@@ -1,8 +1,7 @@
 module HTab.DisjSet
-( DisjSet, Pointer(..), mkDSet, find, union, isRoot )
+( DisjSet, Pointer(..), mkDSet, find, union, isRoot, onlyFind )
 where
 
-import Data.Maybe (isNothing)
 import qualified Data.Map as Map
 import HTab.Formula ( showLit, Nom )
 
@@ -25,6 +24,13 @@ find n s = case Map.lookup n s of
                              in 
                             (ancestor, Map.insert n ancestor modifiedDisjSet)
 
+
+onlyFind :: Ord x => x -> DisjSet x -> x
+onlyFind n s
+ = case Map.lookup n s of
+     Nothing -> n
+     Just parent -> onlyFind parent s
+
 -- union the sets in which a and b belong to
 -- ensure : root of the merged set is the smallest root (min a b)
 union :: Ord x => x -> x ->  DisjSet x -> DisjSet x
@@ -36,7 +42,7 @@ union a b s = case compare rootA rootB of
                      (rootB,modifiedDisjSet2) = find b modifiedDisjSet1
 
 isRoot :: Ord x => x -> DisjSet x -> Bool
-isRoot n s = isNothing $ Map.lookup n s
+isRoot n s = Map.notMember n s
 
 -- constructor of an empty disjoint-set forest
 mkDSet :: Ord x => DisjSet x

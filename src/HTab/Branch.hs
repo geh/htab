@@ -567,8 +567,14 @@ isNominalUrfather :: Branch -> Prefix -> Bool
 isNominalUrfather b p = DS.isRoot (DS.Prefix p) classes
                          where classes = nomPrefClasses b
 
+
+-- May look redundant with getUrfatherAndDeps, but it is important not
+-- to make the test isRoot for performance
 getUrfather :: Branch -> DS.Pointer -> Prefix
-getUrfather b p = u where (u,_,_) = getUrfatherAndDeps b p
+getUrfather br p =
+    ur
+  where
+        (DS.Prefix ur) = DS.onlyFind p (nomPrefClasses br)
 
 getUrfatherAndDeps :: Branch -> DS.Pointer -> (Prefix,DependencySet,EquivClasses)
 getUrfatherAndDeps br p =
