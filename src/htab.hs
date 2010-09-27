@@ -24,10 +24,10 @@ main = do r <- runCmdLineVersion
                     exit r_RUNTIME_ERROR
           --
           case r of
-            Nothing          -> exit r_DID_NOT_RUN
-            Just SUCCESS     -> exit r_SAT
-            Just FAILURE     -> exit r_UNSAT
-            Just TIMEOUT_    -> exit r_TIMEOUT
+            Nothing             -> exit r_DID_NOT_RUN
+            Just Nothing        -> exit r_TIMEOUT
+            Just (Just SUCCESS) -> exit r_SAT
+            Just (Just FAILURE) -> exit r_UNSAT
     --
     where r_SAT           = 1
           r_UNSAT         = 2
@@ -38,7 +38,7 @@ main = do r <- runCmdLineVersion
 exit :: Int -> IO a
 exit = exitWith . ExitFailure
 
-runCmdLineVersion :: IO (Maybe TaskRunFlag)
+runCmdLineVersion :: IO (Maybe (Maybe TaskRunFlag))
 runCmdLineVersion =
  do  clp  <- cmdArgs $ defaultParams &= summary header &= details gpl_tag
      clpOK <- checkParams clp

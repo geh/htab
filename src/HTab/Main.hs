@@ -12,6 +12,7 @@ import System.Console.CmdArgs ( whenNormal, whenLoud )
 
 import System.IO           ( hSetBuffering, stdin, BufferMode(LineBuffering)) 
 import System.CPUTime( getCPUTime )
+import qualified System.Timeout as T
 import System.IO.Strict ( readFile )
 import Prelude hiding ( readFile )
 
@@ -29,12 +30,9 @@ import HTab.Formula( formulaLanguageInfo, languageTrans, Theory, RelInfo, Encodi
 import qualified HTab.Formula as F
 import HTab.ModelGen ( Model )
 
-import HTab.Timeout ( withNoTimeout, notifyOnTimeout, TimeoutSignal )
+data TaskRunFlag = SUCCESS | FAILURE
 
-
-data TaskRunFlag = SUCCESS | FAILURE | TIMEOUT_
-
-runWithParams :: CmdLineParams -> IO TaskRunFlag
+runWithParams :: CmdLineParams -> IO (Maybe TaskRunFlag)
 runWithParams clp =
  time "Total time: "
   $ do
@@ -47,50 +45,49 @@ runWithParams clp =
                         then F.simpleParse clp i else F.parse clp i
      allTasks <- parse <$> maybe fromStdIn readFile (filename clp)
      --
-     let handleTimeout
-          | timeout clp > 0 = notifyOnTimeout (timeout clp)
-          | otherwise       = withNoTimeout
-     --
-     result <- handleTimeout (runTasks allTasks clp)
+     result <- if timeout clp == 0
+                then Just <$> runTasks allTasks clp
+                else T.timeout (timeout clp * (10::Int)^(6::Int))
+                               (runTasks allTasks clp)
      --
      case result of
-        SUCCESS  -> myPutStrLn "\nAll tasks successful.\n"
-        FAILURE  -> myPutStrLn "\nOne task failed.\n"
-        TIMEOUT_ -> myPutStrLn "\nTimeout.\n"
+        Nothing      -> myPutStrLn "\nTimeout.\n"
+        Just SUCCESS -> myPutStrLn "\nAll tasks successful.\n"
+        Just FAILURE -> myPutStrLn "\nOne task failed.\n"
      --
      return result
 
 --
 
-runTasks :: (Theory,RelInfo,Encoding,[Task]) -> CmdLineParams -> TimeoutSignal ->  IO TaskRunFlag
-runTasks allTasks@(theory,relInfo,encoding,tasks) clp ts =
+runTasks :: (Theory,RelInfo,Encoding,[Task]) -> CmdLineParams -> IO TaskRunFlag
+runTasks allTasks@(theory,relInfo,encoding,tasks) clp =
  do
     myPutStrLn "== Checking theory satisfiability =="
-    res <- runOneTask (Satisfiable, genModel clp,[]) relInfo encoding theory clp ts
+    res <- runOneTask (Satisfiable, genModel clp,[]) relInfo encoding theory clp
     case res of
      SUCCESS | null tasks -> return SUCCESS
              | otherwise  -> do myPutStrLn "\n==         Starting tasks         =="
-                                res2 <- runTasks2 allTasks clp ts
+                                res2 <- runTasks2 allTasks clp
                                 myPutStrLn "\n==         End of   tasks         =="
                                 return res2
-     failOrTimeout        -> return failOrTimeout
+     FAILURE              -> return FAILURE
 
 --
 
-runTasks2 :: (Theory,RelInfo,Encoding,[Task]) -> CmdLineParams -> TimeoutSignal -> IO TaskRunFlag
-runTasks2 (_,_,_,[]) _ _                  = error "runTasks2 empty list error"
-runTasks2 (theory,relInfo,encoding,(hd:tl)) clp ts =
- do res <- runOneTask hd relInfo encoding theory clp ts
+runTasks2 :: (Theory,RelInfo,Encoding,[Task]) -> CmdLineParams -> IO TaskRunFlag
+runTasks2 (_,_,_,[]) _                  = error "runTasks2 empty list error"
+runTasks2 (theory,relInfo,encoding,(hd:tl)) clp =
+ do res <- runOneTask hd relInfo encoding theory clp
     case res of
       SUCCESS | null tl   -> return SUCCESS
-              | otherwise -> runTasks2 (theory,relInfo,encoding,tl) clp ts
-      failOrTimeout       -> do _ <- runTasks2 (theory,relInfo,encoding,tl) clp ts
-                                return failOrTimeout
+              | otherwise -> runTasks2 (theory,relInfo,encoding,tl) clp
+      FAILURE             -> do _ <- runTasks2 (theory,relInfo,encoding,tl) clp
+                                return FAILURE
 
 --
 
-runOneTask :: Task -> RelInfo -> Encoding -> Formula -> CmdLineParams -> TimeoutSignal -> IO TaskRunFlag
-runOneTask (query,mOutFile,fs) relInfo encoding theory clp ts=
+runOneTask :: Task -> RelInfo -> Encoding -> Formula -> CmdLineParams -> IO TaskRunFlag
+runOneTask (query,mOutFile,fs) relInfo encoding theory clp =
  time "Task time:"
  $ do
      myPutStrLn $ "\n* " ++ case query of {Valid       -> "Validity task";
@@ -107,16 +104,13 @@ runOneTask (query,mOutFile,fs) relInfo encoding theory clp ts=
                --
                myPutStrLn $ "Instances making true: " ++ show fs
                --
-               results <- mapM (tableauInit clp ts . addFirstFormulas clp initialBranch fLang) encfs
-               if not $ null [ TIMEOUT | (TIMEOUT,_)  <- results]
-                 then do myPutStrLn "TIMEOUT"
-                         return TIMEOUT_
-                 else do let goodnoms = [ toNomSymbol encoding n | (n,(CLOSED _ ,_))  <- zip noms results]
-                         myPutStrLn $ show goodnoms
-                         let doWrite f = do writeFile f (show goodnoms ++ "\n")
-                                            myPutStrLn ("Nominals saved as " ++ f)
-                         maybe (return ()) doWrite mOutFile
-                         return SUCCESS
+               results <- mapM (tableauInit clp . addFirstFormulas clp initialBranch fLang) encfs
+               let goodnoms = [ toNomSymbol encoding n | (n,(CLOSED _ ,_))  <- zip noms results]
+               myPutStrLn $ show goodnoms
+               let doWrite f = do writeFile f (show goodnoms ++ "\n")
+                                  myPutStrLn ("Nominals saved as " ++ f)
+               maybe (return ()) doWrite mOutFile
+               return SUCCESS
 
         valOrSat
           ->
@@ -137,7 +131,7 @@ runOneTask (query,mOutFile,fs) relInfo encoding theory clp ts=
                let branchInfo    = addFirstFormulas clp initialBranch fLang f
                let clp2          = if languageTrans fLang then clp{backjumping=False} else clp
                --
-               result <- tableauInit clp2 ts branchInfo
+               result <- tableauInit clp2 branchInfo
                --
                case result of
                   (OPEN m, stats)   -> do myPutStrLn $
@@ -155,12 +149,8 @@ runOneTask (query,mOutFile,fs) relInfo encoding theory clp ts=
                                                 _           -> error "never happens"
                                           whenNormal $ printOutMetricsFinal stats
                                           return FAILURE
-                  (TIMEOUT, stats)  -> do myPutStrLn "TIMEOUT"
-                                          whenNormal $ printOutMetricsFinal stats
-                                          return TIMEOUT_
      --
      return $ case (query, result) of
-               (     _     , TIMEOUT_) -> TIMEOUT_
                (Satisfiable, SUCCESS ) -> SUCCESS
                (Satisfiable, FAILURE ) -> FAILURE
                (Valid      , SUCCESS ) -> FAILURE
@@ -174,16 +164,13 @@ saveGenModel mOutFile m = maybe (return ()) doWrite mOutFile
     where doWrite f = do writeFile f (show m)
                          myPutStrLn ("Model saved as " ++ f)
 
-tableauInit :: CmdLineParams -> TimeoutSignal -> BranchInfo -> IO (OpenFlag,Statistics)
-tableauInit clp ts bi =
+tableauInit :: CmdLineParams -> BranchInfo -> IO (OpenFlag,Statistics)
+tableauInit clp bi =
         do whenLoud $ putStrLn ">> Starting rules application"
            initStatsState $ initBranchState bd $ tableauStart clp bi
  where initStatsState  = initialStatisticsStateFor runStateT
        initBranchState = initialBranchStateFor runReaderT
-       bd              = BranchData
-                          { branch_clp  = clp,
-                            timeout_signal = ts
-			    }
+       bd              = BranchData { branch_clp  = clp }
 
 --
 

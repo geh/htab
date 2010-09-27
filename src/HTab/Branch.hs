@@ -42,7 +42,6 @@ import qualified Data.IntMap as IntMap
 
 import qualified HTab.DisjSet as DS
 
-import HTab.Timeout( TimeoutSignal )
 import HTab.Statistics(Statistics)
 import HTab.CommandLine(CmdLineParams(..))
 
@@ -1183,8 +1182,7 @@ isTransitive = hasProperty Transitive
 
 {-      Monad related stuff      -}
 
-data BranchData = BranchData {     branch_clp :: CmdLineParams,
-                               timeout_signal :: TimeoutSignal}
+data BranchData = BranchData { branch_clp :: CmdLineParams }
 
 type BranchMonad a = ReaderT BranchData (StateT Statistics IO) a
 
