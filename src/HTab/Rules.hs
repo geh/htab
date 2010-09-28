@@ -330,12 +330,14 @@ makeInteresting clp br d df@(PrFormula pr ds (Dis fs))
           Triviality               -> Just (DiscardRule df,df)
           Contradiction ds_clash   -> Just (ClashRule (dsUnion ds ds_clash) df,df)
           Reduced new_ds disjuncts mProposed
-            | Set.size disjuncts == 1 -> Just (DisjRule df ( prefix pr newDeps disjuncts ), df)
-            | lazyBranching clp -> case mProposed of
+            | Set.size disjuncts == 1 -> Just (DisjRule df ( prefix ur newDeps disjuncts ), df)
+            | lazyBranching clp && ur <= unblockedPrefsLim br
+                                  -> case mProposed of
                                     Nothing  -> Nothing
-                                    Just lit -> Just (LazyBranchRule df pr lit [PrFormula pr newDeps (Dis disjuncts)], df)
+                                    Just lit -> Just (LazyBranchRule df ur lit [PrFormula ur newDeps (Dis disjuncts)], df)
             | otherwise  -> Nothing
               where newDeps = dsInsert d $ dsUnion ds new_ds
+                    ur = getUrfather br (DS.Prefix pr)
             -- TODO should not insert d if the formula was actually not changed
                -- --> reduceDisjunctionProposeLazy should return a boolean
                -- -->  or have a constructor "Unchanged" ?
