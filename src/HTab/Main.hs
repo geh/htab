@@ -98,7 +98,7 @@ runOneTask (query,mOutFile,fs) relInfo encoding theory clp =
       case query of
         Retrieve
           ->
-            do let fLang = formulaLanguageInfo theory
+            do let fLang = formulaLanguageInfo theory encoding
                let initialBranch = emptyBranch clp fLang relInfo encoding
                let (noms,encfs) = encodeRetrieveTask relInfo encoding fLang theory fs
                --
@@ -126,7 +126,7 @@ runOneTask (query,mOutFile,fs) relInfo encoding theory clp =
                                     "End of input",
                                     "Relations properties :" ++ showRelInfo relInfo ]
                --
-               let fLang         = formulaLanguageInfo f
+               let fLang         = formulaLanguageInfo f encoding
                let initialBranch = emptyBranch clp fLang relInfo encoding
                let branchInfo    = addFirstFormulas clp initialBranch fLang f
                let clp2          = if languageTrans fLang then clp{backjumping=False} else clp

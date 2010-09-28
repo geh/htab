@@ -36,7 +36,7 @@ import Data.Set ( Set )
 import qualified Data.Map as Map
 import Data.Map ( Map )
 import qualified Data.IntSet as IntSet
-import Data.List ( delete, nub )
+import Data.List ( delete, nub, sort )
 
 import qualified HyLo.Signature.String as S
 
@@ -98,10 +98,11 @@ type Prop = Int
 type Nom = Int
 type Literal = Int
 
-isTop, isBottom, isPositiveNom, isNominal, isPositiveProp, isProp, isNegative, isPositive :: Int -> Bool
+isTop, isBottom, isPositiveNom, isNegativeNom, isNominal, isPositiveProp, isProp, isNegative, isPositive :: Int -> Bool
 isTop            = (==0)
 isBottom         = (==1)
 isPositiveNom a  = ((a `mod` 4) == 0) && (a > 1)
+isNegativeNom a  = ((a `mod` 4) == 1) && (a > 1)
 isNominal a      = ((a `mod` 4) < 2)  && (a > 1)
 isPositiveProp a = (a `mod` 4) == 2
 isProp a         = (a `mod` 4) >= 2
@@ -169,7 +170,7 @@ showRelInfo = Map.foldWithKey (\r v -> (++ " " ++ showRel r ++ " -> " ++ show v 
 parse :: CmdLineParams -> String -> (Theory,RelInfo,Encoding,[Task])
 parse clp s
   = (theory, relInfo, encoding, tasks)
-    where parseOutput = InputFile.myparse s
+    where parseOutput = InputFile.myparse s       -- direct parse from hylolib
           encoding    = getEncoding parseOutput
           pRelInfo    = P.relations parseOutput
           relInfo     = handleFunInj $ saturate $ forceProperties clp encoding $ convertToOurType pRelInfo encoding -- TODO
@@ -219,6 +220,9 @@ getEncoding parseOutput =
    rels1  = map fst $ P.relations parseOutput
    rels2  = map (\(S.RelSymbol r) -> r) $ Set.toList $ Set.unions $ map (relSymbols . getSignature) theory
    rels = nub $ rels1 ++ rels2
+
+nomsOfEncoding :: Encoding -> [Nom]
+nomsOfEncoding e = Map.elems (nomMap e)
 
 -- add properties specified by the --all-PROP parameters
 -- in order to work in case of automatic signature, requires
@@ -622,8 +626,8 @@ instance Show LanguageInfo where
         yesnol s l | null l = "no " ++ s
         yesnol s l = s ++ concatMap (\l_ -> ", " ++ showLit l_)  l
 
-formulaLanguageInfo :: Formula -> LanguageInfo
-formulaLanguageInfo f
+formulaLanguageInfo :: Formula -> Encoding -> LanguageInfo
+formulaLanguageInfo f e
  = LanguageInfo {   languageNoms = noms,
                     relevantNoms = relNoms,
                     languageUniv = hasUnivModality f,
@@ -632,9 +636,10 @@ formulaLanguageInfo f
                    languageTrans = hasTransClosure f,
                     languageDown = hasDownArrow f }
 
-    where (allNoms_,relNoms_) = extractNominals f
-          noms    = Set.toAscList allNoms_
-          relNoms = Set.toAscList relNoms_
+    where allNoms_ = nomsOfEncoding e
+          relNoms_ = extractRelevantNominals f
+          noms     = sort allNoms_
+          relNoms  = Set.toAscList relNoms_
 
 -- composeXX functions follow the idea from
 -- "A pattern for almost compositional functions", Bringert and Ranta.
@@ -675,17 +680,11 @@ composeMap baseCase g e = case e of
     Down x f   -> Down x (g f)
     f          -> baseCase f
 
-type AllNominals     = Set.Set Nom
-type NegatedNominals = Set.Set Nom
 
-extractNominals :: Formula -> (AllNominals, NegatedNominals)
-extractNominals (Lit n)
-   | isNominal n =  (Set.singleton (atom n), emptyOrSingleton)
-                     where emptyOrSingleton = if isNegative n then Set.singleton (atom n) else Set.empty
-extractNominals (At n f) = (Set.insert n noms, negNoms)
-                            where (noms, negNoms) = extractNominals f
-extractNominals f                    = composeFold (Set.empty,Set.empty) unionTwoSets extractNominals f
-                                        where unionTwoSets (s1,s2) (s3,s4) = (Set.union s1 s3, Set.union s2 s4)
+extractRelevantNominals :: Formula -> Set Nom
+extractRelevantNominals (Lit n)| isNegativeNom n = Set.singleton (atom n)
+extractRelevantNominals (At _ f)                 = extractRelevantNominals f
+extractRelevantNominals f                        = composeFold Set.empty Set.union extractRelevantNominals f
 
 hasUnivModality :: Formula -> Bool
 hasUnivModality (A _)     = True

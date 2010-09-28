@@ -338,7 +338,7 @@ putAwayFormula clp pf@(PrFormula pr ds f2) br =
    Lit l | isPositiveNom l -> addToClashable pr ds l $ addToTodo pf br
    Lit l                   -> addToClashable pr ds l br
 
-putAwayDisjunction :: CmdLineParams -> PrFormula -> Branch -> BranchInfo -- TODO use clp to disable lazy branching
+putAwayDisjunction :: CmdLineParams -> PrFormula -> Branch -> BranchInfo
 putAwayDisjunction clp pf@(PrFormula pr ds f@(Dis fs)) br
  | lazyBranching clp && ur <= unblockedPrefsLim br
   = case reduceDisjunctionProposeLazy br pr fs of
@@ -409,9 +409,9 @@ addToTodo pf@(PrFormula p ds f2) br =
      D _                -> False
      At _ _             -> atAlreadyDone br f2
      Down _ _           -> downAlreadyDone br pf
-     Dia  _ _           -> diaAlreadyDone br pf
+     Dia  _ _           -> False -- the test happens later, when the todo list is processed
      DiaX _ r ev        -> diaXAlreadyDone br p (r,ev)
-     Dis _              -> False
+     Dis _              -> False -- the test happens later, when the todo list is processed
      Lit l
       | isPositiveNom l -> inSameClass br p l
      _                  -> error $ "alreadyDone: " ++ show f2
@@ -1001,7 +1001,8 @@ createNewNomTestRelevance br f
 
 -- preparation of the branch at the beginning of the calculus:
 --  - add the input formula at prefix 0
---  - add a nominal formula at a fresh prefix for each nominal of the input formula
+--  - add a nominal formula at a fresh prefix for each nominal of the input language
+--    (even if the nominal was filtered out during lexical normalisation) -- <= TODO currently not the case. Get the nominals from the encoding 
 --  - add reflexive links for prefixes 0 and nominal witnesses
 --  - add functionality and injectivitty down-arrow formulas
 addFirstFormulas :: CmdLineParams -> Branch -> LanguageInfo -> Formula -> BranchInfo
