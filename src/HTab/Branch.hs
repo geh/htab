@@ -341,13 +341,12 @@ putAwayFormula clp pf@(PrFormula pr ds f2) br =
 
 putAwayDisjunction :: CmdLineParams -> PrFormula -> Branch -> BranchInfo -- TODO use clp to disable lazy branching
 putAwayDisjunction clp pf@(PrFormula pr ds f@(Dis fs)) br
- | lazyBranching clp
+ | lazyBranching clp && ur <= unblockedPrefsLim br
   = case reduceDisjunctionProposeLazy br pr fs of
      Contradiction dsClash -> BranchClash br pr (dsUnion ds dsClash) f
      Triviality -> BranchOK br
      Reduced new_ds disjuncts mProposed
-      -> let ur = getUrfather br (DS.Prefix pr)
-             fNew = PrFormula pr (dsUnion ds new_ds) (Dis disjuncts) --todo if there was no reduction, leave ds
+      -> let fNew = PrFormula pr (dsUnion ds new_ds) (Dis disjuncts) --todo if there was no reduction, leave ds
          in
           case mProposed of
             Nothing -> BranchOK $ addToTodo fNew br
@@ -355,6 +354,8 @@ putAwayDisjunction clp pf@(PrFormula pr ds f@(Dis fs)) br
              -> BranchOK $ doLazyBranching ur lit [fNew] br
  | otherwise
   = BranchOK $ addToTodo pf br
+ where ur = getUrfather br (DS.Prefix pr)
+
 putAwayDisjunction _ pf _ = error ("putAwayDisjunction " ++ show pf)
 
 doLazyBranching :: Prefix -> Literal -> [PrFormula] -> Branch -> Branch
@@ -738,7 +739,7 @@ isNotBlocked br pr
                            where ur = getUrfather br (DS.Prefix pr)
                                  fs = formulasOf br ur
                                  isSubsumer fs_ = fs `Set.isSubsetOf` fs_
-                                 labels = map snd $ takeWhile ((< ur).fst) $  ascPrefToFormAndWit br
+                                 labels = map snd $ takeWhile ((< ur).fst) $  ascPrefToForm br
    ChainTwinBlocking  -> isNotChainTwinBlocked br pr
 
 isNotChainTwinBlocked :: Branch -> Prefix -> Bool
@@ -781,11 +782,11 @@ relationIsInTheModel br (p1,_,p2)
 getModelRepresentative :: Branch -> Prefix -> Prefix  -- which is also an inclusion representative
 getModelRepresentative br pr
  = case blockMode br of
-    AnywhereBlocking-> case map fst $ filter (Set.isSubsetOf fs . snd) $ ascPrefToFormAndWit br of
+    AnywhereBlocking-> case map fst $ filter (Set.isSubsetOf fs . snd) $ ascPrefToForm br of
                          []     -> pr
                          (hd:_) -> hd
                          where ur = getUrfather br (DS.Prefix pr)
-                               fs = formulasOf br ur -- this is the difference
+                               fs = formulasOf br ur
     ChainTwinBlocking -> case findModelRepresentativeChainTwinBlocking br pr of
                           Nothing -> error ("found an interesting counter example " ++ show pr)
                           Just repr -> repr
@@ -808,19 +809,12 @@ areTwins :: Branch -> Prefix -> Prefix -> Bool
 areTwins br p1 p2 = formulasOf br p1 == formulasOf br p2
 
 
-ascPrefToFormAndWit :: Branch -> [(Prefix,Set Formula)]
-ascPrefToFormAndWit br
- = [ (pr,formulasOf br pr) | pr <- prefixes br ]
+ascPrefToForm :: Branch -> [(Prefix,Set Formula)]
+ascPrefToForm br = [ (pr,formulasOf br pr) | pr <- prefixes br ]
 
 -- maybe should get the urfather of given prefix, so that the caller functions won't have to do it
 formulasOf :: Branch -> Prefix -> Set Formula
-formulasOf br p = Set.union (IntMap.findWithDefault Set.empty p (prefToForms br))
-                            (witnesses br p)
-
-witnesses :: Branch -> Prefix -> Set Formula
-witnesses br p
- = let witMap = maybe IntMap.empty id (DMap.lookup1 p (brWitnesses br))
-   in Set.fromList [ Lit l | l <- IntMap.keys witMap]
+formulasOf br p = IntMap.findWithDefault Set.empty p (prefToForms br)
 
 -- is the formula useful to calculate inclusion urfathers ?
 forInclusion :: Branch -> Formula -> Bool
