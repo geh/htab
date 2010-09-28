@@ -27,7 +27,6 @@ data CmdLineParams = CLP {
            backjumping     :: Bool,
            lazyBranching   :: Bool,
            unitProp        :: UnitProp,
-           unrestrictedBlocking :: Bool,
            noLoopCheck     :: Bool,
            showFormula     :: Bool,
            allTransitive   :: Bool,
@@ -54,7 +53,6 @@ defaultParams
        unitProp        = enum [Eager &= explicit &= name "eager"        &= help "unit propagation: eager (default)",
                                UPYes &= explicit &= name "unit-prop"    &= help "unit propagation: enabled",
                                UPNo  &= explicit &= name "no-unit-prop" &= help "unit propagation: disabled"] ,
-       unrestrictedBlocking = False &= help "enable unrestricted blocking",
        noLoopCheck     = False   &= help "disable all loop check",
        showFormula     = False   &= help "display formula",
        allTransitive   = False   &= help "make all relations transitive",
@@ -65,7 +63,7 @@ defaultParams
       } &= verbosity
 
 strategyVal :: String
-strategyVal = "n@E<Db|*ru"
+strategyVal = "n@E<Db|*r"
 
 checkParams :: CmdLineParams -> IO Bool
 checkParams clp
@@ -78,7 +76,7 @@ checkParams clp
                         "  E = existential modality   < = diamond",
                         "  D = difference modality    b = down-arrow binder",
                         "  | = or                     * = transitive closure diamond",
-                        "  r = role inclusion         u = unrestricted blocking",
+                        "  r = role inclusion",
                         "",
                         "The default is `" ++ strategyVal ++ "'",
                         "The rules conjunction, box, universal modality and converse difference",

@@ -13,7 +13,7 @@ Branch(..), BranchMonad, createNewProp, createNewPref, createNewNomTestRelevance
 addFormulas, addFormula, addAccFormula,
 addDiaRuleCheck, addDiaXRuleCheck, addDownRuleCheck, addDiffRuleCheck,
 addParentPrefix, addFirstFormulas,
-updateUBBookKeep, ScheduledRule(..), TodoList(..),
+ScheduledRule(..), TodoList(..),
 BranchData(..),
 emptyBranch,initialBranchStateFor,prefixes,
 reduceDisjunctionProposeLazy, doLazyBranching,
@@ -22,7 +22,7 @@ getUrfather, getUrfatherAndDeps, isInTheModel, relationIsInTheModel,
 getModelRepresentative, isNotBlocked,
 BlockingMode(..), diaAlreadyDone, diaXAlreadyDone,
 downAlreadyDone,
-unfulfilledEventualities, ReducedDisjunct(..), getUnappliedUBPairs,
+unfulfilledEventualities, ReducedDisjunct(..),
 isSymmetric, isTransitive,
 deleteUEV, insertUEV_addFormula
 ) where
@@ -94,7 +94,6 @@ data Branch =
                        nextNom :: Nom,
                       nextProp :: Prop,
                  eventualities :: IntMap DependencySet,
-                    bookKeepUB :: (Prefix,Prefix),
                  -- lazy branching
                    brWitnesses :: Branching_witnesses,
                  -- caching / memoisation data
@@ -135,7 +134,6 @@ emptyBranch clp fLang relInfo_ encoding_ =
                   prefToForms       = IntMap.empty,
                   prToDepSet        = IntMap.empty,
                   eventualities     = IntMap.empty,
-                  bookKeepUB        = (0,0),
                   brWitnesses       = DMap.empty,
                   nomPrefClasses    = DS.mkDSet,
                   inputLanguage     = fLang,
@@ -174,7 +172,6 @@ instance Show Branch where
               showl "\nExist rule chart: " (list $ existRlCh br),
               showl "\nDiff dia rule chart: "   (dDiaRlCh br),
               showl "\nDown var relevant chart: " (downVarRelevantCh br),
-              "\nUnrestricted blocking book-keep:", show (bookKeepUB br), ", ",
               showl "\nUniv constraints: " (univCons br),
               ifNotEmpty (prToDepSet br) (\m -> "\nPrefix to dependency set:" ++ showIMap  dsShow "\n " m),
               ifNotEmpty (prefToForms br) (\m -> "\nPrefix to formulas:"       ++ showIMap  (show . Set.toList) "\n " m),
@@ -239,13 +236,11 @@ instance Show TodoList where
                    ++ "\n" ++ show (list rolein)
 
 data ScheduledRule =   SR_Formula PrFormula
-                     | SR_UBlocking Prefix Prefix
                      | SR_Merge Prefix DS.Pointer DependencySet
                      | SR_Inclusion Prefix [Rel] Prefix DependencySet
 
 instance Show ScheduledRule where
  show (SR_Formula pf)    = show pf
- show (SR_UBlocking i j) = "UB " ++ show (i,j)
  show (SR_Merge pr po _) = "Merge " ++ show (pr,po)
  show (SR_Inclusion p1 ss p2 _) = "Role inclusion " ++ show p1 ++ "<" ++ show ss ++ ">" ++ show p2
 
@@ -933,50 +928,14 @@ addDiffRuleCheck br f mp = br{dDiaRlCh=Map.insert f mp (dDiaRlCh br)}
 
 --
 
-getUnappliedUBPairs :: Branch -> [(Prefix,Prefix)]
-getUnappliedUBPairs br =
- [ (a,b) | a <- [i..lastP], -- lastP >= a >=i
-           b <- [0..(a-1)], -- a > b
-           (a == i && b > j) || (a > i),
-           ur a /= ur b
- ]
- where (i,j) = bookKeepUB br -- i > j
-       lastP = lastPref br
-       ur = getUrfather br . DS.Prefix
-
-updateUBBookKeep :: Prefix -> Prefix -> Branch -> Branch
-updateUBBookKeep p1 p2 br
- = case todoList br of
-    Fair _ ->  br
-    _      ->  br{bookKeepUB = (p1,p2)}
--- UGLY because if there's a fair schedule, the book keep is already updated
-
-
---
-
 createNewPref :: CmdLineParams -> Branch -> BranchInfo
 createNewPref clp br
  = addFormulas clp newBrWithRefl
                          ( map (\(ds,f) -> PrFormula newPr ds f) univConstraints )
    where newPr = lastPref br + 1
-         newBr_ = br{lastPref = newPr}
-         newBr = case todoList br of
-                    Fair _ -> addUBlockingSchedule newBr_
-                    _      -> newBr_
+         newBr = br{lastPref = newPr}
          univConstraints = univCons br
          newBrWithRefl = addReflexiveLinks newPr newBr
-
-
-addUBlockingSchedule :: Branch -> Branch
-addUBlockingSchedule br
- = if (l == 0) || ( (snd $ bookKeepUB br) == l - 1)
-    then br
-    else br{ bookKeepUB = (l,l-1),
-             todoList   = newTodo
-           }
-    where l       = lastPref br
-          newSrs  = map (uncurry SR_UBlocking) $ getUnappliedUBPairs br
-          newTodo = let Fair srs = todoList br in Fair (srs ++ newSrs)
 
 addReflexiveLinks :: Prefix -> Branch -> Branch
 addReflexiveLinks pr br

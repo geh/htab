@@ -11,7 +11,7 @@ import qualified Data.IntMap as IntMap
 import Data.Maybe ( listToMaybe, mapMaybe )
 
 import HTab.Formula( Formula(..), PrFormula(..), showLess, neg,
-                     Dependency, DependencySet, dsUnion, dsInsert, dsEmpty,
+                     Dependency, DependencySet, dsUnion, dsInsert,
                      prefix, AccFormula(..), Rel,
                      Prefix,
                      conj, replaceVar, Prop, Literal )
@@ -22,13 +22,12 @@ import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewNomTestRe
                     addDownRuleCheck, addDiffRuleCheck,
                     addParentPrefix,
                     reduceDisjunctionProposeLazy, doLazyBranching,
-                    getUnappliedUBPairs, updateUBBookKeep,
                     getUrfatherAndDeps, isNotBlocked, merge,
                     diaAlreadyDone,  diaXAlreadyDone, downAlreadyDone,
                     ReducedDisjunct(..), getUrfather,
                     ScheduledRule(..), TodoList(..),
                     deleteUEV, insertUEV_addFormula )
-import HTab.CommandLine(CmdLineParams, UnitProp(..), lazyBranching, semBranch, unitProp, strategy, unrestrictedBlocking, noLoopCheck)
+import HTab.CommandLine(CmdLineParams, UnitProp(..), lazyBranching, semBranch, unitProp, strategy, noLoopCheck)
 import HTab.RuleId(RuleId(..))
 import qualified HTab.DisjSet as DS
 
@@ -45,7 +44,6 @@ data BranchModification =    BM_AddFormulas   [PrFormula]
                            | BM_CreateNewNomTestRelevance Formula
                            | BM_AddParentPrefix Prefix Prefix
                            | BM_Clash DependencySet PrFormula
-                           | BM_UpdateUBBookKeep Prefix Prefix
                            | BM_DeleteUEV Int
                            | BM_InsertUEV_addFormula (Maybe Int) DependencySet (Int -> PrFormula)
                            | BM_Merge Prefix DS.Pointer DependencySet
@@ -63,7 +61,6 @@ data Rule =  DiaRule    PrFormula -- creates a prefix
            | ExistRule  PrFormula                 -- creates a prefix
            | DiscardRule PrFormula
            | ClashRule DependencySet PrFormula
-           | UBlockRule Prefix Prefix Dependency
            | MergeRule Prefix DS.Pointer DependencySet
            | RoleIncRule Prefix [Rel] Prefix DependencySet
 
@@ -113,20 +110,6 @@ getMods br (ExistRule (PrFormula _ ds (E f2))) =
        newPr = getNewPref br
 
 getMods _ (ExistRule _) = error "getMods ExistRule"
-
-
-getMods br (UBlockRule p1 p2 d) =
- [[BM_UpdateUBBookKeep p1 p2,
-   BM_Merge p1 (DS.Prefix p2) deps],
-  [BM_CreateNewProp,
-   BM_UpdateUBBookKeep p1 p2,
-   BM_AddFormulas choiceDisequal]
- ]
-   where
-     choiceDisequal = [PrFormula p1 deps       (Lit newProp),
-                       PrFormula p2 deps (neg (Lit newProp))]
-     newProp = nextProp br
-     deps = dsInsert d dsEmpty
 
 getMods _ (DisjRule _ toadds) =
  [[BM_AddFormulas [toadd]] | toadd <- toadds]
@@ -203,7 +186,6 @@ instance Show Rule where
    show (DiffRule  todelete _)     = "D:                  " ++ showLess todelete
    show (DiscardRule todelete)     = "Discard:            " ++ showLess todelete
    show (ClashRule bprs f)         = "Clash:              " ++ show bprs ++ " " ++ show f
-   show (UBlockRule p1 p2 _ )      = "Unrestricted blocking " ++ show (p1,p2)
    show (RoleIncRule p1 rs p2 _)   = "Role inclusion      " ++ show (p1,rs,p2)
    show (LazyBranchRule todelete _ _ _)
                                    = "Lazy Branch "         ++ showLess todelete
@@ -222,7 +204,6 @@ ruleToId r = case r of
               (DiffRule _ _)     -> R_Diff
               (DiscardRule _)    -> R_Discard
               (ClashRule _ _)    -> R_Clash
-              (UBlockRule _ _ _) -> R_UBlocking
               (RoleIncRule _ _ _ _) -> R_RoleInc
               (LazyBranchRule _ _ _ _) -> R_LazyBranch
 
@@ -237,7 +218,6 @@ applicableRule br clp d =
 
 scheduledRuleToRule :: Branch -> CmdLineParams -> Dependency -> ScheduledRule -> Rule
 scheduledRuleToRule _ _ d (SR_Inclusion p1 rs p2 ds) = RoleIncRule p1 rs p2 (dsInsert d ds)
-scheduledRuleToRule _ _ d (SR_UBlocking p1 p2) = UBlockRule p1 p2 d
 scheduledRuleToRule _ _ _ (SR_Merge pr po ds)  = MergeRule pr po ds
 scheduledRuleToRule br clp d (SR_Formula pf@(PrFormula _ _ f2)) =
  case f2 of
@@ -261,7 +241,6 @@ ruleByChar br clp d char =
   'E' -> applicableExistRule
   'D' -> applicableDiffRule
   'b' -> applicableDownRule
-  'u' -> if unrestrictedBlocking clp then applicableUBlockRule else Nothing
   'r' -> applicableRoleIncRule
   _   -> error "ruleByChar"
  where
@@ -301,10 +280,6 @@ ruleByChar br clp d char =
 
   applicableRoleIncRule = do ((ds, p1, p2, rs),new) <- Set.minView $ roleIncTodo todos
                              return (RoleIncRule p1 rs p2 (dsInsert d ds), todos{roleIncTodo = new},br)
-
-  applicableUBlockRule = case getUnappliedUBPairs br of
-                            []          -> Nothing
-                            ((p1,p2):_) -> Just (UBlockRule p1 p2 d, todos,br)
 
   applicableMergeRule  = do ((ds,p,po),new) <- Set.minView $ mergeTodo todos
                             return (MergeRule p po ds, todos{mergeTodo = new},br)
@@ -369,7 +344,6 @@ applyMod  _  br (BM_CreateNewNomTestRelevance f)   = BranchOK $ createNewNomTest
 applyMod  _  br (BM_AddDiffRuleCheck f mp)         = BranchOK $ addDiffRuleCheck br f mp
 applyMod  _  br (BM_AddParentPrefix son father)    = BranchOK $ addParentPrefix br son father
 applyMod  _  br (BM_Clash ds (PrFormula pr ds2 f)) = BranchClash br pr (dsUnion ds ds2) f
-applyMod  _  br (BM_UpdateUBBookKeep p1 p2)        = BranchOK $ updateUBBookKeep p1 p2 br
 applyMod  _  br (BM_DeleteUEV i)                   = BranchOK $ deleteUEV br i
 applyMod clp br (BM_InsertUEV_addFormula mi ds ff) = insertUEV_addFormula br clp mi ds ff
 applyMod clp br (BM_Merge pr p ds)                 = merge clp br pr ds p
