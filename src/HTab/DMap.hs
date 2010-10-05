@@ -6,11 +6,6 @@ module HTab.DMap
 
 where
 
--- import Test.QuickCheck       ( Arbitrary(..), Gen, Property,
---                                forAll, oneof, variant, sized, resize )
--- import HyLo.Test             ( UnitTest, runTest )
--- import Control.Monad ( liftM )
-
 import Data.IntMap ( IntMap )
 import qualified Data.IntMap as IM
 
