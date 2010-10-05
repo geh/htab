@@ -59,8 +59,13 @@ data Rule =  DiaRule    PrFormula -- creates a prefix
            | DownRule   PrFormula
            | DiffRule   PrFormula Dependency
            | ExistRule  PrFormula                 -- creates a prefix
-           | DiscardRule PrFormula
-           | ClashRule DependencySet PrFormula
+           | DiscardDownRule PrFormula
+           | DiscardDiaDoneRule PrFormula
+           | DiscardDiaDone2Rule PrFormula
+           | DiscardDiaBlockedRule PrFormula
+           | DiscardDiaXRule PrFormula
+           | DiscardDisjTrivialRule PrFormula
+           | ClashDisjRule DependencySet PrFormula
            | MergeRule Prefix DS.Pointer DependencySet
            | RoleIncRule Prefix [Rel] Prefix DependencySet
 
@@ -68,14 +73,14 @@ data Rule =  DiaRule    PrFormula -- creates a prefix
 -- for certain rules, we need to look in the branch to see what modifications we do
 
 getMods :: Branch -> Rule -> [[BranchModification]]
-getMods _ (ClashRule ds f) = [[BM_Clash ds f]]
+getMods _ (ClashDisjRule ds f) = [[BM_Clash ds f]]
 getMods _ (MergeRule p n ds)= [[BM_Merge p n ds]]
 
 getMods _ (RoleIncRule p1 rs p2 ds) = [[BM_AddAccFormula (AccFormula ds r p1 p2)] | r <- rs]
 
 getMods br (DiaRule df@(PrFormula pr ds (Dia r f)))
  = if diaAlreadyDone br df
-    then getMods br (DiscardRule df)
+    then getMods br (DiscardDiaDone2Rule df)
     else  [[BM_AddParentPrefix newPr ur,
             BM_AddAccFormula acctoadd,
             BM_AddFormulas [toadd],
@@ -130,7 +135,7 @@ getMods _ (AtRule _) = error "getMods AtRules"
 
 getMods br (DownRule df@(PrFormula pr ds f@(Down v f2)))
  = if downAlreadyDone br df
-    then getMods br (DiscardRule df)
+    then getMods br (DiscardDownRule df)
     else  [[BM_CreateNewNomTestRelevance f,  --  order  --  what about using a monadic
             BM_AddFormulas [toadd1, toadd2], -- matters -- writing for the getMods functions ?
             BM_AddDownRuleCheck pr f
@@ -169,23 +174,33 @@ getMods br (DiffRule (PrFormula pr ds_ (D f2)) d) =
 
 getMods _ (DiffRule _ _) = error "getMods DiffRule"
 
-
-
-getMods _ (DiscardRule _) = [[]]
+getMods _ (DiscardDownRule _) = [[]]
+getMods _ (DiscardDiaDoneRule _) = [[]]
+getMods _ (DiscardDiaDone2Rule _) = [[]]
+getMods _ (DiscardDiaBlockedRule _) = [[]]
+getMods _ (DiscardDiaXRule _) = [[]]
+getMods _ (DiscardDisjTrivialRule _) = [[]]
 
 
 instance Show Rule where
-   show (MergeRule pr po _)        = "merge:              " ++ show (pr,po)
-   show (DiaRule   todelete)       = "diamond:            " ++ showLess todelete
-   show (DiaXRule  todelete _)     = "diamondX:           " ++ showLess todelete
-   show (DisjRule  todelete _ )    = "disjunction:        " ++ showLess todelete
-   show (SemBrRule todelete _ )    = "semantic branching: " ++ showLess todelete
-   show (AtRule    todelete )      = "at:                 " ++ showLess todelete
-   show (DownRule  todelete )      = "down:               " ++ showLess todelete
-   show (ExistRule todelete )      = "E:                  " ++ showLess todelete
-   show (DiffRule  todelete _)     = "D:                  " ++ showLess todelete
-   show (DiscardRule todelete)     = "Discard:            " ++ showLess todelete
-   show (ClashRule bprs f)         = "Clash:              " ++ show bprs ++ " " ++ show f
+   show (MergeRule pr po _)               = "merge:              " ++ show (pr,po)
+   show (DiaRule   todelete)              = "diamond:            " ++ showLess todelete
+   show (DiaXRule  todelete _)            = "diamondX:           " ++ showLess todelete
+   show (DisjRule  todelete _ )           = "disjunction:        " ++ showLess todelete
+   show (SemBrRule todelete _ )           = "semantic branching: " ++ showLess todelete
+   show (AtRule    todelete )             = "at:                 " ++ showLess todelete
+   show (DownRule  todelete )             = "down:               " ++ showLess todelete
+   show (ExistRule todelete )             = "E:                  " ++ showLess todelete
+   show (DiffRule  todelete _)            = "D:                  " ++ showLess todelete
+
+   show (DiscardDownRule todelete)        = "Discard:            " ++ showLess todelete
+   show (DiscardDiaDoneRule todelete)     = "Discard done:       " ++ showLess todelete
+   show (DiscardDiaDone2Rule todelete)    = "Discard done 2:     " ++ showLess todelete
+   show (DiscardDiaBlockedRule todelete)  = "Discard blocked:    " ++ showLess todelete
+   show (DiscardDiaXRule todelete)        = "Discard:            " ++ showLess todelete
+   show (DiscardDisjTrivialRule todelete) = "Discard trivial:    " ++ showLess todelete
+
+   show (ClashDisjRule bprs f)     = "Clash:              " ++ show bprs ++ " " ++ show f
    show (RoleIncRule p1 rs p2 _)   = "Role inclusion      " ++ show (p1,rs,p2)
    show (LazyBranchRule todelete _ _ _)
                                    = "Lazy Branch "         ++ showLess todelete
@@ -202,9 +217,14 @@ ruleToId r = case r of
               (DownRule _)       -> R_Down
               (ExistRule _)      -> R_Exist
               (DiffRule _ _)     -> R_Diff
-              (DiscardRule _)    -> R_Discard
-              (ClashRule _ _)    -> R_Clash
-              (RoleIncRule _ _ _ _) -> R_RoleInc
+              (DiscardDownRule _)        -> R_DiscardDown
+              (DiscardDiaDoneRule _)     -> R_DiscardDiaDone
+              (DiscardDiaDone2Rule _)    -> R_DiscardDiaDone2
+              (DiscardDiaBlockedRule _)  -> R_DiscardDiaBlocked
+              (DiscardDiaXRule _)        -> R_DiscardDiaX
+              (DiscardDisjTrivialRule _) -> R_DiscardDisjTrivial
+              (ClashDisjRule _ _)      -> R_ClashDisj
+              (RoleIncRule _ _ _ _)    -> R_RoleInc
               (LazyBranchRule _ _ _ _) -> R_LazyBranch
 
 -- the rules application strategy is defined here:
@@ -251,7 +271,7 @@ ruleByChar br p d char =
         if noLoopCheck p
          then return (DiaRule f, todos{diaTodo = new},br)
          else if diaAlreadyDone br f
-               then return (DiscardRule f, todos{diaTodo = new} , br )
+               then return (DiscardDiaDoneRule f, todos{diaTodo = new} , br )
                else if isNotBlocked br pr
                      then return ( DiaRule f,     todos{diaTodo = new}, br )
                      else let ur = getUrfather br (DS.Prefix pr)
@@ -261,7 +281,7 @@ ruleByChar br p d char =
                               -- to that list, but as we do not index todo formulas by prefix we can
                               -- not do it.
                           in
-                          return ( DiscardRule f, todos{diaTodo = new}, brBlocked)
+                          return ( DiscardDiaBlockedRule f, todos{diaTodo = new}, brBlocked)
 
   applicableDiaXRule  = do (f,new) <- Set.minView $ diaXTodo todos
                            return (diaXRule f br d, todos{diaXTodo = new},br)
@@ -302,8 +322,8 @@ ruleByChar br p d char =
 makeInteresting :: Params -> Branch -> Dependency -> PrFormula ->  Maybe (Rule,PrFormula)
 makeInteresting p br d df@(PrFormula pr ds (Dis fs))
  = case reduceDisjunctionProposeLazy br pr fs of
-          Triviality               -> Just (DiscardRule df,df)
-          Contradiction ds_clash   -> Just (ClashRule (dsUnion ds ds_clash) df,df)
+          Triviality               -> Just (DiscardDisjTrivialRule df,df)
+          Contradiction ds_clash   -> Just (ClashDisjRule (dsUnion ds ds_clash) df,df)
           Reduced new_ds disjuncts mProposed
             | Set.size disjuncts == 1 -> Just (DisjRule df ( prefix ur newDeps disjuncts ), df)
             | lazyBranching p && ur <= unblockedPrefsLim br
@@ -354,7 +374,7 @@ applyMod _ br (BM_DoLazyBranch pr l pfs)         = BranchOK $ doLazyBranching pr
 diaXRule :: PrFormula -> Branch -> Dependency -> Rule
 diaXRule f@(PrFormula pr _ (DiaX _ r f2)) br d
   = if diaXAlreadyDone br pr (r,f2)
-     then DiscardRule f
+     then DiscardDiaXRule f
      else DiaXRule f d
 
 diaXRule _ _ _ = error "diaXRule"
@@ -370,8 +390,8 @@ disjRule p df@(PrFormula pr ds (Dis fs)) br d
   = if unitProp p == UPNo
      then DisjRule df $ prefix pr (dsInsert d ds) fs
      else case reduceDisjunctionProposeLazy br pr fs of
-             Triviality               -> DiscardRule df
-             Contradiction ds_clash   -> ClashRule (dsUnion ds ds_clash) df
+             Triviality               -> DiscardDisjTrivialRule df
+             Contradiction ds_clash   -> ClashDisjRule (dsUnion ds ds_clash) df
              Reduced new_ds disjuncts _
                -> DisjRule df (prefix pr (dsInsert d $ dsUnion ds new_ds) disjuncts)
 -- todo: if only one conjunct remaining, do not add d , but still create a DisjRule
@@ -383,8 +403,8 @@ semBrRule p df@(PrFormula pr ds (Dis fs)) br d
  = if unitProp p == UPNo
     then SemBrRule df $ sbModList $ prefix pr (dsInsert d ds) fs
     else case reduceDisjunctionProposeLazy br pr fs of
-            Triviality               -> DiscardRule df
-            Contradiction ds_clash   -> ClashRule (dsUnion ds ds_clash) df
+            Triviality               -> DiscardDisjTrivialRule df
+            Contradiction ds_clash   -> ClashDisjRule (dsUnion ds ds_clash) df
             Reduced new_ds disjuncts _
               -> SemBrRule df (sbModList $ prefix pr (dsInsert d $ dsUnion ds new_ds) disjuncts)
 -- todo same remark as above

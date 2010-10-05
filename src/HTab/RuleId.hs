@@ -45,7 +45,13 @@ data RuleId = R_Dia     -- Diamond <r>
             | R_Exist   -- Existential modality
             | R_Diff    -- Difference modality
             | R_Discard -- Discarding a formula
-            | R_Clash   -- Branch clash
+            | R_DiscardDown
+            | R_DiscardDiaDone
+            | R_DiscardDiaDone2
+            | R_DiscardDiaBlocked
+            | R_DiscardDiaX
+            | R_DiscardDisjTrivial
+            | R_ClashDisj -- Branch clash
             | R_UBlocking -- Unrestricted Blocking
             | R_Merge   -- Equivalence classes merge
             | R_RoleInc -- Role inclusion
