@@ -45,7 +45,6 @@ import HTab.Formula
 
 import HTab.DMap ( DMap(..), toMap )
 import qualified HTab.DMap as DMap
-import HTab.Base(moveInMap, almostCartesianProduct, doMemoize, set, list)
 
 import HTab.Relations ( Relations(..), emptyRels, insertRelation, mergePrefixes,
                         successors, predecessors, linksFromTo )
@@ -1142,3 +1141,13 @@ isSymmetric = hasProperty Symmetric
 
 isTransitive :: RelInfo -> Rel -> Bool
 isTransitive = hasProperty Transitive
+
+{-      Monad related stuff      -}
+
+data BranchData = BranchData { branch_clp :: CmdLineParams }
+
+type BranchMonad a = ReaderT BranchData (StateT Statistics IO) a
+
+initialBranchStateFor :: (MonadReader BranchData m) =>  (m a -> BranchData -> b) -> BranchData -> m a -> b
+initialBranchStateFor f bd = flip f bd
+

@@ -27,8 +27,7 @@ Flag static
 
 Executable          htab
   Main-is:             htab.hs
-  Other-modules:       HTab.Base
-                       HTab.Branch
+  Other-modules:       HTab.Branch
                        HTab.CommandLine
                        HTab.DisjSet
                        HTab.DMap

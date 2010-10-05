@@ -12,8 +12,8 @@ module HTab.CommandLine (
 ) where
 
 import System.Console.CmdArgs
+import Data.List ( sort )
 
-import HTab.Base( permutationOf )
 import HTab.Statistics( StatisticsState, setPrintOutInterval )
 
 data Params = Params {
@@ -82,6 +82,7 @@ checkParams p
                         "The rules conjunction, box, universal modality and converse difference",
                         "modality are immediate, thus do not belong to the strategy."]
             return False
+  where permutationOf l1 l2 = sort l1 == sort l2
 
 configureStats :: Params -> StatisticsState ()
 configureStats p = setPrintOutInterval $ stats p

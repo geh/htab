@@ -44,7 +44,6 @@ import HyLo.Signature( HasSignature(..), relSymbols, nomSymbols, propSymbols )
 
 import qualified HyLo.InputFile as InputFile
 import qualified HyLo.InputFile.Parser as P
-import HTab.Base (set, list, invertMap)
 import qualified HyLo.Formula as F
 import HTab.CommandLine ( Params(..) )
 
@@ -207,6 +206,8 @@ toRelSymbol e i = case Map.lookup (atom i) (invertMap $ relMap e) of
                          Nothing -> error $ show e ++ " rel symbol " ++ show i
                          Just x -> if isForward i then S.RelSymbol x else S.InvRelSymbol x
 
+invertMap :: (Ord a, Ord b) => Map.Map a b -> Map.Map b a
+invertMap = Map.fromList . map (\(a,b) -> (b,a)) . Map.assocs
 
 getEncoding :: P.ParseOutput -> Encoding
 getEncoding parseOutput =
@@ -748,3 +749,9 @@ dsShow = show . IntSet.toList
 
 addDeps :: DependencySet -> PrFormula -> PrFormula
 addDeps ds1 (PrFormula p ds2 f) = PrFormula p (dsUnion ds1 ds2) f
+
+list :: Ord a => Set.Set a -> [a]
+list = Set.toList
+
+set :: Ord a => [a] -> Set.Set a
+set = Set.fromList
