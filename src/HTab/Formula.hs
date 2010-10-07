@@ -607,20 +607,15 @@ instance Show AccFormula where
 
 data LanguageInfo = LanguageInfo {   languageNoms :: [Int], -- ascending list
                                      relevantNoms :: [Int],
-                                     languageUniv :: Bool,
                                      languagePast :: Bool,
-                                     languageDiff :: Bool,
-                                    languageTrans :: Bool,
-                                     languageDown :: Bool }
+                                    languageTrans :: Bool }
 
 instance Show LanguageInfo where
  show li =         "Input Language:"
            ++ "\n|" ++ yesnol "Noms" ( languageNoms li )
            ++ "\n|" ++ yesnol "Relevant Noms" ( relevantNoms li ) ++ "\n"
-           ++ yesno "Univ, " ( languageUniv li )
            ++ yesno "Past, " ( languagePast li )
            ++ yesno "Trans, " ( languageTrans li)
-           ++ yesno "Down." ( languageDown li )
   where yesno :: String -> Bool -> String
         yesno s b = ( if b then "" else "no " ) ++ s
         yesnol s l | null l = "no " ++ s
@@ -630,11 +625,8 @@ formulaLanguageInfo :: Formula -> Encoding -> LanguageInfo
 formulaLanguageInfo f e
  = LanguageInfo {   languageNoms = noms,
                     relevantNoms = relNoms,
-                    languageUniv = hasUnivModality f,
                     languagePast = hasPast f,
-                    languageDiff = hasDiffModality f,
-                   languageTrans = hasTransClosure f,
-                    languageDown = hasDownArrow f }
+                   languageTrans = hasTransClosure f}
 
     where allNoms_ = nomsOfEncoding e
           relNoms_ = extractRelevantNominals f
@@ -686,10 +678,6 @@ extractRelevantNominals (Lit n)| isNegativeNom n = Set.singleton (atom n)
 extractRelevantNominals (At _ f)                 = extractRelevantNominals f
 extractRelevantNominals f                        = composeFold Set.empty Set.union extractRelevantNominals f
 
-hasUnivModality :: Formula -> Bool
-hasUnivModality (A _)     = True
-hasUnivModality f         = composeFold False (||) hasUnivModality f
-
 hasPast :: Formula -> Bool
 hasPast (Dia r _)    = testBit r 0
 hasPast (Box r _)    = testBit r 0
@@ -697,18 +685,10 @@ hasPast (BoxX r _) = testBit r 0
 hasPast (DiaX _ r _) = testBit r 0
 hasPast f            = composeFold False (||) hasPast f
 
-hasDiffModality :: Formula -> Bool
-hasDiffModality (B _)     = True
-hasDiffModality f         = composeFold False (||) hasDiffModality f
-
 hasTransClosure :: Formula -> Bool
 hasTransClosure (BoxX _ _)   = True
 hasTransClosure (DiaX _ _ _) = True
 hasTransClosure f            = composeFold False (||) hasTransClosure f
-
-hasDownArrow :: Formula -> Bool
-hasDownArrow (Down _ _ ) = True
-hasDownArrow f           = composeFold False (||) hasDownArrow f
 
 replaceVar :: Int -> Int -> Formula -> Formula
 replaceVar v n a@(Lit v2)
