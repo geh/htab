@@ -156,7 +156,7 @@ emptyBranch clp fLang relInfo_ encoding_ =
 
 instance Show Branch where
  show br
-  = concat [  "Input language: ", show (inputLanguage br),
+  = concat [  show (inputLanguage br),
               "\nClashable formulas:", showIMap (\v -> "(" ++ showMap_lits v ++ ")") "\n " (toMap $ clashStr br),
               "\n", show (todoList br),
               showl "\nRelations: "       (accStr br),
