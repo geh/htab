@@ -1142,12 +1142,33 @@ isSymmetric = hasProperty Symmetric
 isTransitive :: RelInfo -> Rel -> Bool
 isTransitive = hasProperty Transitive
 
-{-      Monad related stuff      -}
+almostCartesianProduct :: [a] -> [b] -> [(a,b)]
+-- example:
+-- acp [a1,a2,a3] [b1,b2,b3] = [(a1,b2),(a1,b3),(a2,b1),(a2,b3),(a3,b1),(a3,b2)]
+--
+-- require : as and bs must be of the same size
+almostCartesianProduct [] _  = error "almostCartesianProduct: first list empty"
+almostCartesianProduct _  [] = error "almostCartesianProduct: second list empty"
+almostCartesianProduct as bs = [(a,b) | (idxA,a) <- zip [(0::Int)..] as,
+                                        (idxB,b) <- zip [(0::Int)..] bs,
+                                        idxA /= idxB]
 
-data BranchData = BranchData { branch_clp :: CmdLineParams }
+moveInMap :: IntMap b -> Int -> Int -> (b -> b -> b) -> IntMap b
+moveInMap m origKey destKey mergeF
+ = result
+   where mOrigValue = IntMap.lookup origKey m
+         prunedM    = IntMap.delete origKey m
+         result = case mOrigValue of
+                   Nothing -> m
+                   Just origValue -> IntMap.insertWith mergeF destKey origValue prunedM
 
-type BranchMonad a = ReaderT BranchData (StateT Statistics IO) a
+doMemoize :: Ord a => (a -> b) -> a -> Map.Map a b -> (b, Map.Map a b)
+doMemoize f e m = case Map.lookup e m of
+                   Nothing     -> let result = f e in (result, Map.insert e result m)
+                   Just result -> (result, m)
 
-initialBranchStateFor :: (MonadReader BranchData m) =>  (m a -> BranchData -> b) -> BranchData -> m a -> b
-initialBranchStateFor f bd = flip f bd
+list :: Ord a => Set.Set a -> [a]
+list = Set.toList
 
+set :: Ord a => [a] -> Set.Set a
+set = Set.fromList
