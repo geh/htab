@@ -9,13 +9,12 @@
 
 module HTab.Branch
 (
-Branch(..), BranchMonad, createNewProp, createNewPref, createNewNomTestRelevance, BranchInfo(..),
+Branch(..), createNewProp, createNewPref, createNewNomTestRelevance, BranchInfo(..),
 addFormulas, addFormula, addAccFormula,
 addDiaRuleCheck, addDiaXRuleCheck, addDownRuleCheck, addDiffRuleCheck,
 addParentPrefix, addFirstFormulas,
 ScheduledRule(..), TodoList(..),
-BranchData(..),
-emptyBranch,initialBranchStateFor,prefixes,
+emptyBranch,prefixes,
 reduceDisjunctionProposeLazy, doLazyBranching,
 merge,
 getUrfather, getUrfatherAndDeps, isInTheModel, relationIsInTheModel,
@@ -27,8 +26,6 @@ isSymmetric, isTransitive,
 deleteUEV, insertUEV_addFormula
 ) where
 
-import Control.Monad.Reader(ReaderT, MonadReader)
-import Control.Monad.State(StateT)
 import Data.List(minimumBy)
 import Data.Maybe( mapMaybe )
 import Data.Ord ( comparing )
@@ -1146,13 +1143,3 @@ isSymmetric = hasProperty Symmetric
 
 isTransitive :: RelInfo -> Rel -> Bool
 isTransitive = hasProperty Transitive
-
-{-      Monad related stuff      -}
-
-data BranchData = BranchData { branch_clp :: CmdLineParams }
-
-type BranchMonad a = ReaderT BranchData (StateT Statistics IO) a
-
-initialBranchStateFor :: (MonadReader BranchData m) =>  (m a -> BranchData -> b) -> BranchData -> m a -> b
-initialBranchStateFor f bd = flip f bd
-

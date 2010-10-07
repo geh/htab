@@ -6,7 +6,6 @@ where
 import Control.Applicative ( (<$>) )
 import Control.Monad       ( when )
 import Control.Monad.State( runStateT )
-import Control.Monad.Reader( runReaderT )
 
 import System.Console.CmdArgs ( whenNormal, whenLoud )
 
@@ -19,8 +18,7 @@ import Prelude hiding ( readFile )
 import HyLo.InputFile.Parser ( QueryType(..) )
 
 import HTab.CommandLine( filename, timeout, CmdLineParams, genModel, showFormula )
-import HTab.Branch( BranchInfo(..),initialBranchStateFor, BranchData(..),
-                    emptyBranch, addFirstFormulas)
+import HTab.Branch( BranchInfo(..), emptyBranch, addFirstFormulas)
 import HTab.Statistics( Statistics, initialStatisticsStateFor, printOutMetricsFinal )
 import HTab.Tableau( OpenFlag(..), tableauStart )
 import HTab.Formula( formulaLanguageInfo, Theory, RelInfo, Encoding, Task,
@@ -165,10 +163,8 @@ saveGenModel mOutFile m = maybe (return ()) doWrite mOutFile
 tableauInit :: CmdLineParams -> BranchInfo -> IO (OpenFlag,Statistics)
 tableauInit clp bi =
         do whenLoud $ putStrLn ">> Starting rules application"
-           initStatsState $ initBranchState bd $ tableauStart clp bi
+           initStatsState $ tableauStart clp bi
  where initStatsState  = initialStatisticsStateFor runStateT
-       initBranchState = initialBranchStateFor runReaderT
-       bd              = BranchData { branch_clp  = clp }
 
 --
 
