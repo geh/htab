@@ -7,7 +7,7 @@
 ----------------------------------------------------
 
 module HTab.CommandLine (
-    CmdLineParams(..), UnitProp(..),
+    Params(..), UnitProp(..),
     defaultParams, configureStats, checkParams
 ) where
 
@@ -16,7 +16,7 @@ import System.Console.CmdArgs
 import HTab.Base( permutationOf )
 import HTab.Statistics( StatisticsState, setPrintOutInterval )
 
-data CmdLineParams = CLP {
+data Params = Params {
            filename        :: Maybe FilePath,
            genModel        :: Maybe FilePath,
            timeout         :: Int,
@@ -38,9 +38,9 @@ data CmdLineParams = CLP {
 
 data UnitProp = Eager | UPYes | UPNo deriving (Data, Typeable, Eq, Show)
 
-defaultParams :: CmdLineParams
+defaultParams :: Params
 defaultParams
- = CLP{
+ = Params{
        filename        = Nothing &= name "f" &= typFile &= help "input file",
        genModel        = Nothing &= name "m" &= typFile &= help "output model file",
        timeout         = 0       &= name "t" &= help "timeout (in seconds, default=none)",
@@ -65,9 +65,9 @@ defaultParams
 strategyVal :: String
 strategyVal = "n@E<Db|*r"
 
-checkParams :: CmdLineParams -> IO Bool
-checkParams clp
- = if (strategy clp) `permutationOf` strategyVal
+checkParams :: Params -> IO Bool
+checkParams p
+ = if strategy p `permutationOf` strategyVal
     then return True
     else do putStrLn
              $ unlines ["ERROR",
@@ -83,5 +83,5 @@ checkParams clp
                         "modality are immediate, thus do not belong to the strategy."]
             return False
 
-configureStats :: CmdLineParams -> StatisticsState ()
-configureStats clp = setPrintOutInterval $ stats clp
+configureStats :: Params -> StatisticsState ()
+configureStats p = setPrintOutInterval $ stats p

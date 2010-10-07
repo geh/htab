@@ -46,7 +46,7 @@ import qualified HyLo.InputFile as InputFile
 import qualified HyLo.InputFile.Parser as P
 import HTab.Base (set, list, invertMap)
 import qualified HyLo.Formula as F
-import HTab.CommandLine ( CmdLineParams(..) )
+import HTab.CommandLine ( Params(..) )
 
 type Prefix = Int
 
@@ -167,13 +167,13 @@ data RelProperty   =   Reflexive
 showRelInfo :: RelInfo -> String
 showRelInfo = Map.foldWithKey (\r v -> (++ " " ++ showRel r ++ " -> " ++ show v )) ""
 
-parse :: CmdLineParams -> String -> (Theory,RelInfo,Encoding,[Task])
-parse clp s
+parse :: Params -> String -> (Theory,RelInfo,Encoding,[Task])
+parse p s
   = (theory, relInfo, encoding, tasks)
     where parseOutput = InputFile.myparse s       -- direct parse from hylolib
           encoding    = getEncoding parseOutput
           pRelInfo    = P.relations parseOutput
-          relInfo     = handleFunInj $ saturate $ forceProperties clp encoding $ convertToOurType pRelInfo encoding -- TODO
+          relInfo     = handleFunInj $ saturate $ forceProperties p encoding $ convertToOurType pRelInfo encoding -- TODO
           theory      = convert relInfo encoding $ P.theory parseOutput
           tasks       = P.tasks parseOutput
 
@@ -228,17 +228,17 @@ nomsOfEncoding e = Map.elems (nomMap e)
 -- in order to work in case of automatic signature, requires
 -- the list of RelSymbol present in the formula
 
-forceProperties :: CmdLineParams -> Encoding -> RelInfo -> RelInfo
-forceProperties clp encoding relI
+forceProperties :: Params -> Encoding -> RelInfo -> RelInfo
+forceProperties p encoding relI
  = foldr addToAll relI rels
    where rels = Map.elems $ relMap encoding
          addToAll r = Map.insertWith (\c1 c2 -> nub $ c1 ++ c2) r conds
          conds = map snd $
-                   filter fst $ [(allTransitive clp, Transitive),
-                                 (allReflexive  clp, Reflexive ),
-                                 (allSymmetric  clp, Symmetric ),
-                                 (allFunctional clp, Functional),
-                                 (allInjective  clp, Injective )]
+                   filter fst $ [(allTransitive p, Transitive),
+                                 (allReflexive  p, Reflexive ),
+                                 (allSymmetric  p, Symmetric ),
+                                 (allFunctional p, Functional),
+                                 (allInjective  p, Injective )]
 
 convertToOurType :: PRelInfo -> Encoding -> RelInfo -- and add for each relation in the formula, the relevant key
 convertToOurType prelI e = foldr insertRelProp Map.empty (concatMap convertOne prelI)
@@ -256,8 +256,8 @@ convertToOurType prelI e = foldr insertRelProp Map.empty (concatMap convertOne p
        c r (P.Equals ss)     = [(int e r,SubsetOf [ int e s | s <- ss])] ++ [(int e s,SubsetOf [int e r]) | s <- ss]
        c _ (P.TClosureOf _)  = error "TClosureOf not handled"
 
-simpleParse :: CmdLineParams -> String -> (Theory,RelInfo,Encoding,[Task])
-simpleParse clp s = parse clp $ "signature { automatic } theory { " ++ removeBeginEnd s ++ "}"
+simpleParse :: Params -> String -> (Theory,RelInfo,Encoding,[Task])
+simpleParse p s = parse p $ "signature { automatic } theory { " ++ removeBeginEnd s ++ "}"
  where removeBeginEnd = unwords . delete "begin" . delete "end" . words
 
 convert :: RelInfo -> Encoding -> [F.Formula S.NomSymbol S.PropSymbol S.RelSymbol] -> Formula

@@ -17,7 +17,7 @@ import Prelude hiding ( readFile )
 
 import HyLo.InputFile.Parser ( QueryType(..) )
 
-import HTab.CommandLine( filename, timeout, CmdLineParams, genModel, showFormula )
+import HTab.CommandLine( filename, timeout, Params, genModel, showFormula )
 import HTab.Branch( BranchInfo(..), emptyBranch, addFirstFormulas)
 import HTab.Statistics( Statistics, initialStatisticsStateFor, printOutMetricsFinal )
 import HTab.Tableau( OpenFlag(..), tableauStart )
@@ -29,8 +29,8 @@ import HTab.ModelGen ( Model )
 
 data TaskRunFlag = SUCCESS | FAILURE
 
-runWithParams :: CmdLineParams -> IO (Maybe TaskRunFlag)
-runWithParams clp =
+runWithParams :: Params -> IO (Maybe TaskRunFlag)
+runWithParams p =
  time "Total time: "
   $ do
      let fromStdIn = do myPutStrLn $ "Reading from stdin (run again with" ++
@@ -39,13 +39,13 @@ runWithParams clp =
                         getContents
 
      let parse = \i -> if head (words i)  == "begin"
-                        then F.simpleParse clp i else F.parse clp i
-     allTasks <- parse <$> maybe fromStdIn readFile (filename clp)
+                        then F.simpleParse p i else F.parse p i
+     allTasks <- parse <$> maybe fromStdIn readFile (filename p)
      --
-     result <- if timeout clp == 0
-                then Just <$> runTasks allTasks clp
-                else T.timeout (timeout clp * (10::Int)^(6::Int))
-                               (runTasks allTasks clp)
+     result <- if timeout p == 0
+                then Just <$> runTasks allTasks p
+                else T.timeout (timeout p * (10::Int)^(6::Int))
+                               (runTasks allTasks p)
      --
      case result of
         Nothing      -> myPutStrLn "\nTimeout.\n"
@@ -56,35 +56,35 @@ runWithParams clp =
 
 --
 
-runTasks :: (Theory,RelInfo,Encoding,[Task]) -> CmdLineParams -> IO TaskRunFlag
-runTasks allTasks@(theory,relInfo,encoding,tasks) clp =
+runTasks :: (Theory,RelInfo,Encoding,[Task]) -> Params -> IO TaskRunFlag
+runTasks allTasks@(theory,relInfo,encoding,tasks) p =
  do
     myPutStrLn "== Checking theory satisfiability =="
-    res <- runOneTask (Satisfiable, genModel clp,[]) relInfo encoding theory clp
+    res <- runOneTask (Satisfiable, genModel p,[]) relInfo encoding theory p
     case res of
      SUCCESS | null tasks -> return SUCCESS
              | otherwise  -> do myPutStrLn "\n==         Starting tasks         =="
-                                res2 <- runTasks2 allTasks clp
+                                res2 <- runTasks2 allTasks p
                                 myPutStrLn "\n==         End of   tasks         =="
                                 return res2
      FAILURE              -> return FAILURE
 
 --
 
-runTasks2 :: (Theory,RelInfo,Encoding,[Task]) -> CmdLineParams -> IO TaskRunFlag
+runTasks2 :: (Theory,RelInfo,Encoding,[Task]) -> Params -> IO TaskRunFlag
 runTasks2 (_,_,_,[]) _                  = error "runTasks2 empty list error"
-runTasks2 (theory,relInfo,encoding,(hd:tl)) clp =
- do res <- runOneTask hd relInfo encoding theory clp
+runTasks2 (theory,relInfo,encoding,(hd:tl)) p =
+ do res <- runOneTask hd relInfo encoding theory p
     case res of
       SUCCESS | null tl   -> return SUCCESS
-              | otherwise -> runTasks2 (theory,relInfo,encoding,tl) clp
-      FAILURE             -> do _ <- runTasks2 (theory,relInfo,encoding,tl) clp
+              | otherwise -> runTasks2 (theory,relInfo,encoding,tl) p
+      FAILURE             -> do _ <- runTasks2 (theory,relInfo,encoding,tl) p
                                 return FAILURE
 
 --
 
-runOneTask :: Task -> RelInfo -> Encoding -> Formula -> CmdLineParams -> IO TaskRunFlag
-runOneTask (query,mOutFile,fs) relInfo encoding theory clp =
+runOneTask :: Task -> RelInfo -> Encoding -> Formula -> Params -> IO TaskRunFlag
+runOneTask (query,mOutFile,fs) relInfo encoding theory p =
  time "Task time:"
  $ do
      myPutStrLn $ "\n* " ++ case query of {Valid       -> "Validity task";
@@ -96,12 +96,12 @@ runOneTask (query,mOutFile,fs) relInfo encoding theory clp =
         Retrieve
           ->
             do let fLang = formulaLanguageInfo theory encoding
-               let initialBranch = emptyBranch clp fLang relInfo encoding
+               let initialBranch = emptyBranch p fLang relInfo encoding
                let (noms,encfs) = encodeRetrieveTask relInfo encoding fLang theory fs
                --
                myPutStrLn $ "Instances making true: " ++ show fs
                --
-               results <- mapM (tableauInit clp . addFirstFormulas clp initialBranch fLang) encfs
+               results <- mapM (tableauInit p . addFirstFormulas p initialBranch fLang) encfs
                let goodnoms = [ toNomSymbol encoding n | (n,(CLOSED _ ,_))  <- zip noms results]
                myPutStrLn $ show goodnoms
                let doWrite f = do writeFile f (show goodnoms ++ "\n")
@@ -116,7 +116,7 @@ runOneTask (query,mOutFile,fs) relInfo encoding theory clp =
                         Satisfiable -> encodeSatTest      relInfo encoding theory fs
                         _           -> error "never happens"
                --
-               when (showFormula clp)
+               when (showFormula p)
                   $ myPutStrLn
                          $ unlines ["Input for SAT test:",
                                     "{ " ++ show f ++ " }",
@@ -124,10 +124,10 @@ runOneTask (query,mOutFile,fs) relInfo encoding theory clp =
                                     "Relations properties :" ++ showRelInfo relInfo ]
                --
                let fLang         = formulaLanguageInfo f encoding
-               let initialBranch = emptyBranch clp fLang relInfo encoding
-               let branchInfo    = addFirstFormulas clp initialBranch fLang f
+               let initialBranch = emptyBranch p fLang relInfo encoding
+               let branchInfo    = addFirstFormulas p initialBranch fLang f
                --
-               result <- tableauInit clp branchInfo
+               result <- tableauInit p branchInfo
                --
                case result of
                   (OPEN m, stats)   -> do myPutStrLn $
@@ -160,10 +160,10 @@ saveGenModel mOutFile m = maybe (return ()) doWrite mOutFile
     where doWrite f = do writeFile f (show m)
                          myPutStrLn ("Model saved as " ++ f)
 
-tableauInit :: CmdLineParams -> BranchInfo -> IO (OpenFlag,Statistics)
-tableauInit clp bi =
+tableauInit :: Params -> BranchInfo -> IO (OpenFlag,Statistics)
+tableauInit p bi =
         do whenLoud $ putStrLn ">> Starting rules application"
-           initStatsState $ tableauStart clp bi
+           initStatsState $ tableauStart p bi
  where initStatsState  = initialStatisticsStateFor runStateT
 
 --

@@ -27,7 +27,7 @@ import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewNomTestRe
                     ReducedDisjunct(..), getUrfather,
                     ScheduledRule(..), TodoList(..),
                     deleteUEV, insertUEV_addFormula )
-import HTab.CommandLine(CmdLineParams, UnitProp(..), lazyBranching, semBranch, unitProp, strategy, noLoopCheck)
+import HTab.CommandLine(Params, UnitProp(..), lazyBranching, semBranch, unitProp, strategy, noLoopCheck)
 import HTab.RuleId(RuleId(..))
 import qualified HTab.DisjSet as DS
 
@@ -209,19 +209,19 @@ ruleToId r = case r of
 
 -- the rules application strategy is defined here:
 -- the first rule is the one that will be applied at the next tableau step
-applicableRule :: Branch -> CmdLineParams -> Dependency -> Maybe (Rule,TodoList,Branch)
-applicableRule br clp d =
+applicableRule :: Branch -> Params -> Dependency -> Maybe (Rule,TodoList,Branch)
+applicableRule br p d =
  case todoList br of
   Fair [] -> Nothing
-  Fair (sr:tl) -> Just (scheduledRuleToRule br clp d sr, Fair tl, br)
-  _        ->  listToMaybe $ mapMaybe (ruleByChar br clp d) (strategy clp)
+  Fair (sr:tl) -> Just (scheduledRuleToRule br p d sr, Fair tl, br)
+  _        ->  listToMaybe $ mapMaybe (ruleByChar br p d) (strategy p)
 
-scheduledRuleToRule :: Branch -> CmdLineParams -> Dependency -> ScheduledRule -> Rule
+scheduledRuleToRule :: Branch -> Params -> Dependency -> ScheduledRule -> Rule
 scheduledRuleToRule _ _ d (SR_Inclusion p1 rs p2 ds) = RoleIncRule p1 rs p2 (dsInsert d ds)
 scheduledRuleToRule _ _ _ (SR_Merge pr po ds)  = MergeRule pr po ds
-scheduledRuleToRule br clp d (SR_Formula pf@(PrFormula _ _ f2)) =
+scheduledRuleToRule br p d (SR_Formula pf@(PrFormula _ _ f2)) =
  case f2 of
-  Dis _     -> if semBranch clp then semBrRule clp pf br d else disjRule clp pf br d
+  Dis _     -> if semBranch p then semBrRule p pf br d else disjRule p pf br d
   Dia _ _   -> DiaRule pf
   DiaX _ _ _-> diaXRule pf br d
   At _ _    -> AtRule pf
@@ -230,8 +230,8 @@ scheduledRuleToRule br clp d (SR_Formula pf@(PrFormula _ _ f2)) =
   D _       -> DiffRule pf d
   _         -> error "scheduledRuleToRule, incorrect formula kind"
 
-ruleByChar :: Branch -> CmdLineParams -> Dependency -> Char -> Maybe (Rule,TodoList,Branch)
-ruleByChar br clp d char =
+ruleByChar :: Branch -> Params -> Dependency -> Char -> Maybe (Rule,TodoList,Branch)
+ruleByChar br p d char =
  case char of
   'n' -> applicableMergeRule
   '|' -> applicableDisjRule
@@ -248,7 +248,7 @@ ruleByChar br clp d char =
 
   applicableDiaRule
    = do (f@(PrFormula pr _ _),new) <- Set.minView $ diaTodo todos
-        if noLoopCheck clp
+        if noLoopCheck p
          then return (DiaRule f, todos{diaTodo = new},br)
          else if diaAlreadyDone br f
                then return (DiscardRule f, todos{diaTodo = new} , br )
@@ -281,32 +281,32 @@ ruleByChar br clp d char =
   applicableRoleIncRule = do ((ds, p1, p2, rs),new) <- Set.minView $ roleIncTodo todos
                              return (RoleIncRule p1 rs p2 (dsInsert d ds), todos{roleIncTodo = new},br)
 
-  applicableMergeRule  = do ((ds,p,po),new) <- Set.minView $ mergeTodo todos
-                            return (MergeRule p po ds, todos{mergeTodo = new},br)
+  applicableMergeRule  = do ((ds,pr,po),new) <- Set.minView $ mergeTodo todos
+                            return (MergeRule pr po ds, todos{mergeTodo = new},br)
 
   applicableDisjRule
-   = case unitProp clp of
+   = case unitProp p of
       Eager -> {- scan all disjuncts until one can be discarded, reduced to one disjunct or clashes -}
-                case mapMaybe (makeInteresting clp br d) $ Set.toList $ disjTodo todos of
+                case mapMaybe (makeInteresting p br d) $ Set.toList $ disjTodo todos of
                   ((r,pf):_) -> return (r, todos{disjTodo = Set.delete pf $ disjTodo todos},br)
                   [] -> regularApplicableDisjRule --todo: update counter (CurCount, MaxCount) step 10 until which space out unit propagation
       _     ->  regularApplicableDisjRule
 
   regularApplicableDisjRule
-   =  if semBranch clp
+   =  if semBranch p
        then do (f,new) <- Set.minView $ disjTodo todos
-               return (semBrRule clp f br d, todos{disjTodo = new},br)
+               return (semBrRule p f br d, todos{disjTodo = new},br)
        else do (f,new) <- Set.minView $ disjTodo todos
-               return (disjRule clp f br d,  todos{disjTodo = new},br)
+               return (disjRule p f br d,  todos{disjTodo = new},br)
 
-makeInteresting :: CmdLineParams -> Branch -> Dependency -> PrFormula ->  Maybe (Rule,PrFormula)
-makeInteresting clp br d df@(PrFormula pr ds (Dis fs))
+makeInteresting :: Params -> Branch -> Dependency -> PrFormula ->  Maybe (Rule,PrFormula)
+makeInteresting p br d df@(PrFormula pr ds (Dis fs))
  = case reduceDisjunctionProposeLazy br pr fs of
           Triviality               -> Just (DiscardRule df,df)
           Contradiction ds_clash   -> Just (ClashRule (dsUnion ds ds_clash) df,df)
           Reduced new_ds disjuncts mProposed
             | Set.size disjuncts == 1 -> Just (DisjRule df ( prefix ur newDeps disjuncts ), df)
-            | lazyBranching clp && ur <= unblockedPrefsLim br
+            | lazyBranching p && ur <= unblockedPrefsLim br
                                   -> case mProposed of
                                     Nothing  -> Nothing
                                     Just lit -> Just (LazyBranchRule df ur lit [PrFormula ur newDeps (Dis disjuncts)], df)
@@ -319,35 +319,35 @@ makeInteresting clp br d df@(PrFormula pr ds (Dis fs))
 
 makeInteresting _ _ _ _ = error "makeInteresting on a non disjunction"
 
-applyRule :: CmdLineParams -> Rule -> Branch -> TodoList -> [BranchInfo]
-applyRule clp rule br_ todo
- = map (applyMods clp br) (getMods br rule)
+applyRule :: Params -> Rule -> Branch -> TodoList -> [BranchInfo]
+applyRule p rule br_ todo
+ = map (applyMods p br) (getMods br rule)
    where br = br_{todoList = todo}
 
-applyMods :: CmdLineParams -> Branch -> [BranchModification] -> BranchInfo
-applyMods clp br (hd:tl)
-  = case (applyMod clp br hd) of
-      BranchOK br2             -> applyMods clp br2 tl
+applyMods :: Params -> Branch -> [BranchModification] -> BranchInfo
+applyMods p br (hd:tl)
+  = case (applyMod p br hd) of
+      BranchOK br2             -> applyMods p br2 tl
       si@(BranchClash _ _ _ _) -> si
 applyMods _ br [] = BranchOK br
 
 
-applyMod :: CmdLineParams -> Branch -> BranchModification -> BranchInfo
-applyMod clp br (BM_AddFormulas li)                = addFormulas clp br li
-applyMod clp br (BM_AddAccFormula accFor)          = addAccFormula clp br accFor
-applyMod  _  br (BM_AddDiaRuleCheck pr (r,f))      = BranchOK $ addDiaRuleCheck br pr (r,f)
-applyMod  _  br (BM_AddDiaXRuleCheck pr (r,f))     = BranchOK $ addDiaXRuleCheck br pr (r,f)
-applyMod  _  br (BM_AddDownRuleCheck pr f)         = BranchOK $ addDownRuleCheck br pr f
-applyMod clp br (BM_CreateNewPref)                 = createNewPref clp br
-applyMod  _  br (BM_CreateNewProp)                 = BranchOK $ createNewProp br
-applyMod  _  br (BM_CreateNewNomTestRelevance f)   = BranchOK $ createNewNomTestRelevance br f
-applyMod  _  br (BM_AddDiffRuleCheck f mp)         = BranchOK $ addDiffRuleCheck br f mp
-applyMod  _  br (BM_AddParentPrefix son father)    = BranchOK $ addParentPrefix br son father
-applyMod  _  br (BM_Clash ds (PrFormula pr ds2 f)) = BranchClash br pr (dsUnion ds ds2) f
-applyMod  _  br (BM_DeleteUEV i)                   = BranchOK $ deleteUEV br i
-applyMod clp br (BM_InsertUEV_addFormula mi ds ff) = insertUEV_addFormula br clp mi ds ff
-applyMod clp br (BM_Merge pr p ds)                 = merge clp br pr ds p
-applyMod  _  br (BM_DoLazyBranch pr l pfs)         = BranchOK $ doLazyBranching pr l pfs br
+applyMod :: Params -> Branch -> BranchModification -> BranchInfo
+applyMod p br (BM_AddFormulas li)                = addFormulas p br li
+applyMod p br (BM_AddAccFormula accFor)          = addAccFormula p br accFor
+applyMod _ br (BM_AddDiaRuleCheck pr (r,f))      = BranchOK $ addDiaRuleCheck br pr (r,f)
+applyMod _ br (BM_AddDiaXRuleCheck pr (r,f))     = BranchOK $ addDiaXRuleCheck br pr (r,f)
+applyMod _ br (BM_AddDownRuleCheck pr f)         = BranchOK $ addDownRuleCheck br pr f
+applyMod p br (BM_CreateNewPref)                 = createNewPref p br
+applyMod _ br (BM_CreateNewProp)                 = BranchOK $ createNewProp br
+applyMod _ br (BM_CreateNewNomTestRelevance f)   = BranchOK $ createNewNomTestRelevance br f
+applyMod _ br (BM_AddDiffRuleCheck f mp)         = BranchOK $ addDiffRuleCheck br f mp
+applyMod _ br (BM_AddParentPrefix son father)    = BranchOK $ addParentPrefix br son father
+applyMod _ br (BM_Clash ds (PrFormula pr ds2 f)) = BranchClash br pr (dsUnion ds ds2) f
+applyMod _ br (BM_DeleteUEV i)                   = BranchOK $ deleteUEV br i
+applyMod p br (BM_InsertUEV_addFormula mi ds ff) = insertUEV_addFormula br p mi ds ff
+applyMod p br (BM_Merge pr po ds)                = merge p br pr ds po
+applyMod _ br (BM_DoLazyBranch pr l pfs)         = BranchOK $ doLazyBranching pr l pfs br
 -- the actual rules and their helper functions
 
 -- diaX (may create a discard rule)
@@ -365,9 +365,9 @@ getNewPref :: Branch -> Prefix
 getNewPref br = lastPref br + 1
 
 -- disjunction
-disjRule :: CmdLineParams -> PrFormula -> Branch -> Dependency -> Rule
-disjRule clp df@(PrFormula pr ds (Dis fs)) br d
-  = if unitProp clp == UPNo
+disjRule :: Params -> PrFormula -> Branch -> Dependency -> Rule
+disjRule p df@(PrFormula pr ds (Dis fs)) br d
+  = if unitProp p == UPNo
      then DisjRule df $ prefix pr (dsInsert d ds) fs
      else case reduceDisjunctionProposeLazy br pr fs of
              Triviality               -> DiscardRule df
@@ -378,9 +378,9 @@ disjRule clp df@(PrFormula pr ds (Dis fs)) br d
 disjRule _ _ _ _ = error "disjRule"
 
 -- semantic branching
-semBrRule :: CmdLineParams -> PrFormula -> Branch -> Dependency -> Rule    -- todo : unit propagation, part 2 (b)
-semBrRule clp df@(PrFormula pr ds (Dis fs)) br d
- = if unitProp clp == UPNo
+semBrRule :: Params -> PrFormula -> Branch -> Dependency -> Rule    -- todo : unit propagation, part 2 (b)
+semBrRule p df@(PrFormula pr ds (Dis fs)) br d
+ = if unitProp p == UPNo
     then SemBrRule df $ sbModList $ prefix pr (dsInsert d ds) fs
     else case reduceDisjunctionProposeLazy br pr fs of
             Triviality               -> DiscardRule df

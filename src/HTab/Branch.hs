@@ -39,8 +39,7 @@ import qualified Data.IntMap as IntMap
 
 import qualified HTab.DisjSet as DS
 
-import HTab.Statistics(Statistics)
-import HTab.CommandLine(CmdLineParams(..))
+import HTab.CommandLine(Params(..))
 
 import HTab.Formula
 
@@ -107,11 +106,11 @@ data Branch =
 
 --
 
-emptyBranch :: CmdLineParams -> LanguageInfo -> RelInfo -> Encoding -> Branch
-emptyBranch clp fLang relInfo_ encoding_ =
+emptyBranch :: Params -> LanguageInfo -> RelInfo -> Encoding -> Branch
+emptyBranch p fLang relInfo_ encoding_ =
                 Branch
                 { clashStr          = DMap.empty,
-                  todoList          = emptyTodoList clp,
+                  todoList          = emptyTodoList p,
                   accStr            = emptyRels,
                   boxConstrBwd      = DMap.empty,
                   boxConstrFwd      = DMap.empty,
@@ -241,9 +240,9 @@ instance Show ScheduledRule where
  show (SR_Merge pr po _) = "Merge " ++ show (pr,po)
  show (SR_Inclusion p1 ss p2 _) = "Role inclusion " ++ show p1 ++ "<" ++ show ss ++ ">" ++ show p2
 
-emptyTodoList :: CmdLineParams -> TodoList
-emptyTodoList clp =
- if fairStrategy clp
+emptyTodoList :: Params -> TodoList
+emptyTodoList p =
+ if fairStrategy p
    then Fair []
    else Unfair {  disjTodo = Set.empty,
                    diaTodo = Set.empty,
@@ -261,32 +260,32 @@ emptyTodoList clp =
    prefixes and nominals
 -}
 
-addFormulas :: CmdLineParams -> Branch -> [PrFormula] -> BranchInfo
-addFormulas clp br fs =
+addFormulas :: Params -> Branch -> [PrFormula] -> BranchInfo
+addFormulas p br fs =
  foldr (\f bi ->
           case bi of
-           BranchOK br2 -> addFormula clp br2 f
+           BranchOK br2 -> addFormula p br2 f
            clash -> clash
        )
        (BranchOK br)
        fs
 
-addFormula :: CmdLineParams -> Branch -> PrFormula -> BranchInfo
-addFormula clp br pf
- =   putAwayFormula  clp pf
-   $ bookKeepFormula clp pf br
+addFormula :: Params -> Branch -> PrFormula -> BranchInfo
+addFormula p br pf
+ =   putAwayFormula  p pf
+   $ bookKeepFormula p pf br
 
-bookKeepFormula :: CmdLineParams -> PrFormula -> Branch -> Branch
-bookKeepFormula clp pf_ br
+bookKeepFormula :: Params -> PrFormula -> Branch -> Branch
+bookKeepFormula p pf_ br
  =   addToPrefToForms         pf
-   $ rescheduleLazyBranching  clp pf
+   $ rescheduleLazyBranching  p pf
    $ rescheduleBlockedDias    ur br
   where
     (ur,pf) = toUrfather br pf_
 
-rescheduleLazyBranching :: CmdLineParams -> PrFormula -> Branch -> Branch
-rescheduleLazyBranching clp (PrFormula pr ds (Lit l)) br   -- pr already urfather
- | lazyBranching clp && isProp l
+rescheduleLazyBranching :: Params -> PrFormula -> Branch -> Branch
+rescheduleLazyBranching p (PrFormula pr ds (Lit l)) br   -- pr already urfather
+ | lazyBranching p && isProp l
    =
      let (Just innerMap) = DMap.lookup1 pr (brWitnesses br)
      in
@@ -312,17 +311,17 @@ rescheduleLazyBranching clp (PrFormula pr ds (Lit l)) br   -- pr already urfathe
 rescheduleLazyBranching _ _ br = br
 
 
-putAwayFormula :: CmdLineParams -> PrFormula -> Branch -> BranchInfo
-putAwayFormula clp pf@(PrFormula pr ds f2) br =
+putAwayFormula :: Params -> PrFormula -> Branch -> BranchInfo
+putAwayFormula p pf@(PrFormula pr ds f2) br =
  case f2 of
-   Con fs     -> addFormulas clp br (prefix pr ds fs)
-   Dis _      -> putAwayDisjunction clp pf br
+   Con fs     -> addFormulas p br (prefix pr ds fs)
+   Dis _      -> putAwayDisjunction p pf br
    Dia _ _    -> BranchOK $ addToTodo pf br
    DiaX _ _ _ -> BranchOK $ addToTodo pf br
-   Box r f    -> addBoxConstraint      pr r f ds clp br
-   BoxX r f   -> addBoxXConstraint     pr r f ds clp br
-   A f        -> addUnivConstraint          f ds clp br
-   B f        -> b_rule                pr   f ds clp br
+   Box r f    -> addBoxConstraint      pr r f ds p br
+   BoxX r f   -> addBoxXConstraint     pr r f ds p br
+   A f        -> addUnivConstraint          f ds p br
+   B f        -> b_rule                pr   f ds p br
    E _        -> BranchOK $ addToTodo pf br
    D _        -> BranchOK $ addToTodo pf br
    At _ _     -> BranchOK $ addToTodo pf br
@@ -330,9 +329,9 @@ putAwayFormula clp pf@(PrFormula pr ds f2) br =
    Lit l | isPositiveNom l -> addToClashable pr ds l $ addToTodo pf br
    Lit l                   -> addToClashable pr ds l br
 
-putAwayDisjunction :: CmdLineParams -> PrFormula -> Branch -> BranchInfo
-putAwayDisjunction clp pf@(PrFormula pr ds f@(Dis fs)) br
- | lazyBranching clp && ur <= unblockedPrefsLim br
+putAwayDisjunction :: Params -> PrFormula -> Branch -> BranchInfo
+putAwayDisjunction p pf@(PrFormula pr ds f@(Dis fs)) br
+ | lazyBranching p && ur <= unblockedPrefsLim br
   = case reduceDisjunctionProposeLazy br pr fs of
      Contradiction dsClash -> BranchClash br pr (dsUnion ds dsClash) f
      Triviality -> BranchOK br
@@ -421,8 +420,8 @@ rescheduleBlockedDias  pr br
 
 {-    helper functions for equivalence class merge     -}
 
-merge :: CmdLineParams -> Branch -> Prefix -> DependencySet -> DS.Pointer -> BranchInfo
-merge clp br pr fDs pointer -- pointer is a nominal or a prefix
+merge :: Params -> Branch -> Prefix -> DependencySet -> DS.Pointer -> BranchInfo
+merge p br pr fDs pointer -- pointer is a nominal or a prefix
  = let
        (DS.Prefix ur1,classes1) = DS.find  (DS.Prefix pr) (nomPrefClasses br)
        (poAncestor   ,classes2) = DS.find  pointer classes1
@@ -490,7 +489,7 @@ merge clp br pr fDs pointer -- pointer is a nominal or a prefix
                                            clashStr       = newClashStr,
                                            brWitnesses    = newBrWitnesses}
                   in
-                      addFormulas clp newBr formulasToAdd
+                      addFormulas p newBr formulasToAdd
 
 mergeWitnesses :: Prefix -> Prefix -> Clashable_info_slot -> Branching_witnesses -> (Branching_witnesses, [PrFormula])
 mergeWitnesses oldUr newUr urfatherSlot dbrWits@(DMap brWits)
@@ -597,9 +596,9 @@ inSameClass br p n
 deleteUEV :: Branch -> Int -> Branch
 deleteUEV br idx = br{eventualities = IntMap.delete idx (eventualities br)}
 
-insertUEV_addFormula :: Branch -> CmdLineParams -> Maybe Int -> DependencySet -> (Int -> PrFormula) -> BranchInfo
-insertUEV_addFormula br clp mi ds ff
- = addFormula clp br2 f
+insertUEV_addFormula :: Branch -> Params -> Maybe Int -> DependencySet -> (Int -> PrFormula) -> BranchInfo
+insertUEV_addFormula br p mi ds ff
+ = addFormula p br2 f
   where idxToUse = case mi of
                     Nothing   -> case IntMap.maxViewWithKey $ eventualities br of
                                    Nothing        -> 0
@@ -620,31 +619,31 @@ boxRule deps (mapBox, mapAcc)
                       (f,ds1) <- (IntMap.!) mapBox r1,
                       (p,ds2) <- (IntMap.!) mapAcc r2     ]
 
-addBoxConstraint :: Prefix -> Rel -> Formula -> DependencySet -> CmdLineParams -> Branch -> BranchInfo
-addBoxConstraint pr_ r f ds clp br_
+addBoxConstraint :: Prefix -> Rel -> Formula -> DependencySet -> Params -> Branch -> BranchInfo
+addBoxConstraint pr_ r f ds p br_
  | boxAlreadyDone br_ pr (r,f) = BranchOK br_
  | isForward r
     = let    newBr = br{boxConstrFwd = updateBoxConstr pr r f ds (boxConstrFwd br)}
              accessiblePrDs   = IntMap.findWithDefault [] r $ successors (accStr br) pr
              toAdd = symApplications ++ transApplications ++ boxApplications
              transApplications = if isTransitive (relInfo br) r
-                                 then map (\(p,ds2) -> PrFormula p (dsUnion ds ds2) (Box r f)) accessiblePrDs
+                                 then map (\(pr2,ds2) -> PrFormula pr2 (dsUnion ds ds2) (Box r f)) accessiblePrDs
                                  else []
              symApplications = [PrFormula pr ds $ Box (invRel r) f | isSymmetric (relInfo br) r]
-             boxApplications = map (\(p,ds2) -> PrFormula p (dsUnion ds ds2) f) accessiblePrDs
+             boxApplications = map (\(pr2,ds2) -> PrFormula pr2 (dsUnion ds ds2) f) accessiblePrDs
       in
-         addFormulas clp newBr toAdd
+         addFormulas p newBr toAdd
 
  | otherwise
    = let    newBr = br{boxConstrBwd = updateBoxConstr pr (atom r) f ds (boxConstrBwd br)}
             accessiblePrDs          = IntMap.findWithDefault [] (atom r) $ predecessors (accStr br) pr
             toAdd = transApplications ++ boxApplications -- no symApplications cause inv rewritten as forward during parsing
             transApplications = if isTransitive (relInfo br) (atom r)
-                                then map (\(p,ds2) -> PrFormula p (dsUnion ds ds2) (Box r f)) accessiblePrDs
+                                then map (\(pr2,ds2) -> PrFormula pr2 (dsUnion ds ds2) (Box r f)) accessiblePrDs
                                 else []
-            boxApplications = map (\(p,ds2) -> PrFormula p (dsUnion ds ds2) f) accessiblePrDs
+            boxApplications = map (\(pr2,ds2) -> PrFormula pr2 (dsUnion ds ds2) f) accessiblePrDs
      in
-        addFormulas clp newBr toAdd
+        addFormulas p newBr toAdd
  where pr = getUrfather br_ (DS.Prefix pr_)
        br = addBoxRuleCheck br_ pr (r,f)
 
@@ -669,10 +668,10 @@ boxAlreadyDone b ur (r,f) =
 
 -- [*]phi --> phi & [][*]phi
 -- need not to do all that addBoxConstraint does
-addBoxXConstraint :: Prefix -> Rel -> Formula -> DependencySet -> CmdLineParams ->  Branch -> BranchInfo
-addBoxXConstraint pr r f ds clp br
+addBoxXConstraint :: Prefix -> Rel -> Formula -> DependencySet -> Params ->  Branch -> BranchInfo
+addBoxXConstraint pr r f ds p br
  | boxXAlreadyDone br ur (r,f) = BranchOK br
- | otherwise = addFormulas clp br2 [PrFormula pr ds f, PrFormula pr ds (Box r (BoxX r f))]
+ | otherwise = addFormulas p br2 [PrFormula pr ds f, PrFormula pr ds (Box r (BoxX r f))]
    where ur = getUrfather br (DS.Prefix pr)
          br2 = addBoxXRuleCheck br ur (r,f)
 
@@ -686,11 +685,11 @@ boxXAlreadyDone b ur (r,f) =
      Nothing  -> False
      Just fset -> Set.member (r,f) fset
 
-addAccFormula :: CmdLineParams -> Branch -> AccFormula -> BranchInfo
-addAccFormula clp br (AccFormula ds r p1_ p2_)
- | isBackwards r = addAccFormula clp br (AccFormula ds (invRel r) p2_ p1_)
+addAccFormula :: Params -> Branch -> AccFormula -> BranchInfo
+addAccFormula p br (AccFormula ds r p1_ p2_)
+ | isBackwards r = addAccFormula p br (AccFormula ds (invRel r) p2_ p1_)
  | otherwise -- forward
-   = addFormulas clp newBr toAdd
+   = addFormulas p newBr toAdd
      where toAdd = transApplications ++ boxApplications
            transApplications = if isTransitive (relInfo br) r
                                 then
@@ -903,19 +902,19 @@ atAlreadyDone _ _ = error "at already done : wrong formula kind"
 
 --
 
-addUnivConstraint :: Formula -> DependencySet -> CmdLineParams -> Branch -> BranchInfo
-addUnivConstraint f ds clp br
- = addFormulas clp newBr
-               ( map (\p -> PrFormula p ds f) urfathers )
+addUnivConstraint :: Formula -> DependencySet -> Params -> Branch -> BranchInfo
+addUnivConstraint f ds p br
+ = addFormulas p newBr
+               ( map (\pr -> PrFormula pr ds f) urfathers )
    where newBr = br{univCons = (ds,f):(univCons br)}
          prefs = [0..(lastPref br)]
          urfathers = filter (isNominalUrfather br) prefs
 
 --
 
-b_rule :: Prefix -> Formula -> DependencySet -> CmdLineParams -> Branch -> BranchInfo
-b_rule  pr f ds clp br
- = addFormula clp br2 (PrFormula pr ds $ Down newNom $ A (Lit newNom `disj` f))
+b_rule :: Prefix -> Formula -> DependencySet -> Params -> Branch -> BranchInfo
+b_rule  pr f ds p br
+ = addFormula p br2 (PrFormula pr ds $ Down newNom $ A (Lit newNom `disj` f))
     where newNom = nextNom br
           br2 = br{nextNom = nextNom br + 4}
 --
@@ -925,9 +924,9 @@ addDiffRuleCheck br f mp = br{dDiaRlCh=Map.insert f mp (dDiaRlCh br)}
 
 --
 
-createNewPref :: CmdLineParams -> Branch -> BranchInfo
-createNewPref clp br
- = addFormulas clp newBrWithRefl
+createNewPref :: Params -> Branch -> BranchInfo
+createNewPref p br
+ = addFormulas p newBrWithRefl
                          ( map (\(ds,f) -> PrFormula newPr ds f) univConstraints )
    where newPr = lastPref br + 1
          newBr = br{lastPref = newPr}
@@ -962,9 +961,9 @@ createNewNomTestRelevance br f
 --    (even if the nominal was filtered out during lexical normalisation) -- <= TODO currently not the case. Get the nominals from the encoding 
 --  - add reflexive links for prefixes 0 and nominal witnesses
 --  - add functionality and injectivitty down-arrow formulas
-addFirstFormulas :: CmdLineParams -> Branch -> LanguageInfo -> Formula -> BranchInfo
-addFirstFormulas clp br_ fLang f
- = addFormulas clp br5 ([pf]++funUniv++injUniv)
+addFirstFormulas :: Params -> Branch -> LanguageInfo -> Formula -> BranchInfo
+addFirstFormulas p br_ fLang f
+ = addFormulas p br5 ([pf]++funUniv++injUniv)
     where ns = languageNoms fLang
           nbNs = length ns
           nomWitnesses = [1..nbNs]
@@ -978,7 +977,7 @@ addFirstFormulas clp br_ fLang f
                               (zip [1..] ns)
           br2 = br{nomPrefClasses = newClasses,
                          clashStr = newClashStr}
-          br3 = foldr (\(pr,n) -> bookKeepFormula clp (PrFormula pr dsEmpty (Lit n)))
+          br3 = foldr (\(pr,n) -> bookKeepFormula p (PrFormula pr dsEmpty (Lit n)))
                       br2
                       (zip [1..] ns)
           funUniv = map (\r -> PrFormula 0 dsEmpty
