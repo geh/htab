@@ -25,7 +25,7 @@ import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewNomTestRe
                     getUrfatherAndDeps, isNotBlocked, merge,
                     diaAlreadyDone,  diaXAlreadyDone, downAlreadyDone,
                     ReducedDisjunct(..), getUrfather,
-                    ScheduledRule(..), TodoList(..),
+                    TodoList(..),
                     deleteUEV, insertUEV_addFormula )
 import HTab.CommandLine(Params, UnitProp(..), lazyBranching, semBranch, unitProp, strategy, noLoopCheck)
 import HTab.RuleId(RuleId(..))
@@ -230,25 +230,7 @@ ruleToId r = case r of
 -- the rules application strategy is defined here:
 -- the first rule is the one that will be applied at the next tableau step
 applicableRule :: Branch -> Params -> Dependency -> Maybe (Rule,TodoList,Branch)
-applicableRule br p d =
- case todoList br of
-  Fair [] -> Nothing
-  Fair (sr:tl) -> Just (scheduledRuleToRule br p d sr, Fair tl, br)
-  _        ->  listToMaybe $ mapMaybe (ruleByChar br p d) (strategy p)
-
-scheduledRuleToRule :: Branch -> Params -> Dependency -> ScheduledRule -> Rule
-scheduledRuleToRule _ _ d (SR_Inclusion p1 rs p2 ds) = RoleIncRule p1 rs p2 (dsInsert d ds)
-scheduledRuleToRule _ _ _ (SR_Merge pr po ds)  = MergeRule pr po ds
-scheduledRuleToRule br p d (SR_Formula pf@(PrFormula _ _ f2)) =
- case f2 of
-  Dis _     -> if semBranch p then semBrRule p pf br d else disjRule p pf br d
-  Dia _ _   -> DiaRule pf
-  DiaX _ _ _-> diaXRule pf br d
-  At _ _    -> AtRule pf
-  Down _ _  -> DownRule pf
-  E _       -> ExistRule pf
-  D _       -> DiffRule pf d
-  _         -> error "scheduledRuleToRule, incorrect formula kind"
+applicableRule br p d = listToMaybe $ mapMaybe (ruleByChar br p d) (strategy p)
 
 ruleByChar :: Branch -> Params -> Dependency -> Char -> Maybe (Rule,TodoList,Branch)
 ruleByChar br p d char =

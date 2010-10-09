@@ -13,7 +13,7 @@ Branch(..), createNewProp, createNewPref, createNewNomTestRelevance, BranchInfo(
 addFormulas, addFormula, addAccFormula,
 addDiaRuleCheck, addDiaXRuleCheck, addDownRuleCheck, addDiffRuleCheck,
 addParentPrefix, addFirstFormulas,
-ScheduledRule(..), TodoList(..),
+TodoList(..),
 emptyBranch,prefixes,
 reduceDisjunctionProposeLazy, doLazyBranching,
 merge,
@@ -105,11 +105,11 @@ data Branch =
 
 --
 
-emptyBranch :: Params -> LanguageInfo -> RelInfo -> Encoding -> Branch
-emptyBranch p fLang relInfo_ encoding_ =
+emptyBranch :: LanguageInfo -> RelInfo -> Encoding -> Branch
+emptyBranch fLang relInfo_ encoding_ =
                 Branch
                 { clashStr          = DMap.empty,
-                  todoList          = emptyTodoList p,
+                  todoList          = emptyTodoList,
                   accStr            = emptyRels,
                   boxConstrBwd      = DMap.empty,
                   boxConstrFwd      = DMap.empty,
@@ -212,7 +212,7 @@ instance Emptyable (Set a) where
  empty = Set.null
 
 
-data TodoList =  Unfair{disjTodo :: Set PrFormula,
+data TodoList= TodoList{disjTodo :: Set PrFormula,
                          diaTodo :: Set PrFormula,
                         diaXTodo :: Set PrFormula,
                        existTodo :: Set PrFormula,
@@ -221,29 +221,16 @@ data TodoList =  Unfair{disjTodo :: Set PrFormula,
                         diffTodo :: Set PrFormula,
                        mergeTodo :: Set (DependencySet, Prefix, DS.Pointer),
                      roleIncTodo :: Set (DependencySet, Prefix, Prefix, [Rel]) }
-               | Fair [ScheduledRule]
 
 instance Show TodoList where
- show (Fair srs) = "Todo list: " ++ show srs
- show (Unfair disjs dias diaxs es ars downs diffs merges rolein)
+ show (TodoList disjs dias diaxs es ars downs diffs merges rolein)
    = "Todo lists:" ++ concatMap (\el -> "\n" ++ show (list el)) [disjs, dias, diaxs, es, ars, downs, diffs]
                    ++ "\n" ++ show (list merges)
                    ++ "\n" ++ show (list rolein)
 
-data ScheduledRule =   SR_Formula PrFormula
-                     | SR_Merge Prefix DS.Pointer DependencySet
-                     | SR_Inclusion Prefix [Rel] Prefix DependencySet
-
-instance Show ScheduledRule where
- show (SR_Formula pf)    = show pf
- show (SR_Merge pr po _) = "Merge " ++ show (pr,po)
- show (SR_Inclusion p1 ss p2 _) = "Role inclusion " ++ show p1 ++ "<" ++ show ss ++ ">" ++ show p2
-
-emptyTodoList :: Params -> TodoList
-emptyTodoList p =
- if fairStrategy p
-   then Fair []
-   else Unfair {  disjTodo = Set.empty,
+emptyTodoList :: TodoList
+emptyTodoList =
+      TodoList {  disjTodo = Set.empty,
                    diaTodo = Set.empty,
                   diaXTodo = Set.empty,
                  existTodo = Set.empty,
@@ -375,13 +362,8 @@ addToTodo pf@(PrFormula p ds f2) br =
    then br
    else brWithSaturation{todoList = newTodoList}
   where
+   utodo = todoList br
    newTodoList =
-     case todoList br of
-      Fair srs -> case f2 of
-                   Lit l | isPositiveNom l
-                       -> Fair ( srs ++ [SR_Merge p (DS.Nominal l) ds] )
-                   _   -> Fair ( srs ++ [SR_Formula pf])
-      utodo    ->
        case f2 of
          Dis _              -> utodo{ disjTodo = Set.insert pf ( disjTodo utodo)}
          Dia _ _            -> utodo{  diaTodo = Set.insert pf (  diaTodo utodo)}
@@ -714,10 +696,8 @@ scheduleInclusionRule p1 p2 r ds br -- todo get all included
                       Just props -> [ rs | SubsetOf rs <- props]
          toschedule = map (\parents -> (ds,p1,p2,parents)) $ filter (not . alreadyDone) parentss
          alreadyDone = any (`elem` linksFromTo (accStr br) p1 p2)
-         newTodoList =
-          case todoList br of
-           Fair srs -> Fair (srs ++ map (\(ds_,p1_,p2_,parents_) -> SR_Inclusion p1_ parents_ p2_ ds_) toschedule )
-           utodo    -> utodo{roleIncTodo  = Set.union (Set.fromList toschedule) (roleIncTodo utodo)}
+         utodo       = todoList br
+         newTodoList = utodo{roleIncTodo  = Set.union (Set.fromList toschedule) (roleIncTodo utodo)}
 
 insertRelationBranch :: Branch -> Prefix -> Rel -> Prefix -> DependencySet -> Branch
 insertRelationBranch br p1 r p2 ds

@@ -96,7 +96,7 @@ runOneTask (query,mOutFile,fs) relInfo encoding theory p =
         Retrieve
           ->
             do let fLang = formulaLanguageInfo theory encoding
-               let initialBranch = emptyBranch p fLang relInfo encoding
+               let initialBranch = emptyBranch fLang relInfo encoding
                let (noms,encfs) = encodeRetrieveTask relInfo encoding fLang theory fs
                --
                myPutStrLn $ "Instances making true: " ++ show fs
@@ -124,7 +124,7 @@ runOneTask (query,mOutFile,fs) relInfo encoding theory p =
                                     "Relations properties :" ++ showRelInfo relInfo ]
                --
                let fLang         = formulaLanguageInfo f encoding
-               let initialBranch = emptyBranch p fLang relInfo encoding
+               let initialBranch = emptyBranch fLang relInfo encoding
                let branchInfo    = addFirstFormulas p initialBranch fLang f
                --
                result <- tableauInit p branchInfo
