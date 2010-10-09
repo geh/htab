@@ -15,10 +15,7 @@ import Prelude hiding ( lookup )
 
 {- a DMap , or double map, is a nesting of two Maps -}
 
-data DMap c = DMap (IntMap (IntMap c))
-
-instance (Show c) =>  Show (DMap c) where
-        show (DMap m) = show m
+newtype DMap c = DMap (IntMap (IntMap c))
 
 toMap :: DMap c -> IntMap (IntMap c)
 toMap (DMap m) = m
