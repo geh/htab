@@ -11,7 +11,6 @@ DATA=../examples/sat
 
  for i in $DATA/*; do
    $HTAB --showformula                   -f $i
-   $HTAB -t 2 --fairstrategy -u          -f $i
    $HTAB -v --stats=10                   -f $i
    $HTAB -t 2                            -f $i
    $HTAB -t 2 --lazybranching=False      -f $i
@@ -30,7 +29,6 @@ DATA=../examples/unsat
 
  for i in $DATA/*; do
    $HTAB --showformula                   -f $i
-   $HTAB -t 2 --fairstrategy -u          -f $i
    $HTAB -v --stats=10                   -f $i
    $HTAB -t 2                            -f $i
    $HTAB -t 2 --lazybranching=False      -f $i
@@ -49,7 +47,6 @@ DATA=../examples/sat_no_mod
 
  for i in $DATA/*; do
    $HTAB  --showformula                  -f $i
-   $HTAB -t 2 --fairstrategy -u          -f $i
    $HTAB -v --stats=10                   -f $i
    $HTAB -t 2                            -f $i
    $HTAB -t 2 --lazybranching=False      -f $i
