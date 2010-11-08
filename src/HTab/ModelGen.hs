@@ -1,4 +1,4 @@
-module HTab.ModelGen (Model, buildModel )
+module HTab.ModelGen (Model, buildModel, toDot )
 
 where
 
@@ -6,6 +6,7 @@ import qualified Data.Set as Set
 import Data.Set (Set)
 import qualified Data.IntMap as IntMap
 import HyLo.Model.Herbrand ( inducedModel )
+import HyLo.Model.PrettyPrint ( toDotStr )
 import qualified HyLo.Model.Herbrand as H
 import qualified HyLo.Model as M
 
@@ -91,3 +92,6 @@ getSymClos worlds succs_ r_ w_
  = Set.union (succs_ r_ w_) syms
     where syms = Set.filter (hasAsSuccessor r_ w_) worlds
           hasAsSuccessor rel world2 world1 = Set.member world2 $ succs_ rel world1
+
+toDot :: Model -> String
+toDot = toDotStr

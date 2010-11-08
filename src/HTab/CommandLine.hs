@@ -19,6 +19,7 @@ import HTab.Statistics( StatisticsState, setPrintOutInterval )
 data Params = Params {
            filename        :: Maybe FilePath,
            genModel        :: Maybe FilePath,
+           dotModel        :: Bool,
            timeout         :: Int,
            stats           :: Int,
            strategy        :: String,
@@ -42,6 +43,7 @@ defaultParams
  = Params{
        filename        = Nothing &= name "f" &= typFile &= help "input file",
        genModel        = Nothing &= name "m" &= typFile &= help "output model file",
+       dotModel        = False   &= typFile &= help "output model in dot format (otherwise: hylolib format)",
        timeout         = 0       &= name "t" &= help "timeout (in seconds, default=none)",
        stats           = 0       &= help "display statistics every n steps (default=none)",
        strategy        = strategyVal &= help "specify rule order",

@@ -17,7 +17,7 @@ import Prelude hiding ( readFile )
 
 import HyLo.InputFile.Parser ( QueryType(..) )
 
-import HTab.CommandLine( filename, timeout, Params, genModel, showFormula )
+import HTab.CommandLine( filename, timeout, Params, genModel, dotModel, showFormula )
 import HTab.Branch( BranchInfo(..), emptyBranch, addFirstFormulas)
 import HTab.Statistics( Statistics, initialStatisticsStateFor, printOutMetricsFinal )
 import HTab.Tableau( OpenFlag(..), tableauStart )
@@ -25,7 +25,7 @@ import HTab.Formula( formulaLanguageInfo, Theory, RelInfo, Encoding, Task,
                      Formula, encodeValidityTest, encodeSatTest, encodeRetrieveTask,
                      toNomSymbol, showRelInfo )
 import qualified HTab.Formula as F
-import HTab.ModelGen ( Model )
+import HTab.ModelGen ( Model, toDot )
 
 data TaskRunFlag = SUCCESS | FAILURE
 
@@ -135,7 +135,7 @@ runOneTask (query,mOutFile,fs) relInfo encoding theory p =
                                                 Valid       -> "The formula is not valid."
                                                 Satisfiable -> "The formula is satisfiable."
                                                 _           -> error "never happens"
-                                          saveGenModel mOutFile m
+                                          saveGenModel mOutFile p m
                                           whenNormal $ printOutMetricsFinal stats
                                           return SUCCESS
                   (CLOSED _, stats) -> do myPutStrLn $
@@ -155,10 +155,12 @@ runOneTask (query,mOutFile,fs) relInfo encoding theory p =
 
 --
 
-saveGenModel :: Maybe FilePath -> Model -> IO ()
-saveGenModel mOutFile m = maybe (return ()) doWrite mOutFile
-    where doWrite f = do writeFile f (show m)
+saveGenModel :: Maybe FilePath -> Params -> Model -> IO ()
+saveGenModel mOutFile p m = maybe (return ()) doWrite mOutFile
+    where doWrite f = do writeFile f output
                          myPutStrLn ("Model saved as " ++ f)
+          output | dotModel p = toDot m
+                 | otherwise  = show m
 
 tableauInit :: Params -> BranchInfo -> IO (OpenFlag,Statistics)
 tableauInit p bi =
