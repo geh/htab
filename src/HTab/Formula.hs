@@ -164,7 +164,7 @@ data RelProperty   =   Reflexive
                      deriving (Eq, Show, Ord)
 
 showRelInfo :: RelInfo -> String
-showRelInfo = Map.foldWithKey (\r v -> (++ " " ++ showRel r ++ " -> " ++ show v )) ""
+showRelInfo = Map.foldrWithKey (\r v -> (++ " " ++ showRel r ++ " -> " ++ show v )) ""
 
 parse :: Params -> String -> (Theory,RelInfo,Encoding,[Task])
 parse p s
@@ -412,7 +412,7 @@ handleFunInj :: RelInfo -> RelInfo
 handleFunInj relI =
 -- explore the hierarchy of relations starting by the leaves and ending at the top
 -- taking into account the alternations "inverseof" to enforce functionality and/or injectivity
-  Map.foldWithKey startFromLeaf relI relI
+  Map.foldrWithKey startFromLeaf relI relI
  where startFromLeaf rs props currentRelI = follow rs props currentRelI Not
 
        follow rs props currentRelI currentStatus

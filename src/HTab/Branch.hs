@@ -1,5 +1,3 @@
-{-# OPTIONS_GHC -fglasgow-exts #-}
-
 ----------------------------------------------------
 --                                                --
 -- Branch.hs                                      --
@@ -180,11 +178,16 @@ instance Show Branch where
               " nextprop : " ++ showLit (nextProp br)
            ]
               where
+                  ifNotEmpty :: Emptyable a => a -> (a -> String) -> String
                   ifNotEmpty b f = if empty b then "" else f b
+
+                  showl :: (Emptyable a, Show a) => String -> a -> String
                   showl intro b  = if empty b then "" else intro ++ show b
 
+                  showIMap :: (a -> String) -> String -> IntMap a -> String
                   showIMap vShow sep = IntMap.foldWithKey (\k v -> (++ sep ++ show k ++ " -> " ++ vShow v )) ""
-                  showMap vShow sep  = Map.foldWithKey (\k v -> (++ sep ++ show k ++ " -> " ++ vShow v )) ""
+                  --
+                  showMap vShow sep  = Map.foldrWithKey (\k v -> (++ sep ++ show k ++ " -> " ++ vShow v )) ""
                   showMap_lits       = IntMap.foldWithKey (\l d   -> (++ showLit l ++ " " ++ dsShow d  ++ ", ")) ""
                   showMap_lits2      = IntMap.foldWithKey (\l fs  -> (++ showLit l ++ " " ++ ":" ++ show fs ++ ", ")) ""
                   showMap_rel        = IntMap.foldWithKey (\r dxs -> (++ "-" ++ showRel r ++ "-> " ++ show dxs ++ ", ")) ""
