@@ -47,7 +47,7 @@ runCmdLineVersion =
       else return Nothing
 
 header :: String
-header = unlines ["HTab 1.5.5",
+header = unlines ["HTab 1.5.6",
                   "G. Hoffmann, C. Areces, D.Gorin and J. Heguiabehere. (c) 2002-2011.",
                   "http://code.google.com/p/intohylo/"]
 
