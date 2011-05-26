@@ -33,8 +33,7 @@ runWithParams :: Params -> IO (Maybe TaskRunFlag)
 runWithParams p =
  time "Total time: "
   $ do
-     let fromStdIn = do myPutStrLn $ "Reading from stdin (run again with" ++
-                                     "`--help' for usage options)"
+     let fromStdIn = do myPutStrLn $ "Reading from stdin."
                         hSetBuffering stdin LineBuffering
                         getContents
 

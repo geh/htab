@@ -13,11 +13,12 @@ module HTab.CommandLine (
 
 import System.Console.CmdArgs
 import Data.List ( sort )
-
+import Data.Maybe ( isNothing )
 import HTab.Statistics( StatisticsState, setPrintOutInterval )
 
 data Params = Params {
            filename        :: Maybe FilePath,
+           stdin           :: Bool,
            genModel        :: Maybe FilePath,
            dotModel        :: Bool,
            timeout         :: Int,
@@ -42,8 +43,9 @@ defaultParams :: Params
 defaultParams
  = Params{
        filename        = Nothing &= name "f" &= typFile &= help "input file",
+       stdin           = False   &= help "use standard input instead of file",
        genModel        = Nothing &= name "m" &= typFile &= help "output model file",
-       dotModel        = False   &= typFile &= help "output model in dot format (otherwise: hylolib format)",
+       dotModel        = False   &= help "output model in dot format (otherwise: hylolib format)",
        timeout         = 0       &= name "t" &= help "timeout (in seconds, default=none)",
        stats           = 0       &= help "display statistics every n steps (default=none)",
        strategy        = strategyVal &= help "specify rule order",
@@ -67,22 +69,25 @@ strategyVal = "n@E<Db|*r"
 
 checkParams :: Params -> IO Bool
 checkParams p
- = if strategy p `permutationOf` strategyVal
-    then return True
-    else do putStrLn
-             $ unlines ["ERROR",
-                        "strategy should contain all of the following characters: ",
-                        "  n = nominals               @ = satisfaction operator",
-                        "  E = existential modality   < = diamond",
-                        "  D = difference modality    b = down-arrow binder",
-                        "  | = or                     * = transitive closure diamond",
-                        "  r = role inclusion",
-                        "",
-                        "The default is `" ++ strategyVal ++ "'",
-                        "The rules conjunction, box, universal modality and converse difference",
-                        "modality are immediate, thus do not belong to the strategy."]
-            return False
-  where permutationOf l1 l2 = sort l1 == sort l2
+ | strategy p `notPermutationOf` strategyVal =
+    do putStrLn
+        $ unlines ["ERROR",
+                   "strategy should contain all of the following characters: ",
+                   "  n = nominals               @ = satisfaction operator",
+                   "  E = existential modality   < = diamond",
+                   "  D = difference modality    b = down-arrow binder",
+                   "  | = or                     * = transitive closure diamond",
+                   "  r = role inclusion",
+                   "",
+                   "The default is `" ++ strategyVal ++ "'",
+                   "The rules conjunction, box, universal modality and converse difference",
+                   "modality are immediate, thus do not belong to the strategy."]
+       return False
+ | (not $ stdin p) && isNothing (filename p) =
+    do putStrLn $ unlines ["ERROR: No input specified.","Run with --help for usage options"]
+       return False
+ | otherwise = return True
+  where notPermutationOf l1 l2 = not ( sort l1 == sort l2 )
 
 configureStats :: Params -> StatisticsState ()
 configureStats p = setPrintOutInterval $ stats p
