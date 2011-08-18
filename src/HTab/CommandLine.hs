@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -fno-warn-missing-fields #-}
 ----------------------------------------------------
 --                                                --
 -- CommandLine.hs:                                --
@@ -39,30 +40,30 @@ data Params = Params {
 
 data UnitProp = Eager | UPYes | UPNo deriving (Data, Typeable, Eq, Show)
 
-defaultParams :: Params
+defaultParams :: Annotate Ann
 defaultParams
- = Params{
-       filename        = Nothing &= name "f" &= typFile &= help "input file",
-       stdin           = False   &= help "use standard input instead of file",
-       genModel        = Nothing &= name "m" &= typFile &= help "output model file",
-       dotModel        = False   &= help "output model in dot format (otherwise: hylolib format)",
-       timeout         = 0       &= name "t" &= help "timeout (in seconds, default=none)",
-       stats           = 0       &= help "display statistics every n steps (default=none)",
-       strategy        = strategyVal &= help "specify rule order",
-       semBranch       = True    &= help "enable semantic branching (default)",
-       backjumping     = True    &= help "enable backjumping (default)",
-       lazyBranching   = True    &= help "enable lazy branching (default)" ,
-       unitProp        = enum [Eager &= explicit &= name "eager"        &= help "unit propagation: eager (default)",
-                               UPYes &= explicit &= name "unit-prop"    &= help "unit propagation: enabled",
-                               UPNo  &= explicit &= name "no-unit-prop" &= help "unit propagation: disabled"] ,
-       noLoopCheck     = False   &= help "disable all loop check",
-       showFormula     = False   &= help "display formula",
-       allTransitive   = False   &= help "make all relations transitive",
-       allReflexive    = False   &= help "make all relations reflexive",
-       allSymmetric    = False   &= help "make all relations symmetric",
-       allFunctional   = False   &= help "make all relations functional",
-       allInjective    = False   &= help "make all relations injective"
-      } &= verbosity
+ = record Params{}
+     [ filename       := Nothing += name "f" += typFile += help "input file",
+       stdin          := False   += help "use standard input instead of file",
+       genModel       := Nothing += name "m" += typFile += help "output model file",
+       dotModel       := False   += help "output model in dot format (otherwise: hylolib format)",
+       timeout        := 0       += name "t" += help "timeout (in seconds, default=none)",
+       stats          := 0       += help "display statistics every n steps (default=none)",
+       strategy       := strategyVal += help "specify rule order",
+       semBranch      := True    += help "enable semantic branching (default)",
+       backjumping    := True    += help "enable backjumping (default)",
+       lazyBranching  := True    += help "enable lazy branching (default)" ,
+       unitProp `enum_` [atom Eager += explicit += name "eager"        += help "unit propagation: eager (default)",
+                         atom UPYes += explicit += name "unit-prop"    += help "unit propagation: enabled",
+                         atom UPNo  += explicit += name "no-unit-prop" += help "unit propagation: disabled"] ,
+       noLoopCheck    := False   += help "disable all loop check",
+       showFormula    := False   += help "display formula",
+       allTransitive  := False   += help "make all relations transitive",
+       allReflexive   := False   += help "make all relations reflexive",
+       allSymmetric   := False   += help "make all relations symmetric",
+       allFunctional  := False   += help "make all relations functional",
+       allInjective   := False   += help "make all relations injective"
+      ] += verbosity
 
 strategyVal :: String
 strategyVal = "n@E<Db|*r"

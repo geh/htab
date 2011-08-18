@@ -40,7 +40,7 @@ exit = exitWith . ExitFailure
 
 runCmdLineVersion :: IO (Maybe (Maybe TaskRunFlag))
 runCmdLineVersion =
- do  clp  <- cmdArgs $ defaultParams &= summary header &= details gpl_tag
+ do  clp  <- cmdArgs_ $ defaultParams += summary header += details gpl_tag
      clpOK <- checkParams clp
      if clpOK
       then Just <$> runWithParams clp
