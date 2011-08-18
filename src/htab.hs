@@ -40,7 +40,7 @@ exit = exitWith . ExitFailure
 
 runCmdLineVersion :: IO (Maybe (Maybe TaskRunFlag))
 runCmdLineVersion =
- do  clp  <- cmdArgs_ $ defaultParams += summary header += details gpl_tag
+ do  clp  <- cmdArgs_ $ defaultParams += summary header += details gplTag
      clpOK <- checkParams clp
      if clpOK
       then Just <$> runWithParams clp
@@ -51,8 +51,8 @@ header = unlines ["HTab 1.5.6",
                   "G. Hoffmann, C. Areces, D.Gorin and J. Heguiabehere. (c) 2002-2011.",
                   "http://code.google.com/p/intohylo/"]
 
-gpl_tag :: [String]
-gpl_tag = [
+gplTag :: [String]
+gplTag = [
     "This program is distributed in the hope that it will be useful,",
     "but WITHOUT ANY WARRANTY; without even the implied warranty of",
     "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",

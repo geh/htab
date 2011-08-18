@@ -85,11 +85,11 @@ getTransClos succs_ r_ w_
         = case Set.minView todo1 of
            Nothing                -> seen
            Just (nextWorld,todo2) -> go (Set.insert nextWorld seen) todo2 succs r nextWorld
-          where todo1  = ((succs r w) `Set.union` todo) `Set.difference` seen
+          where todo1  = (succs r w `Set.union` todo) `Set.difference` seen
 
 getSymClos :: (Ord w) => Set w -> (r -> w -> Set w) -> r -> w -> Set w
 getSymClos worlds succs_ r_ w_
- = Set.union (succs_ r_ w_) syms
+ = succs_ r_ w_ `Set.union` syms
     where syms = Set.filter (hasAsSuccessor r_ w_) worlds
           hasAsSuccessor rel world2 world1 = Set.member world2 $ succs_ rel world1
 

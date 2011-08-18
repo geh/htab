@@ -1,12 +1,3 @@
-----------------------------------------------------
---                                                --
--- Formula.hs:                                    --
--- Formula data type, normal                      --
--- form and show functions.                       --
---                                                --
-----------------------------------------------------
-
-
 module HTab.Formula
 
 (Atom, Prop, Nom, Literal,
@@ -235,7 +226,7 @@ forceProperties p encoding relI
    where rels = Map.elems $ relMap encoding
          addToAll r = Map.insertWith (\c1 c2 -> nub $ c1 ++ c2) r conds
          conds = map snd $
-                   filter fst $ [(allTransitive p, Transitive),
+                   filter fst   [(allTransitive p, Transitive),
                                  (allReflexive  p, Reflexive ),
                                  (allSymmetric  p, Symmetric ),
                                  (allFunctional p, Functional),
@@ -389,7 +380,7 @@ getAncestors r_ relI =
        extractParent (InverseOf rp)   = [rp]
        extractParent (TRClosureOf rp) = [rp]
        extractParent _                = [  ]
-       todo = list ( (set parents) Set.\\ seen )
+       todo = list ( set parents Set.\\ seen )
        newSeen = Set.union seen $ set parents
    in
      case todo of
@@ -497,15 +488,15 @@ dUnivMod   = B
 dExistMod  = D
 
 int :: Encoding -> String -> Int
-int e s = (relMap e) Map.! s
+int e s = relMap e Map.! s
 
 {- binder -}
 downArrow :: Encoding -> S.NomSymbol -> Formula -> Formula
-downArrow e (S.NomSymbol n) = Down ((nomMap e) Map.! n)
+downArrow e (S.NomSymbol n) = Down (nomMap e Map.! n)
 
 {- Hybrid operators -}
 at :: Encoding -> S.NomSymbol -> Formula -> Formula
-at e (S.NomSymbol n) = At ((nomMap e) Map.! n)
+at e (S.NomSymbol n) = At (nomMap e Map.! n)
 
 {- Conjunction and disjunction -}
 
@@ -585,7 +576,7 @@ data PrFormula = PrFormula Prefix DependencySet Formula
  deriving Eq
 
 instance Show PrFormula where
- show (PrFormula pr ds f) = show pr ++ ":" ++ (dsShow ds) ++ ":" ++ show f
+ show (PrFormula pr ds f) = show pr ++ ":" ++ dsShow ds ++ ":" ++ show f
 
 showLess :: PrFormula -> String
 showLess (PrFormula pr _ f) = show pr ++ ":" ++ show f

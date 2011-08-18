@@ -1,12 +1,4 @@
 {-# OPTIONS_GHC -fno-warn-missing-fields #-}
-----------------------------------------------------
---                                                --
--- CommandLine.hs:                                --
--- Functions that handle command line processing  --
--- and presentation
---                                                --
-----------------------------------------------------
-
 module HTab.CommandLine (
     Params(..), UnitProp(..),
     defaultParams, configureStats, checkParams
@@ -84,11 +76,11 @@ checkParams p
                    "The rules conjunction, box, universal modality and converse difference",
                    "modality are immediate, thus do not belong to the strategy."]
        return False
- | (not $ stdin p) && isNothing (filename p) =
+ | not (stdin p) && isNothing (filename p) =
     do putStrLn $ unlines ["ERROR: No input specified.","Run with --help for usage options"]
        return False
  | otherwise = return True
-  where notPermutationOf l1 l2 = not ( sort l1 == sort l2 )
+  where notPermutationOf l1 l2 = sort l1 /= sort l2
 
 configureStats :: Params -> StatisticsState ()
 configureStats p = setPrintOutInterval $ stats p

@@ -24,22 +24,22 @@ tableauDown p depth branchInfo =
       do let verbose = lift . whenLoud . putStrLn
          printOutMetrics
          modify updateStep
-         verbose (">> Depth " ++ show depth)
+         verbose $ ">> Depth " ++ show depth
          case branchInfo of
             BranchClash br pr bprs f ->
-             do verbose (show br ++ "Clasher : " ++ show (pr,bprs,depth,f))
+             do verbose $ show br ++ "Clasher : " ++ show (pr,bprs,depth,f)
                 recordClosedBranch
                 return $ CLOSED bprs
             BranchOK br ->
              do verbose (show br)
                 case applicableRule br p (depth + 1) of
                   Nothing  ->
-                      do verbose (">> Saturated open branch")
+                      do verbose ">> Saturated open branch"
                          return $ case unfulfilledEventualities br of
                                    Just ds -> CLOSED ds
                                    Nothing -> OPEN   $ buildModel br
                   Just (rule,newTodo,newBranch)  -> -- of course then merge newBranch and newTodo
-                      do verbose (">> Rule : " ++ show rule)
+                      do verbose $ ">> Rule : " ++ show rule
                          recordFiredRule $ ruleToId rule
                          case applyRule p rule newBranch newTodo of
                           [newBi] -> tableauDown  p (depth + 1) newBi

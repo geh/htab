@@ -79,12 +79,11 @@ instance Show Relations where
 
 prettyShowMap_ :: (Show y) => IntMap y -> (y -> String) -> String -> String
 prettyShowMap_ dasMap valueShow separator
- = concat $ List.intersperse separator $ map (\(k,v) -> show k ++ " -> " ++ valueShow v)
+ = List.intercalate separator $ map (\(k,v) -> show k ++ " -> " ++ valueShow v)
           $ IntMap.toList dasMap
 
 prettyShowMap_rel_bps_x :: (Show a) => IntMap {- Rel -} [(a,DependencySet)] -> String
 prettyShowMap_rel_bps_x dasMap
- = concat $ List.intersperse ", " $ map (\(r,x_bp_s) -> (++) ("-" ++ show r ++ "-> ") $ concat $ List.intersperse ", "
-                                           $ map (\(x,bp) -> show x ++ " " ++ dsShow bp) x_bp_s
-                                        )
+ = List.intercalate ", " $ map (\(r,x_bp_s) -> (++) ("-" ++ show r ++ "-> ") $ List.intercalate ", "
+                                 $ map (\(x,bp) -> show x ++ " " ++ dsShow bp) x_bp_s )
           $ IntMap.toList dasMap

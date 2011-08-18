@@ -26,7 +26,7 @@ import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewNomTestRe
                     diaAlreadyDone,  diaXAlreadyDone, downAlreadyDone,
                     ReducedDisjunct(..), getUrfather,
                     TodoList(..),
-                    deleteUEV, insertUEV_addFormula )
+                    deleteUEV, insertUEVAddFormula )
 import HTab.CommandLine(Params, UnitProp(..), lazyBranching, semBranch, unitProp, strategy, noLoopCheck)
 import HTab.RuleId(RuleId(..))
 import qualified HTab.DisjSet as DS
@@ -102,7 +102,7 @@ getMods _ (DiaXRule (PrFormula pr ds (DiaX mi r ev)) dep)=
   ,
   [BM_AddDiaXRuleCheck pr (r,ev),
    BM_InsertUEV_addFormula mi ds2
-                           (\i -> PrFormula pr ds2 ((neg ev) `conj` (Dia r $ DiaX (Just i) r ev)))]
+                           (\i -> PrFormula pr ds2 (neg ev `conj` Dia r (DiaX (Just i) r ev)))]
  ]
      where ds2 = dsInsert dep ds
 
@@ -347,7 +347,7 @@ applyMod _ br (BM_AddDiffRuleCheck f mp)         = BranchOK $ addDiffRuleCheck b
 applyMod _ br (BM_AddParentPrefix son father)    = BranchOK $ addParentPrefix br son father
 applyMod _ br (BM_Clash ds (PrFormula pr ds2 f)) = BranchClash br pr (dsUnion ds ds2) f
 applyMod _ br (BM_DeleteUEV i)                   = BranchOK $ deleteUEV br i
-applyMod p br (BM_InsertUEV_addFormula mi ds ff) = insertUEV_addFormula br p mi ds ff
+applyMod p br (BM_InsertUEV_addFormula mi ds ff) = insertUEVAddFormula br p mi ds ff
 applyMod p br (BM_Merge pr po ds)                = merge p br pr ds po
 applyMod _ br (BM_DoLazyBranch pr l pfs)         = BranchOK $ doLazyBranching pr l pfs br
 -- the actual rules and their helper functions

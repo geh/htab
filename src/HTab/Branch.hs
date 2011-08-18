@@ -1,10 +1,3 @@
-----------------------------------------------------
---                                                --
--- Branch.hs                                      --
---                                                --
-----------------------------------------------------
-
-
 module HTab.Branch
 (
 Branch(..), createNewProp, createNewPref, createNewNomTestRelevance, BranchInfo(..),
@@ -21,11 +14,11 @@ BlockingMode(..), diaAlreadyDone, diaXAlreadyDone,
 downAlreadyDone,
 unfulfilledEventualities, ReducedDisjunct(..),
 isSymmetric, isTransitive,
-deleteUEV, insertUEV_addFormula
+deleteUEV, insertUEVAddFormula
 ) where
 
 import Data.List(minimumBy)
-import Data.Maybe( mapMaybe )
+import Data.Maybe( mapMaybe, fromMaybe )
 import Data.Ord ( comparing )
 
 import Data.Map ( Map )
@@ -51,19 +44,19 @@ import qualified HTab.Relations as Relations
 data BranchInfo = BranchOK Branch |
                   BranchClash Branch Prefix DependencySet Formula
 
-type Clashable_info      = DMap {- Prefix Literal -} DependencySet
-type Box_constraints     = DMap {- Prefix Rel -} [(Formula,DependencySet)]
-type Branching_witnesses = DMap {- Prefix Literal -} [PrFormula]
+type ClashableInfo      = DMap {- Prefix Literal -} DependencySet
+type BoxConstraints     = DMap {- Prefix Rel -} [(Formula,DependencySet)]
+type BranchingWitnesses = DMap {- Prefix Literal -} [PrFormula]
 type EquivClasses = DS.DisjSet DS.Pointer
 data BlockingMode = AnywhereBlocking | ChainTwinBlocking  deriving (Eq,Show)
 
 data Branch =
-              Branch {clashStr :: Clashable_info,
+              Branch {clashStr :: ClashableInfo,
                  -- pending formulas / todo lists
                       todoList :: TodoList,
                  -- immediate rules constraints
-                  boxConstrFwd :: Box_constraints,
-                  boxConstrBwd :: Box_constraints,
+                  boxConstrFwd :: BoxConstraints,
+                  boxConstrBwd :: BoxConstraints,
                       univCons :: [(DependencySet,Formula)],
                  -- saturation of rules
                        diaRlCh :: IntMap {- Prefix -} (Set (Rel,Formula)),
@@ -88,7 +81,7 @@ data Branch =
                       nextProp :: Prop,
                  eventualities :: IntMap DependencySet,
                  -- lazy branching
-                   brWitnesses :: Branching_witnesses,
+                   brWitnesses :: BranchingWitnesses,
                  -- caching / memoisation data
              downVarRelevantCh :: Map Formula Bool,
                  -- information about language of input formula and blocking mode
@@ -172,7 +165,7 @@ instance Show Branch where
               showl "\nParent: " (prefParent br),
               "\nBlocking mode: ", show (blockMode br),
               "\nPrefix-Nominal classes : ", showMap show ", " (nomPrefClasses br),
-              "\nModel-relevant nominals : " ++ (unwords $  map showLit $ list $ relevantNominals br),
+              "\nModel-relevant nominals : " ++ unwords (map showLit $ list $ relevantNominals br),
               "\nlastPref : " ++ show (lastPref br) ++
               " nextnom : "  ++ showLit (nextNom br) ++
               " nextprop : " ++ showLit (nextProp br)
@@ -310,7 +303,7 @@ putAwayFormula p pf@(PrFormula pr ds f2) br =
    Box r f    -> addBoxConstraint      pr r f ds p br
    BoxX r f   -> addBoxXConstraint     pr r f ds p br
    A f        -> addUnivConstraint          f ds p br
-   B f        -> b_rule                pr   f ds p br
+   B f        -> bRule                pr   f ds p br
    E _        -> BranchOK $ addToTodo pf br
    D _        -> BranchOK $ addToTodo pf br
    At _ _     -> BranchOK $ addToTodo pf br
@@ -427,11 +420,11 @@ merge p br pr fDs pointer -- pointer is a nominal or a prefix
                newClashableSlotUrfather = cisAddDeps currentDeps $ cisUnions clashableInfoSlots
             in
              case newClashableSlotUrfather of
-              Slot_UpdateFailure clashingDeps ->
+              SlotUpdateFailure clashingDeps ->
                   let newBr = br{nomPrefClasses = classes3} in
                   BranchClash newBr pr (dsUnion clashingDeps currentDeps) (neg taut)
 
-              Slot_UpdateSuccess urfatherSlot ->
+              SlotUpdateSuccess urfatherSlot ->
                   let newClashStr     = DMap $ IntMap.delete oldUr $ IntMap.insert newUr urfatherSlot (toMap $ clashStr br)
 
                       -- structures that merge
@@ -475,17 +468,17 @@ merge p br pr fDs pointer -- pointer is a nominal or a prefix
                   in
                       addFormulas p newBr formulasToAdd
 
-mergeWitnesses :: Prefix -> Prefix -> Clashable_info_slot -> Branching_witnesses -> (Branching_witnesses, [PrFormula])
+mergeWitnesses :: Prefix -> Prefix -> ClashableInfoSlot -> BranchingWitnesses -> (BranchingWitnesses, [PrFormula])
 mergeWitnesses oldUr newUr urfatherSlot dbrWits@(DMap brWits)
  =( DMap.insert1 newUr newDest2 ( DMap.delete oldUr dbrWits ), toAdd1 ++ toAdd2 )
   where
-   srcInnerMap  = maybe IntMap.empty id (IntMap.lookup oldUr brWits)
-   destInnerMap = maybe IntMap.empty id (IntMap.lookup newUr brWits)
-   (newDest1,toAdd1) = mergeWitnesses_WitnessesMap srcInnerMap destInnerMap
-   (newDest2,toAdd2) = mergeWitnesses_AgainstClashable newDest1 urfatherSlot
+   srcInnerMap  = IntMap.findWithDefault IntMap.empty oldUr brWits
+   destInnerMap = IntMap.findWithDefault IntMap.empty newUr brWits
+   (newDest1,toAdd1) = mergeWitnessesWitnessesMap srcInnerMap destInnerMap
+   (newDest2,toAdd2) = mergeWitnessesAgainstClashable newDest1 urfatherSlot
 
-mergeWitnesses_WitnessesMap :: IntMap [PrFormula] -> IntMap [PrFormula] -> (IntMap [PrFormula], [PrFormula])
-mergeWitnesses_WitnessesMap srcWitMap destWitMap
+mergeWitnessesWitnessesMap :: IntMap [PrFormula] -> IntMap [PrFormula] -> (IntMap [PrFormula], [PrFormula])
+mergeWitnessesWitnessesMap srcWitMap destWitMap
  = foldr go (destWitMap,[]) $ IntMap.assocs srcWitMap
    where
       go (l,fs) (destMap,toAddAgain)
@@ -496,8 +489,8 @@ mergeWitnesses_WitnessesMap srcWitMap destWitMap
                   Just fs2 -> (IntMap.delete (negLit l) destMap, fs++fs2++toAddAgain)
                   Nothing ->  (IntMap.insert l fs destMap, toAddAgain)
 
-mergeWitnesses_AgainstClashable :: IntMap [PrFormula] -> Clashable_info_slot -> (IntMap [PrFormula],[PrFormula])
-mergeWitnesses_AgainstClashable  witMap cis
+mergeWitnessesAgainstClashable :: IntMap [PrFormula] -> ClashableInfoSlot -> (IntMap [PrFormula],[PrFormula])
+mergeWitnessesAgainstClashable  witMap cis
  = foldr go (witMap,[]) $ IntMap.assocs witMap
    where
     go (lit,fs) (destMap,toAddAgain)
@@ -580,8 +573,8 @@ inSameClass br p n
 deleteUEV :: Branch -> Int -> Branch
 deleteUEV br idx = br{eventualities = IntMap.delete idx (eventualities br)}
 
-insertUEV_addFormula :: Branch -> Params -> Maybe Int -> DependencySet -> (Int -> PrFormula) -> BranchInfo
-insertUEV_addFormula br p mi ds ff
+insertUEVAddFormula :: Branch -> Params -> Maybe Int -> DependencySet -> (Int -> PrFormula) -> BranchInfo
+insertUEVAddFormula br p mi ds ff
  = addFormula p br2 f
   where idxToUse = case mi of
                     Nothing   -> case IntMap.maxViewWithKey $ eventualities br of
@@ -631,7 +624,7 @@ addBoxConstraint pr_ r f ds p br_
  where pr = getUrfather br_ (DS.Prefix pr_)
        br = addBoxRuleCheck br_ pr (r,f)
 
-updateBoxConstr :: Prefix -> Rel -> Formula -> DependencySet -> Box_constraints -> Box_constraints
+updateBoxConstr :: Prefix -> Rel -> Formula -> DependencySet -> BoxConstraints -> BoxConstraints
 updateBoxConstr p1_ r_ f_ ds_ (DMap boxConstr_) =
   case IntMap.lookup p1_ boxConstr_ of
     Nothing       -> DMap $ IntMap.insert p1_ (IntMap.singleton r_ [(f_,ds_)]) boxConstr_
@@ -700,7 +693,7 @@ scheduleInclusionRule p1 p2 r ds br -- todo get all included
          toschedule = map (\parents -> (ds,p1,p2,parents)) $ filter (not . alreadyDone) parentss
          alreadyDone = any (`elem` linksFromTo (accStr br) p1 p2)
          utodo       = todoList br
-         newTodoList = utodo{roleIncTodo  = Set.union (Set.fromList toschedule) (roleIncTodo utodo)}
+         newTodoList = utodo{roleIncTodo = Set.fromList toschedule `Set.union` roleIncTodo utodo}
 
 insertRelationBranch :: Branch -> Prefix -> Rel -> Prefix -> DependencySet -> Branch
 insertRelationBranch br p1 r p2 ds
@@ -714,7 +707,7 @@ isNotBlocked br pr
  | pr <= unblockedPrefsLim br = True
  | otherwise =
  case blockMode br of
-   AnywhereBlocking   -> null $ filter isSubsumer labels
+   AnywhereBlocking   -> not $ any isSubsumer labels
                            where ur = getUrfather br (DS.Prefix pr)
                                  fs = formulasOf br ur
                                  isSubsumer fs_ = fs `Set.isSubsetOf` fs_
@@ -726,7 +719,7 @@ isNotChainTwinBlocked br pr = not $ test2equal $ map (formulasOf br) (getAllPare
 
 getAllParents :: Branch -> Prefix -> [Prefix]
 -- getAllParents up to one that has an input nominal
-getAllParents br pr = (getUrfather br (DS.Prefix pr)):rest
+getAllParents br pr = getUrfather br (DS.Prefix pr):rest
  where rest = case IntMap.lookup pr (prefParent br) of
                 Nothing     -> []
                 Just parent -> if isNominalUrfather br parent
@@ -766,10 +759,8 @@ getModelRepresentative br pr
                          (hd:_) -> hd
                          where ur = getUrfather br (DS.Prefix pr)
                                fs = formulasOf br ur
-    ChainTwinBlocking -> case findModelRepresentativeChainTwinBlocking br pr of
-                          Nothing -> error ("found an interesting counter example " ++ show pr)
-                          Just repr -> repr
-
+    ChainTwinBlocking -> fromMaybe ( error $ "interesting counter example " ++ show pr)
+                                   $ findModelRepresentativeChainTwinBlocking br pr
 
 findModelRepresentativeChainTwinBlocking :: Branch -> Prefix -> Maybe Prefix
 findModelRepresentativeChainTwinBlocking br pr
@@ -894,8 +885,8 @@ addUnivConstraint f ds p br
 
 --
 
-b_rule :: Prefix -> Formula -> DependencySet -> Params -> Branch -> BranchInfo
-b_rule  pr f ds p br
+bRule :: Prefix -> Formula -> DependencySet -> Params -> Branch -> BranchInfo
+bRule  pr f ds p br
  = addFormula p br2 (PrFormula pr ds $ Down newNom $ A (Lit newNom `disj` f))
     where newNom = nextNom br
           br2 = br{nextNom = nextNom br + 4}
@@ -974,7 +965,7 @@ addFirstFormulas p br_ fLang f
 
 {-     functions to handle the "clashable information", ie literals associated to prefixes     -}
 
-data UpdateResult = UpdateSuccess Clashable_info | UpdateFailure DependencySet
+data UpdateResult = UpdateSuccess ClashableInfo | UpdateFailure DependencySet
 
 addToClashable :: Prefix -> DependencySet -> Literal -> Branch -> BranchInfo
 addToClashable pr_ ds1 l br
@@ -987,51 +978,51 @@ addToClashable pr_ ds1 l br
 
 -- Insert a piece of clashable information into all the clashable information of a branch
 
-updateMap :: Clashable_info -> Prefix -> DependencySet -> Literal -> UpdateResult
+updateMap :: ClashableInfo -> Prefix -> DependencySet -> Literal -> UpdateResult
 updateMap cs  _  ds l | isTop l    = UpdateSuccess cs
                       | isBottom l = UpdateFailure ds
 updateMap (DMap cs) pre ds l
   = case IntMap.lookup pre cs of
-       Nothing            -> UpdateSuccess $ DMap $ IntMap.insert pre (IntMap.singleton l ds) cs
-       Just slot          -> case cisUpdate slot l ds of
-                              Slot_UpdateSuccess updatedSlot -> UpdateSuccess $ DMap $ IntMap.insert pre updatedSlot cs
-                              Slot_UpdateFailure failureDeps -> UpdateFailure failureDeps
+       Nothing   -> UpdateSuccess $ DMap $ IntMap.insert pre (IntMap.singleton l ds) cs
+       Just slot -> case cisUpdate slot l ds of
+                     SlotUpdateSuccess updatedSlot -> UpdateSuccess $ DMap $ IntMap.insert pre updatedSlot cs
+                     SlotUpdateFailure failureDeps -> UpdateFailure failureDeps
 
 
-type Clashable_info_slot = IntMap {- Literal -} DependencySet
-data Slot_UpdateResult =   Slot_UpdateSuccess Clashable_info_slot
-                         | Slot_UpdateFailure DependencySet
+type ClashableInfoSlot = IntMap {- Literal -} DependencySet
+data SlotUpdateResult =   SlotUpdateSuccess ClashableInfoSlot
+                         | SlotUpdateFailure DependencySet
 
 
 -- Union a list of clashable info slots
-cisUnions :: [Clashable_info_slot] -> Slot_UpdateResult
-cisUnions []              = Slot_UpdateSuccess IntMap.empty
-cisUnions [cis]           = Slot_UpdateSuccess cis
+cisUnions :: [ClashableInfoSlot] -> SlotUpdateResult
+cisUnions []              = SlotUpdateSuccess IntMap.empty
+cisUnions [cis]           = SlotUpdateSuccess cis
 cisUnions (cis1:cis2:tl)
  = case cisUnion cis1 cis2 of
-     failure@(Slot_UpdateFailure _) -> failure
-     Slot_UpdateSuccess newCis      -> cisUnions (newCis:tl)
+     failure@(SlotUpdateFailure _) -> failure
+     SlotUpdateSuccess newCis      -> cisUnions (newCis:tl)
 
 -- Union two clashable info slots
 
 -- if there is a clash, the result reports the set of dependencies whose earliest dependency is the earliest
 -- among all dependencies sets that caused the clash
-cisUnion :: Clashable_info_slot -> Clashable_info_slot -> Slot_UpdateResult
+cisUnion :: ClashableInfoSlot -> ClashableInfoSlot -> SlotUpdateResult
 cisUnion cis1 cis2
  = ucis_helper cis1 (IntMap.assocs cis2)
-    where ucis_helper :: Clashable_info_slot -> [(Literal,DependencySet)] -> Slot_UpdateResult
+    where ucis_helper :: ClashableInfoSlot -> [(Literal,DependencySet)] -> SlotUpdateResult
           ucis_helper cis l_ds_s =
              let (updateStatus,clashing_ds_s)
                   = foldr (\(l,ds) (upResult,clashingBps_s)
                            -> case upResult of
-                               Slot_UpdateSuccess cis_ ->  (cisUpdate cis_ l ds,      clashingBps_s)
-                               Slot_UpdateFailure ds_s ->  (cisUpdate cis  l ds, ds_s:clashingBps_s)
+                               SlotUpdateSuccess cis_ ->  (cisUpdate cis_ l ds,      clashingBps_s)
+                               SlotUpdateFailure ds_s ->  (cisUpdate cis  l ds, ds_s:clashingBps_s)
                                                                  -- we reuse the input Clashabe Info Slot
                           )
-                          (Slot_UpdateSuccess cis,[])   l_ds_s
+                          (SlotUpdateSuccess cis,[])   l_ds_s
                  result = case clashing_ds_s of
                               []   -> updateStatus                                    -- is 'success'
-                              ds_s -> Slot_UpdateFailure $ findEarliestSet ds_s
+                              ds_s -> SlotUpdateFailure $ findEarliestSet ds_s
                                          where findEarliestSet = minimumBy compareBPSets
                                                compareBPSets ds1 ds2 = comparing dsMin ds1 ds2
              in
@@ -1040,23 +1031,23 @@ cisUnion cis1 cis2
 
 -- Insert a piece of information in a clashable info slot
 
-cisUpdate :: Clashable_info_slot -> Literal -> DependencySet -> Slot_UpdateResult
-cisUpdate cis l ds  | isTop l     = Slot_UpdateSuccess cis
-                    | isBottom l  = Slot_UpdateFailure ds
+cisUpdate :: ClashableInfoSlot -> Literal -> DependencySet -> SlotUpdateResult
+cisUpdate cis l ds  | isTop l     = SlotUpdateSuccess cis
+                    | isBottom l  = SlotUpdateFailure ds
 cisUpdate cis l ds  -- nominals, propositional symbols
  = case IntMap.lookup (negLit l) cis of
-    Just ds2         -> Slot_UpdateFailure $ dsUnion ds ds2
-    Nothing          -> Slot_UpdateSuccess $ IntMap.insertWith mergeDeps l ds cis
+    Just ds2         -> SlotUpdateFailure $ dsUnion ds ds2
+    Nothing          -> SlotUpdateSuccess $ IntMap.insertWith mergeDeps l ds cis
                          where mergeDeps d1 d2  = if dsMin d1 < dsMin d2 then d1 else d2
                                 -- if the same information is caused by an earlier
                                 -- branching, only keep the information of the earliest set of dependencies
 
 -- Other functions related to clashable information
 
-cisAddDeps :: DependencySet -> Slot_UpdateResult -> Slot_UpdateResult
+cisAddDeps :: DependencySet -> SlotUpdateResult -> SlotUpdateResult
 cisAddDeps ds res_cis =
  case res_cis of
-  Slot_UpdateSuccess cis -> Slot_UpdateSuccess $ IntMap.map (dsUnion ds) cis
+  SlotUpdateSuccess cis -> SlotUpdateSuccess $ IntMap.map (dsUnion ds) cis
   failure                -> failure
 
 

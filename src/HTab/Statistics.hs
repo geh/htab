@@ -1,11 +1,3 @@
-----------------------------------------------------
---                                                --
--- Statistics.hs:                                 --
--- Functions that collect and print out           --
--- statistics                                     --
---                                                --
-----------------------------------------------------
-
 {-
 Copyright (C) HyLoRes 2002-2006
 Carlos Areces     - areces@loria.fr      - http://www.loria.fr/~areces
@@ -66,7 +58,7 @@ type StatisticsStateIO a = forall m. (MonadState Statistics m, MonadIO m) => m a
 updateMetrics :: (Metric -> Metric) -> Statistics -> Statistics
 updateMetrics f stat = let s = stat{metrics           = map (f $!) (metrics stat)}
                        in
-                            (rnf s) `seq` s
+                            rnf s `seq` s
 
 updateStep :: Statistics -> Statistics
 updateStep s@(Stat _  _     0)   = s
