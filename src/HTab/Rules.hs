@@ -14,19 +14,18 @@ import HTab.Formula( Formula(..), PrFormula(..), showLess, neg,
                      Dependency, DependencySet, dsUnion, dsInsert,
                      prefix, AccFormula(..), Rel,
                      Prefix,
-                     conj, replaceVar, Prop, Literal )
+                     replaceVar, Prop, Literal )
 import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewNomTestRelevance,
                     BranchInfo(..),
                     addFormulas, addAccFormula,
-                    addDiaRuleCheck, addDiaXRuleCheck,
+                    addDiaRuleCheck,
                     addDownRuleCheck, addDiffRuleCheck,
                     addParentPrefix,
                     reduceDisjunctionProposeLazy, doLazyBranching,
                     getUrfatherAndDeps, isNotBlocked, merge,
-                    diaAlreadyDone,  diaXAlreadyDone, downAlreadyDone,
+                    diaAlreadyDone, downAlreadyDone,
                     ReducedDisjunct(..), getUrfather,
-                    TodoList(..),
-                    deleteUEV, insertUEVAddFormula )
+                    TodoList(..))
 import HTab.CommandLine(Params, UnitProp(..), lazyBranching, semBranch, unitProp, strategy, noLoopCheck)
 import HTab.RuleId(RuleId(..))
 import qualified HTab.DisjSet as DS
@@ -36,7 +35,6 @@ import qualified HTab.DisjSet as DS
 data BranchModification =    BM_AddFormulas   [PrFormula]
                            | BM_AddAccFormula AccFormula
                            | BM_AddDiaRuleCheck Prefix (Rel,Formula)
-                           | BM_AddDiaXRuleCheck Prefix (Rel,Formula)
                            | BM_AddDownRuleCheck Prefix Formula
                            | BM_AddDiffRuleCheck Formula (Maybe Prop)
                            | BM_CreateNewPref
@@ -44,14 +42,11 @@ data BranchModification =    BM_AddFormulas   [PrFormula]
                            | BM_CreateNewNomTestRelevance Formula
                            | BM_AddParentPrefix Prefix Prefix
                            | BM_Clash DependencySet PrFormula
-                           | BM_DeleteUEV Int
-                           | BM_InsertUEV_addFormula (Maybe Int) DependencySet (Int -> PrFormula)
                            | BM_Merge Prefix DS.Pointer DependencySet
                            | BM_DoLazyBranch Prefix Literal [PrFormula]
 
 -- each rule constructor contains exactly the needed data to know the effect of the rule
 data Rule =  DiaRule    PrFormula -- creates a prefix
-           | DiaXRule   PrFormula Dependency
            | DisjRule   PrFormula [PrFormula]
            | SemBrRule  PrFormula [[PrFormula]]
            | LazyBranchRule PrFormula Prefix Literal [PrFormula]
@@ -63,7 +58,6 @@ data Rule =  DiaRule    PrFormula -- creates a prefix
            | DiscardDiaDoneRule PrFormula
            | DiscardDiaDone2Rule PrFormula
            | DiscardDiaBlockedRule PrFormula
-           | DiscardDiaXRule PrFormula
            | DiscardDisjTrivialRule PrFormula
            | ClashDisjRule DependencySet PrFormula
            | MergeRule Prefix DS.Pointer DependencySet
@@ -92,21 +86,6 @@ getMods br (DiaRule df@(PrFormula pr ds (Dia r f)))
        (ur,ds2,_) = getUrfatherAndDeps br (DS.Prefix pr)
 
 getMods _ (DiaRule _) = error "getMods DiaRule"
-
-getMods _ (DiaXRule (PrFormula pr ds (DiaX mi r ev)) dep)=
- [[BM_AddFormulas [PrFormula pr ds2 ev],
-   BM_AddDiaXRuleCheck pr (r,ev)]
-   ++ case mi of { Nothing  -> [] ;
-                   Just idx -> [BM_DeleteUEV idx]
-                 }
-  ,
-  [BM_AddDiaXRuleCheck pr (r,ev),
-   BM_InsertUEV_addFormula mi ds2
-                           (\i -> PrFormula pr ds2 (neg ev `conj` Dia r (DiaX (Just i) r ev)))]
- ]
-     where ds2 = dsInsert dep ds
-
-getMods _ (DiaXRule _ _)= error "getMods DiaXRule"
 
 getMods br (ExistRule (PrFormula _ ds (E f2))) =
  [[BM_AddFormulas [toadd],
@@ -178,14 +157,12 @@ getMods _ (DiscardDownRule _) = [[]]
 getMods _ (DiscardDiaDoneRule _) = [[]]
 getMods _ (DiscardDiaDone2Rule _) = [[]]
 getMods _ (DiscardDiaBlockedRule _) = [[]]
-getMods _ (DiscardDiaXRule _) = [[]]
 getMods _ (DiscardDisjTrivialRule _) = [[]]
 
 
 instance Show Rule where
    show (MergeRule pr po _)               = "merge:              " ++ show (pr,po)
    show (DiaRule   todelete)              = "diamond:            " ++ showLess todelete
-   show (DiaXRule  todelete _)            = "diamondX:           " ++ showLess todelete
    show (DisjRule  todelete _ )           = "disjunction:        " ++ showLess todelete
    show (SemBrRule todelete _ )           = "semantic branching: " ++ showLess todelete
    show (AtRule    todelete )             = "at:                 " ++ showLess todelete
@@ -197,7 +174,6 @@ instance Show Rule where
    show (DiscardDiaDoneRule todelete)     = "Discard done:       " ++ showLess todelete
    show (DiscardDiaDone2Rule todelete)    = "Discard done 2:     " ++ showLess todelete
    show (DiscardDiaBlockedRule todelete)  = "Discard blocked:    " ++ showLess todelete
-   show (DiscardDiaXRule todelete)        = "Discard:            " ++ showLess todelete
    show (DiscardDisjTrivialRule todelete) = "Discard trivial:    " ++ showLess todelete
 
    show (ClashDisjRule bprs f)     = "Clash:              " ++ show bprs ++ " " ++ show f
@@ -210,7 +186,6 @@ ruleToId :: Rule -> RuleId
 ruleToId r = case r of
               (MergeRule _ _ _)  -> R_Merge
               (DiaRule _ )       -> R_Dia
-              (DiaXRule _ _)     -> R_DiaX
               (DisjRule _ _)     -> R_Disj
               (SemBrRule _ _)    -> R_SemBr
               (AtRule _ )        -> R_At
@@ -221,7 +196,6 @@ ruleToId r = case r of
               (DiscardDiaDoneRule _)     -> R_DiscardDiaDone
               (DiscardDiaDone2Rule _)    -> R_DiscardDiaDone2
               (DiscardDiaBlockedRule _)  -> R_DiscardDiaBlocked
-              (DiscardDiaXRule _)        -> R_DiscardDiaX
               (DiscardDisjTrivialRule _) -> R_DiscardDisjTrivial
               (ClashDisjRule _ _)      -> R_ClashDisj
               (RoleIncRule _ _ _ _)    -> R_RoleInc
@@ -238,7 +212,6 @@ ruleByChar br p d char =
   'n' -> applicableMergeRule
   '|' -> applicableDisjRule
   '<' -> applicableDiaRule
-  '*' -> applicableDiaXRule
   '@' -> applicableAtRule
   'E' -> applicableExistRule
   'D' -> applicableDiffRule
@@ -264,9 +237,6 @@ ruleByChar br p d char =
                               -- not do it.
                           in
                           return ( DiscardDiaBlockedRule f, todos{diaTodo = new}, brBlocked)
-
-  applicableDiaXRule  = do (f,new) <- Set.minView $ diaXTodo todos
-                           return (diaXRule f br d, todos{diaXTodo = new},br)
 
   applicableAtRule    = do (f,new) <- Set.minView $ atTodo todos
                            return (AtRule f, todos{atTodo = new},br)
@@ -338,7 +308,6 @@ applyMod :: Params -> Branch -> BranchModification -> BranchInfo
 applyMod p br (BM_AddFormulas li)                = addFormulas p br li
 applyMod p br (BM_AddAccFormula accFor)          = addAccFormula p br accFor
 applyMod _ br (BM_AddDiaRuleCheck pr (r,f))      = BranchOK $ addDiaRuleCheck br pr (r,f)
-applyMod _ br (BM_AddDiaXRuleCheck pr (r,f))     = BranchOK $ addDiaXRuleCheck br pr (r,f)
 applyMod _ br (BM_AddDownRuleCheck pr f)         = BranchOK $ addDownRuleCheck br pr f
 applyMod p br (BM_CreateNewPref)                 = createNewPref p br
 applyMod _ br (BM_CreateNewProp)                 = BranchOK $ createNewProp br
@@ -346,22 +315,9 @@ applyMod _ br (BM_CreateNewNomTestRelevance f)   = BranchOK $ createNewNomTestRe
 applyMod _ br (BM_AddDiffRuleCheck f mp)         = BranchOK $ addDiffRuleCheck br f mp
 applyMod _ br (BM_AddParentPrefix son father)    = BranchOK $ addParentPrefix br son father
 applyMod _ br (BM_Clash ds (PrFormula pr ds2 f)) = BranchClash br pr (dsUnion ds ds2) f
-applyMod _ br (BM_DeleteUEV i)                   = BranchOK $ deleteUEV br i
-applyMod p br (BM_InsertUEV_addFormula mi ds ff) = insertUEVAddFormula br p mi ds ff
 applyMod p br (BM_Merge pr po ds)                = merge p br pr ds po
 applyMod _ br (BM_DoLazyBranch pr l pfs)         = BranchOK $ doLazyBranching pr l pfs br
 -- the actual rules and their helper functions
-
--- diaX (may create a discard rule)
-diaXRule :: PrFormula -> Branch -> Dependency -> Rule
-diaXRule f@(PrFormula pr _ (DiaX _ r f2)) br d
-  = if diaXAlreadyDone br pr (r,f2)
-     then DiscardDiaXRule f
-     else DiaXRule f d
-
-diaXRule _ _ _ = error "diaXRule"
-
---
 
 getNewPref :: Branch -> Prefix
 getNewPref br = lastPref br + 1

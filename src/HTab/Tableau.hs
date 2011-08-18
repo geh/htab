@@ -6,7 +6,7 @@ import System.Console.CmdArgs ( whenLoud )
 
 import Control.Monad.State(StateT,lift,modify)
 import HTab.Statistics(Statistics,updateStep,printOutMetrics,recordClosedBranch, recordFiredRule)
-import HTab.Branch(BranchInfo(..), unfulfilledEventualities)
+import HTab.Branch(BranchInfo(..))
 import HTab.CommandLine(backjumping,Params,configureStats)
 import HTab.Rules(applyRule,applicableRule,ruleToId)
 import HTab.Formula(DependencySet,dsEmpty,dsMember,dsUnion)
@@ -35,9 +35,7 @@ tableauDown p depth branchInfo =
                 case applicableRule br p (depth + 1) of
                   Nothing  ->
                       do verbose ">> Saturated open branch"
-                         return $ case unfulfilledEventualities br of
-                                   Just ds -> CLOSED ds
-                                   Nothing -> OPEN   $ buildModel br
+                         return $ OPEN $ buildModel br
                   Just (rule,newTodo,newBranch)  -> -- of course then merge newBranch and newTodo
                       do verbose $ ">> Rule : " ++ show rule
                          recordFiredRule $ ruleToId rule

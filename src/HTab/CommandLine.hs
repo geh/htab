@@ -58,7 +58,7 @@ defaultParams
       ] += verbosity
 
 strategyVal :: String
-strategyVal = "n@E<Db|*r"
+strategyVal = "n@E<Db|r"
 
 checkParams :: Params -> IO Bool
 checkParams p
@@ -69,8 +69,7 @@ checkParams p
                    "  n = nominals               @ = satisfaction operator",
                    "  E = existential modality   < = diamond",
                    "  D = difference modality    b = down-arrow binder",
-                   "  | = or                     * = transitive closure diamond",
-                   "  r = role inclusion",
+                   "  | = or                     r = role inclusion",
                    "",
                    "The default is `" ++ strategyVal ++ "'",
                    "The rules conjunction, box, universal modality and converse difference",

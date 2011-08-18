@@ -2,7 +2,7 @@ module HTab.Branch
 (
 Branch(..), createNewProp, createNewPref, createNewNomTestRelevance, BranchInfo(..),
 addFormulas, addFormula, addAccFormula,
-addDiaRuleCheck, addDiaXRuleCheck, addDownRuleCheck, addDiffRuleCheck,
+addDiaRuleCheck, addDownRuleCheck, addDiffRuleCheck,
 addParentPrefix, addFirstFormulas,
 TodoList(..),
 emptyBranch,prefixes,
@@ -10,11 +10,10 @@ reduceDisjunctionProposeLazy, doLazyBranching,
 merge,
 getUrfather, getUrfatherAndDeps, isInTheModel, relationIsInTheModel,
 getModelRepresentative, isNotBlocked,
-BlockingMode(..), diaAlreadyDone, diaXAlreadyDone,
+BlockingMode(..), diaAlreadyDone,
 downAlreadyDone,
-unfulfilledEventualities, ReducedDisjunct(..),
-isSymmetric, isTransitive,
-deleteUEV, insertUEVAddFormula
+ReducedDisjunct(..),
+isSymmetric, isTransitive
 ) where
 
 import Data.List(minimumBy)
@@ -60,9 +59,7 @@ data Branch =
                       univCons :: [(DependencySet,Formula)],
                  -- saturation of rules
                        diaRlCh :: IntMap {- Prefix -} (Set (Rel,Formula)),
-                      diaXRlCh :: IntMap {- Prefix -} (Set (Rel,Formula)),
                        boxRlCh :: IntMap {- Prefix -} (Set (Rel,Formula)),
-                      boxXRlCh :: IntMap {- Prefix -} (Set (Rel,Formula)),
                       downRlCh :: IntMap {- Prefix -} (Set Formula),
                         atRlCh :: Set Formula,
                      existRlCh :: Set Formula,
@@ -79,7 +76,6 @@ data Branch =
                       lastPref :: Prefix,
                        nextNom :: Nom,
                       nextProp :: Prop,
-                 eventualities :: IntMap DependencySet,
                  -- lazy branching
                    brWitnesses :: BranchingWitnesses,
                  -- caching / memoisation data
@@ -105,9 +101,7 @@ emptyBranch fLang relInfo_ encoding_ =
                   boxConstrBwd      = DMap.empty,
                   boxConstrFwd      = DMap.empty,
                   diaRlCh           = IntMap.empty,
-                  diaXRlCh          = IntMap.empty,
                   boxRlCh           = IntMap.empty,
-                  boxXRlCh          = IntMap.empty,
                   downRlCh          = IntMap.empty,
                   atRlCh            = Set.empty,
                   existRlCh         = Set.empty,
@@ -119,7 +113,6 @@ emptyBranch fLang relInfo_ encoding_ =
                   nextProp          = maxProp encoding_ + 4,
                   prefToForms       = IntMap.empty,
                   prToDepSet        = IntMap.empty,
-                  eventualities     = IntMap.empty,
                   brWitnesses       = DMap.empty,
                   nomPrefClasses    = DS.mkDSet,
                   inputLanguage     = fLang,
@@ -133,7 +126,6 @@ emptyBranch fLang relInfo_ encoding_ =
                 }
  where blockingMode =
          if    languagePast fLang
-            || languageTrans fLang
             || relInfo_ `oneIs` Symmetric
             || relInfo_ `oneIs` Functional
             || relInfo_ `oneIs` Injective
@@ -161,7 +153,6 @@ instance Show Branch where
               showl "\nUniv constraints: " (univCons br),
               ifNotEmpty (prToDepSet br) (\m -> "\nPrefix to dependency set:" ++ showIMap  dsShow "\n " m),
               ifNotEmpty (prefToForms br) (\m -> "\nPrefix to formulas:"       ++ showIMap  (show . Set.toList) "\n " m),
-              showl "\nEventualities: "  (eventualities br),
               showl "\nParent: " (prefParent br),
               "\nBlocking mode: ", show (blockMode br),
               "\nPrefix-Nominal classes : ", showMap show ", " (nomPrefClasses br),
@@ -210,7 +201,6 @@ instance Emptyable (Set a) where
 
 data TodoList= TodoList{disjTodo :: Set PrFormula,
                          diaTodo :: Set PrFormula,
-                        diaXTodo :: Set PrFormula,
                        existTodo :: Set PrFormula,
                           atTodo :: Set PrFormula,
                         downTodo :: Set PrFormula,
@@ -219,8 +209,8 @@ data TodoList= TodoList{disjTodo :: Set PrFormula,
                      roleIncTodo :: Set (DependencySet, Prefix, Prefix, [Rel]) }
 
 instance Show TodoList where
- show (TodoList disjs dias diaxs es ars downs diffs merges rolein)
-   = "Todo lists:" ++ concatMap (\el -> "\n" ++ show (list el)) [disjs, dias, diaxs, es, ars, downs, diffs]
+ show (TodoList disjs dias es ars downs diffs merges rolein)
+   = "Todo lists:" ++ concatMap (\el -> "\n" ++ show (list el)) [disjs, dias, es, ars, downs, diffs]
                    ++ "\n" ++ show (list merges)
                    ++ "\n" ++ show (list rolein)
 
@@ -228,7 +218,6 @@ emptyTodoList :: TodoList
 emptyTodoList =
       TodoList {  disjTodo = Set.empty,
                    diaTodo = Set.empty,
-                  diaXTodo = Set.empty,
                  existTodo = Set.empty,
                     atTodo = Set.empty,
                   downTodo = Set.empty,
@@ -299,9 +288,7 @@ putAwayFormula p pf@(PrFormula pr ds f2) br =
    Con fs     -> addFormulas p br (prefix pr ds fs)
    Dis _      -> putAwayDisjunction p pf br
    Dia _ _    -> BranchOK $ addToTodo pf br
-   DiaX _ _ _ -> BranchOK $ addToTodo pf br
    Box r f    -> addBoxConstraint      pr r f ds p br
-   BoxX r f   -> addBoxXConstraint     pr r f ds p br
    A f        -> addUnivConstraint          f ds p br
    B f        -> bRule                pr   f ds p br
    E _        -> BranchOK $ addToTodo pf br
@@ -363,7 +350,6 @@ addToTodo pf@(PrFormula p ds f2) br =
        case f2 of
          Dis _              -> utodo{ disjTodo = Set.insert pf ( disjTodo utodo)}
          Dia _ _            -> utodo{  diaTodo = Set.insert pf (  diaTodo utodo)}
-         DiaX _ _ _         -> utodo{ diaXTodo = Set.insert pf ( diaXTodo utodo)}
          E _                -> utodo{existTodo = Set.insert pf (existTodo utodo)}
          D _                -> utodo{ diffTodo = Set.insert pf ( diffTodo utodo)}
          At _ _             -> utodo{   atTodo = Set.insert pf (   atTodo utodo)}
@@ -378,7 +364,6 @@ addToTodo pf@(PrFormula p ds f2) br =
      At _ _             -> atAlreadyDone br f2
      Down _ _           -> downAlreadyDone br pf
      Dia  _ _           -> False -- the test happens later, when the todo list is processed
-     DiaX _ r ev        -> diaXAlreadyDone br p (r,ev)
      Dis _              -> False -- the test happens later, when the todo list is processed
      Lit l
       | isPositiveNom l -> inSameClass br p l
@@ -433,9 +418,7 @@ merge p br pr fDs pointer -- pointer is a nominal or a prefix
                       newBoxConstrBwd = DMap.moveInnerDataDMapPlusDeps fDs (boxConstrBwd br) oldUr newUr
                       newAccStr       = mergePrefixes (accStr br) oldUr newUr fDs
                       newDiaRlCh      = moveInMap (diaRlCh br)  oldUr newUr Set.union
-                      newDiaXRlCh     = moveInMap (diaXRlCh br) oldUr newUr Set.union
                       newBoxRlCh      = moveInMap (boxRlCh br)  oldUr newUr Set.union
-                      newBoxXRlCh     = moveInMap (boxXRlCh br) oldUr newUr Set.union
                       newBlockedDias  = moveInMap (blockedDias br) oldUr newUr (++)
                       (newBrWitnesses,unwitnessedToAdd) = mergeWitnesses oldUr newUr urfatherSlot (brWitnesses br)
 
@@ -459,9 +442,7 @@ merge p br pr fDs pointer -- pointer is a nominal or a prefix
                                            prToDepSet     = newPrToDepSet,
                                            prefToForms    = newPrefToForms,
                                            diaRlCh        = newDiaRlCh,
-                                           diaXRlCh       = newDiaXRlCh,
                                            boxRlCh        = newBoxRlCh,
-                                           boxXRlCh       = newBoxXRlCh,
                                            blockedDias    = newBlockedDias,
                                            clashStr       = newClashStr,
                                            brWitnesses    = newBrWitnesses}
@@ -568,23 +549,6 @@ inSameClass br p n
     DS.Nominal _ -> False
     DS.Prefix p2 -> getUrfather br (DS.Prefix p) == p2
 
--- <*>-related functions
-
-deleteUEV :: Branch -> Int -> Branch
-deleteUEV br idx = br{eventualities = IntMap.delete idx (eventualities br)}
-
-insertUEVAddFormula :: Branch -> Params -> Maybe Int -> DependencySet -> (Int -> PrFormula) -> BranchInfo
-insertUEVAddFormula br p mi ds ff
- = addFormula p br2 f
-  where idxToUse = case mi of
-                    Nothing   -> case IntMap.maxViewWithKey $ eventualities br of
-                                   Nothing        -> 0
-                                   Just ((i,_),_) -> i+1
-                    Just idx  -> idx
-        newEvs = IntMap.insertWith dsUnion idxToUse ds $ eventualities br
-        br2 = br{eventualities= newEvs}
-        f = ff idxToUse
-
 {-     box-related constraints     -}
 
 boxRule :: DependencySet -> (IntMap {- Rel -} [(Formula,DependencySet)], IntMap {- Rel -} [(Prefix,DependencySet)]) -> [PrFormula]
@@ -640,25 +604,6 @@ addBoxRuleCheck br ur (r,f) =
 boxAlreadyDone :: Branch -> Prefix -> (Rel,Formula) -> Bool
 boxAlreadyDone b ur (r,f) =
   case IntMap.lookup ur (boxRlCh b) of
-     Nothing  -> False
-     Just fset -> Set.member (r,f) fset
-
--- [*]phi --> phi & [][*]phi
--- need not to do all that addBoxConstraint does
-addBoxXConstraint :: Prefix -> Rel -> Formula -> DependencySet -> Params ->  Branch -> BranchInfo
-addBoxXConstraint pr r f ds p br
- | boxXAlreadyDone br ur (r,f) = BranchOK br
- | otherwise = addFormulas p br2 [PrFormula pr ds f, PrFormula pr ds (Box r (BoxX r f))]
-   where ur = getUrfather br (DS.Prefix pr)
-         br2 = addBoxXRuleCheck br ur (r,f)
-
-addBoxXRuleCheck :: Branch -> Prefix -> (Rel,Formula) -> Branch
-addBoxXRuleCheck br ur (r,f) =
-  br{boxXRlCh=IntMap.insertWith Set.union ur (Set.singleton (r,f)) (boxXRlCh br)}
-
-boxXAlreadyDone :: Branch -> Prefix -> (Rel,Formula) -> Bool
-boxXAlreadyDone b ur (r,f) =
-  case IntMap.lookup ur (boxXRlCh b) of
      Nothing  -> False
      Just fset -> Set.member (r,f) fset
 
@@ -798,8 +743,6 @@ forInclusion _ (At _ _) = False
 forInclusion _ (Down _ _) = False
 forInclusion _ (Box _ _) = True
 forInclusion _ (Dia _ _) = True
-forInclusion _ (BoxX _ _)   = False
-forInclusion _ (DiaX _ _ _) = False
 forInclusion _ (A _) = False
 forInclusion _ (E _) = False
 forInclusion _ (D _) = False
@@ -823,28 +766,6 @@ diaAlreadyDone b (PrFormula p _ (Dia r f)) =
  where ur = getUrfather b (DS.Prefix p)
 
 diaAlreadyDone _ _ = error "dia already done : wrong formula kind"
---
-
-addDiaXRuleCheck :: Branch -> Prefix -> (Rel, Formula) -> Branch
-addDiaXRuleCheck br pr f =
-  br{diaXRlCh=IntMap.insertWith Set.union ur (Set.singleton f) (diaXRlCh br)}
-   where ur = getUrfather br (DS.Prefix pr)
-
-diaXAlreadyDone :: Branch -> Prefix -> (Rel,Formula) -> Bool
-diaXAlreadyDone b p f =
-  case IntMap.lookup ur (diaXRlCh b) of
-     Nothing  -> False
-     Just fset -> Set.member f fset
- where ur = getUrfather b (DS.Prefix p)
-
-
-
-unfulfilledEventualities :: Branch -> Maybe DependencySet
-unfulfilledEventualities br
- = if IntMap.null $ eventualities br
-    then Nothing
-    else Just $ dsUnions $ IntMap.elems $ eventualities br
-
 --
 
 addDownRuleCheck :: Branch -> Prefix -> Formula -> Branch

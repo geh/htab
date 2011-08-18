@@ -60,8 +60,6 @@ data Formula
      | Box    Rel     Formula
      | Dia    Rel     Formula
      | Down   Nom Formula
-     | BoxX   Rel Formula
-     | DiaX   (Maybe Int) Rel Formula
      | A      Formula
      | E      Formula
      | D      Formula
@@ -126,8 +124,6 @@ instance Show Formula where
  show (At n f)   = showLit n  ++ ":(" ++ show f ++ ")"
  show (Box r f)    = "[" ++ showRel r ++ "]"   ++ show f
  show (Dia r f)    = "<" ++ showRel r ++ ">"   ++ show f
- show (BoxX r f)   = "[" ++ showRel r ++ "*]"  ++ show f
- show (DiaX i r f) = "<" ++ showRel r ++ "*>(" ++ show i ++ ")" ++ show f
  show (A f)      = "A" ++ show f
  show (E f)      = "E" ++ show f
  show (D f)      = "D" ++ show f
@@ -243,10 +239,10 @@ convertToOurType prelI e = foldr insertRelProp Map.empty (concatMap convertOne p
        c r P.Universal       = [(int e r,Universal    )]
        c r P.Difference      = [(int e r,Difference   )]
        c r (P.InverseOf s)   = [(int e r,InverseOf   (int e s))]
-       c r (P.TRClosureOf s) = [(int e r,TRClosureOf (int e s))]
        c r (P.SubsetOf ss)   = [(int e r,SubsetOf [ int e s | s <- ss])]
        c r (P.Equals ss)     = [(int e r,SubsetOf [ int e s | s <- ss])] ++ [(int e s,SubsetOf [int e r]) | s <- ss]
        c _ (P.TClosureOf _)  = error "TClosureOf not handled"
+       c _ (P.TRClosureOf _) = error "TRClosureOf not handled"
 
 simpleParse :: Params -> String -> (Theory,RelInfo,Encoding,[Task])
 simpleParse p s = parse p $ "signature { automatic } theory { " ++ removeBeginEnd s ++ "}"
@@ -277,69 +273,26 @@ conv_ relI e (F.B f)             = dUnivMod    (conv_ relI e f)
 type Connector = Formula -> Formula
 
 specialiseDia :: S.RelSymbol -> RelInfo -> Encoding -> Connector
-specialiseDia r relI e = specialise r relI (diamond e, diamondX e, dExistMod, existMod) e
+specialiseDia r relI e = specialise r relI (diamond e, dExistMod, existMod) e
 
 specialiseBox :: S.RelSymbol -> RelInfo -> Encoding -> Connector
-specialiseBox r relI e = specialise r relI (box e, boxX e, dUnivMod, univMod) e
+specialiseBox r relI e = specialise r relI (box e, dUnivMod, univMod) e
 
-specialise :: S.RelSymbol -> RelInfo -> (S.RelSymbol -> Connector, S.RelSymbol -> Connector, Connector, Connector) -> Encoding -> Connector
-specialise (S.InvRelSymbol r) _ (relational, _ , _ , _) _ -- happens only with simple input
+specialise :: S.RelSymbol -> RelInfo -> (S.RelSymbol -> Connector, Connector, Connector) -> Encoding -> Connector
+specialise (S.InvRelSymbol r) _ (relational, _ , _) _ -- happens only with simple input
  = relational $ S.InvRelSymbol r
 
-specialise (S.RelSymbol r) relI (relational, rtclosure, difference, global) e
- = case filter interesting props of
-    (Difference:_) -> difference
-    (Universal:_)  -> global
-    []             -> relational $ S.RelSymbol r
-    _              -> case specialise2 (int e r) relI of
-                         Just_ r2        -> relational $ toRelSymbol e r2
-                         Inverse r2      -> relational $ invRS $ toRelSymbol e r2
-                         RTClosure r2    -> rtclosure  $ toRelSymbol e r2
-                         RTClosureInv r2 -> rtclosure  $ invRS $ toRelSymbol e r2
-    where
-      interesting Difference      = True
-      interesting Universal       = True
-      interesting (InverseOf _)   = True
-      interesting (TRClosureOf _) = True
-      interesting _               = False
-      props                       = Map.findWithDefault [] (int e r) relI
-      invRS (S.RelSymbol s)       = S.InvRelSymbol s
-      invRS (S.InvRelSymbol s)    = S.RelSymbol s
-
-data ModType = Just_ Rel | Inverse Rel | RTClosure Rel | RTClosureInv Rel
-
-specialise2 :: Rel -> RelInfo -> ModType
-specialise2 r_ relI
- = go (Just_ r_)
-    where
-     go j@(Just_ r) =
-       case filter interesting (propsOf r) of
-        (InverseOf r2:_)   -> go (Inverse r2)
-        (TRClosureOf r2:_) -> go (RTClosure r2)
-        _                  -> j
-
-     go io@(Inverse r) =
-       case filter interesting (propsOf r) of
-        (InverseOf r2:_)   -> go (Just_ r2)
-        (TRClosureOf r2:_) -> RTClosureInv r2
-        _                  -> io
-
-     go rtc@(RTClosure r) =
-       case filter interesting (propsOf r) of
-        (InverseOf r2:_)   -> RTClosureInv r2
-        (TRClosureOf r2:_) -> go (RTClosure r2)
-        _                  -> rtc
-
-     go rtci@(RTClosureInv r) =
-       case filter interesting (propsOf r) of
-        (InverseOf r2:_)   -> RTClosure r2
-        _                  -> rtci
-
-     interesting (InverseOf _)   = True
-     interesting (TRClosureOf _) = True
-     interesting _               = False
-     propsOf r__                 = Map.findWithDefault [] r__ relI
-
+-- below we don't attempt checking if r is an inverse of an inverse
+specialise (S.RelSymbol r) relI (relational, difference, global) e
+ | Difference `elem` props = difference
+ | Universal `elem` props  = global
+ | otherwise = case [ r2 | InverseOf r2 <- props] of
+                 []     -> relational $ S.RelSymbol r
+                 (r2:_) -> relational $ invRS $ toRelSymbol e r2
+                   where
+                     invRS (S.RelSymbol s)       = S.InvRelSymbol s
+                     invRS (S.InvRelSymbol s)    = S.RelSymbol s
+ where props = Map.findWithDefault [] (int e r) relI
 
 inv :: Rel -> RelInfo -> Rel
 inv r relI
@@ -472,16 +425,12 @@ nom  e (S.NomSymbol n)  = Lit ( nomMap e  Map.! n )
 prop e (S.PropSymbol p) = Lit ( propMap e Map.! p )
 
 {- Modalities -}
-box, diamond, boxX, diamondX :: Encoding -> S.RelSymbol -> Formula -> Formula
+box, diamond :: Encoding -> S.RelSymbol -> Formula -> Formula
 univMod, existMod, dUnivMod, dExistMod :: Formula -> Formula
 box        e (S.RelSymbol r)    = Box   $ int e r
 box        e (S.InvRelSymbol r) = Box   $ invRel $ int e r
 diamond    e (S.RelSymbol r)    = Dia   $ int e r
 diamond    e (S.InvRelSymbol r) = Dia   $ invRel $ int e r
-boxX       e (S.RelSymbol r)    = BoxX  $ int e r
-boxX       e (S.InvRelSymbol r) = BoxX  $ invRel $ int e r
-diamondX   e (S.RelSymbol r)    = DiaX Nothing $ int e r
-diamondX   e (S.InvRelSymbol r) = DiaX Nothing $ invRel $ int e r
 univMod    = A
 existMod   = E
 dUnivMod   = B
@@ -561,8 +510,6 @@ neg (At n f)         = At   n (neg f)
 neg (Down v f)       = Down v (neg f)
 neg (Box r f)        = Dia  r (neg f)
 neg (Dia r f)        = Box  r (neg f)
-neg (BoxX r f)       = DiaX Nothing r (neg f)
-neg (DiaX _ r f)     = BoxX r (neg f)
 neg (A f)            = E (neg f)
 neg (E f)            = A (neg f)
 neg (D f)            = B (neg f)
@@ -599,15 +546,13 @@ instance Show AccFormula where
 
 data LanguageInfo = LanguageInfo {   languageNoms :: [Int], -- ascending list
                                      relevantNoms :: [Int],
-                                     languagePast :: Bool,
-                                    languageTrans :: Bool }
+                                     languagePast :: Bool}
 
 instance Show LanguageInfo where
  show li =         "Input Language:"
            ++ "\n|" ++ yesnol "Noms" ( languageNoms li )
            ++ "\n|" ++ yesnol "Relevant Noms" ( relevantNoms li ) ++ "\n"
            ++ yesno "Past, " ( languagePast li )
-           ++ yesno "Trans, " ( languageTrans li)
   where yesno :: String -> Bool -> String
         yesno s b = ( if b then "" else "no " ) ++ s
         yesnol s l | null l = "no " ++ s
@@ -617,8 +562,7 @@ formulaLanguageInfo :: Formula -> Encoding -> LanguageInfo
 formulaLanguageInfo f e
  = LanguageInfo {   languageNoms = noms,
                     relevantNoms = relNoms,
-                    languagePast = hasPast f,
-                   languageTrans = hasTransClosure f}
+                    languagePast = hasPast f}
 
     where allNoms_ = nomsOfEncoding e
           relNoms_ = extractRelevantNominals f
@@ -636,8 +580,6 @@ composeFold zero combine g e = case e of
     Dis fs     -> foldr1 combine $ map g $ list fs
     Dia _ f    -> g f
     Box _ f    -> g f
-    DiaX _ _ f -> g f
-    BoxX _ f   -> g f
     At  _ f    -> g f
     Down _ f   -> g f
     A f        -> g f
@@ -654,8 +596,6 @@ composeMap baseCase g e = case e of
     Dis fs     -> Dis $ Set.map g fs
     Dia r f  -> Dia r (g f)
     Box r f    -> Box r (g f)
-    DiaX i r f -> DiaX i r (g f)
-    BoxX r f   -> BoxX r (g f)
     At   i f   -> At  i (g f)
     A f        -> A (g f)
     E f        -> E (g f)
@@ -673,14 +613,7 @@ extractRelevantNominals f                        = composeFold Set.empty Set.uni
 hasPast :: Formula -> Bool
 hasPast (Dia r _)    = testBit r 0
 hasPast (Box r _)    = testBit r 0
-hasPast (BoxX r _) = testBit r 0
-hasPast (DiaX _ r _) = testBit r 0
 hasPast f            = composeFold False (||) hasPast f
-
-hasTransClosure :: Formula -> Bool
-hasTransClosure (BoxX _ _)   = True
-hasTransClosure (DiaX _ _ _) = True
-hasTransClosure f            = composeFold False (||) hasTransClosure f
 
 replaceVar :: Int -> Int -> Formula -> Formula
 replaceVar v n a@(Lit v2)
