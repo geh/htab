@@ -159,7 +159,7 @@ parse p s
     where parseOutput = InputFile.myparse s       -- direct parse from hylolib
           encoding    = getEncoding parseOutput
           pRelInfo    = P.relations parseOutput
-          relInfo     = handleFunInj $ saturate $ forceProperties p encoding $ convertToOurType pRelInfo encoding -- TODO
+          relInfo     = forceProperties p encoding $ convertToOurType pRelInfo encoding -- TODO
           theory      = convert relInfo encoding $ P.theory parseOutput
           tasks       = P.tasks parseOutput
 
@@ -236,6 +236,7 @@ convertToOurType prelI e = foldr insertRelProp Map.empty (concatMap convertOne p
        c r P.Symmetric       = [(int e r,Symmetric    )]
        c r P.Transitive      = [(int e r,Transitive   )]
        c r P.Functional      = [(int e r,Functional   )]
+       c r P.Injective       = [(int e r,Injective    )]
        c r P.Universal       = [(int e r,Universal    )]
        c r P.Difference      = [(int e r,Difference   )]
        c r (P.InverseOf s)   = [(int e r,InverseOf   (int e s))]
@@ -269,6 +270,7 @@ conv_ relI e (F.A f)             = univMod     (conv_ relI e f)
 conv_ relI e (F.E f)             = existMod    (conv_ relI e f)
 conv_ relI e (F.D f)             = dExistMod   (conv_ relI e f)
 conv_ relI e (F.B f)             = dUnivMod    (conv_ relI e f)
+conv_ _    _ (F.Count _ _ _ _)   = error "counting modalities not supported"
 
 type Connector = Formula -> Formula
 
@@ -301,104 +303,6 @@ inv r relI
     Just properties -> if Symmetric `elem` properties then r else invRel r
 
 type HyLoFormula = F.Formula S.NomSymbol S.PropSymbol S.RelSymbol
-
--- saturate RelInfo with hierarchy information : Reflexive, Symmetric, Transitive, Universal, Difference
-
-saturate :: RelInfo -> RelInfo
-saturate relI = Map.mapWithKey saturateOne relI
-   where saturateOne r props = let ancestorProps = concatMap (getProperties relI) $ getAncestors r relI
-                                   newProps = list $ Set.union (set ancestorProps) (set props)
-                               in
-                                 newProps
-
-getProperties :: RelInfo -> Rel -> [RelProperty]
-getProperties ri r
- = getOnlyProps $ filter isProp_ props
-    where props             = Map.findWithDefault [] r ri
-          getOnlyProps      = filter isProp_
-          isProp_ Reflexive  = True
-          isProp_ Symmetric  = True
-          isProp_ Transitive = True
-          isProp_ Universal  = True
-          isProp_ Difference = True
-          isProp_ _          = False
-
-getAncestors :: Rel -> RelInfo -> [Rel]
-getAncestors r_ relI =
- list $ go (Set.singleton r_) r_
- where
-  go seen r =
-   let props = Map.findWithDefault [] r relI
-       parents = concatMap extractParent props
-       extractParent (InverseOf rp)   = [rp]
-       extractParent (TRClosureOf rp) = [rp]
-       extractParent _                = [  ]
-       todo = list ( set parents Set.\\ seen )
-       newSeen = Set.union seen $ set parents
-   in
-     case todo of
-      [] -> Set.singleton r
-      _  -> Set.insert r $ Set.unions $ map (go newSeen) todo
-
--- ==========================================================================
---
--- saturate relInfo with the properties Functional and Injective
--- rationale : being able to enforce Injectivity even though the
---             input format does not have an Injective label.
---             the solution to do so is:
---             R_injective , Inv_R { inverseof R_injective, Functional }
---
--- ==========================================================================
-
-data FunInj = Not | Fun | Inj | FunInj
-
-handleFunInj :: RelInfo -> RelInfo
-handleFunInj relI =
--- explore the hierarchy of relations starting by the leaves and ending at the top
--- taking into account the alternations "inverseof" to enforce functionality and/or injectivity
-  Map.foldrWithKey startFromLeaf relI relI
- where startFromLeaf rs props currentRelI = follow rs props currentRelI Not
-
-       follow rs props currentRelI currentStatus
-         = case parentsWithInv props status of
-            Just (parent,newStatus) -> let parentProps = Map.findWithDefault [] parent currentRelI in
-                                       follow parent parentProps currentRelI newStatus
-            Nothing
-              -> case currentStatus of
-                   Not -> currentRelI
-                   _   -> Map.insertWith (++) rs (toProps status) currentRelI
-           where
-                 status = if Functional `elem` props
-                           then case currentStatus of
-                                 FunInj -> FunInj
-                                 Inj    -> FunInj
-                                 Fun    -> Fun
-                                 Not    -> Fun
-                           else currentStatus
-                 toProps Not = []
-                 toProps FunInj = [Functional, Injective]
-                 toProps Fun = [Functional]
-                 toProps Inj = [Injective]
-
-       parentsWithInv props status
-                   = case concatZip $ map extractParent props of
-                         ([],[])      -> Nothing
-                         ((par:_),_)  -> Just (par, invert status)
-                                         where invert Not    = Not
-                                               invert FunInj = FunInj
-                                               invert Fun    = Inj
-                                               invert Inj    = Fun
-                         (_,(par:_))  -> Just (par, status)
-                     where extractParent (InverseOf rp)   = ([rp],[])
-                           extractParent (TRClosureOf rp) = ([]  ,[rp])
-                           extractParent _                = ([]  ,[])
-
-
-concatZip :: [([a],[b])] -> ([a],[b])
-concatZip [] = ([],[])
-concatZip ((as,bs):tl) = (as++as2,bs++bs2) where (as2,bs2) = concatZip tl
-
--- ==========================================================================
 
 encodeValidityTest :: RelInfo -> Encoding -> Formula -> [HyLoFormula] -> Formula
 encodeValidityTest relI e th fs
