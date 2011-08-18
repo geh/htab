@@ -33,11 +33,11 @@ runWithParams :: Params -> IO (Maybe TaskRunFlag)
 runWithParams p =
  time "Total time: "
   $ do
-     let fromStdIn = do myPutStrLn $ "Reading from stdin."
+     let fromStdIn = do myPutStrLn "Reading from stdin."
                         hSetBuffering stdin LineBuffering
                         getContents
 
-     let parse = \i -> if head (words i)  == "begin"
+     let parse i = if head (words i)  == "begin"
                         then F.simpleParse p i else F.parse p i
      allTasks <- parse <$> maybe fromStdIn readFile (filename p)
      --
@@ -180,5 +180,5 @@ time message action =
 
 
 myPutStrLn :: String -> IO ()
-myPutStrLn str = do whenNormal $ putStrLn str
+myPutStrLn str = whenNormal $ putStrLn str
 
