@@ -1,24 +1,22 @@
 module HTab.Rules
 (
-Rule(..),BranchModification(..),
-applicableRule, applyRule, ruleToId,
-applyMod
+Rule(..),
+applicableRule, applyRule, ruleToId
 ) where
 
 import qualified Data.Set as Set
 import qualified Data.Map as Map
-import qualified Data.IntMap as IntMap
-import Data.Maybe ( listToMaybe, mapMaybe )
+import Data.Maybe ( mapMaybe )
 
 import HTab.Formula( Formula(..), PrFormula(..), showLess, neg,
                      Dependency, DependencySet, dsUnion, dsInsert,
-                     prefix, AccFormula(..), Rel,
+                     prefix, Rel,
                      Prefix,
-                     replaceVar, Prop, Literal )
+                     replaceVar, Literal )
 import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewNomTestRelevance,
                     BranchInfo(..),
                     addFormulas, addAccFormula,
-                    addDiaRuleCheck,
+                    addDiaRuleCheck, addToBlockedDias,
                     addDownRuleCheck, addDiffRuleCheck,
                     addParentPrefix,
                     reduceDisjunctionProposeLazy, doLazyBranching,
@@ -30,29 +28,15 @@ import HTab.CommandLine(Params, UnitProp(..), lazyBranching, semBranch, unitProp
 import HTab.RuleId(RuleId(..))
 import qualified HTab.DisjSet as DS
 
--- a "rule" is basically a list of modifications of the structures
+-- rule constructors contain the data needed to modify a branch
 
-data BranchModification =    BM_AddFormulas   [PrFormula]
-                           | BM_AddAccFormula AccFormula
-                           | BM_AddDiaRuleCheck Prefix (Rel,Formula)
-                           | BM_AddDownRuleCheck Prefix Formula
-                           | BM_AddDiffRuleCheck Formula (Maybe Prop)
-                           | BM_CreateNewPref
-                           | BM_CreateNewProp
-                           | BM_CreateNewNomTestRelevance Formula
-                           | BM_AddParentPrefix Prefix Prefix
-                           | BM_Clash DependencySet PrFormula
-                           | BM_Merge Prefix DS.Pointer DependencySet
-                           | BM_DoLazyBranch Prefix Literal [PrFormula]
-
--- each rule constructor contains exactly the needed data to know the effect of the rule
-data Rule =  DiaRule    PrFormula -- creates a prefix
+data Rule =  DiaRule    PrFormula                 -- creates a prefix
            | DisjRule   PrFormula [PrFormula]
            | SemBrRule  PrFormula [[PrFormula]]
            | LazyBranchRule PrFormula Prefix Literal [PrFormula]
            | AtRule     PrFormula
            | DownRule   PrFormula
-           | DiffRule   PrFormula Dependency
+           | DiffRule   PrFormula Dependency      -- creates a prefix
            | ExistRule  PrFormula                 -- creates a prefix
            | DiscardDownRule PrFormula
            | DiscardDiaDoneRule PrFormula
@@ -62,102 +46,6 @@ data Rule =  DiaRule    PrFormula -- creates a prefix
            | ClashDisjRule DependencySet PrFormula
            | MergeRule Prefix DS.Pointer DependencySet
            | RoleIncRule Prefix [Rel] Prefix DependencySet
-
--- from the description of a rule application, creates the list of lists of modifications to the branch
--- for certain rules, we need to look in the branch to see what modifications we do
-
-getMods :: Branch -> Rule -> [[BranchModification]]
-getMods _ (ClashDisjRule ds f) = [[BM_Clash ds f]]
-getMods _ (MergeRule p n ds)= [[BM_Merge p n ds]]
-
-getMods _ (RoleIncRule p1 rs p2 ds) = [[BM_AddAccFormula (AccFormula ds r p1 p2)] | r <- rs]
-
-getMods br (DiaRule df@(PrFormula pr ds (Dia r f)))
- = if diaAlreadyDone br df
-    then getMods br (DiscardDiaDone2Rule df)
-    else  [[BM_AddParentPrefix newPr ur,
-            BM_AddAccFormula acctoadd,
-            BM_AddFormulas [toadd],
-            BM_AddDiaRuleCheck pr (r,f),
-            BM_CreateNewPref]]
- where acctoadd   = AccFormula (dsUnion ds ds2) r ur newPr
-       toadd      = PrFormula newPr ds f
-       newPr      = getNewPref br
-       (ur,ds2,_) = getUrfatherAndDeps br (DS.Prefix pr)
-
-getMods _ (DiaRule _) = error "getMods DiaRule"
-
-getMods br (ExistRule (PrFormula _ ds (E f2))) =
- [[BM_AddFormulas [toadd],
-   BM_CreateNewPref]]
- where toadd = PrFormula newPr ds f2
-       newPr = getNewPref br
-
-getMods _ (ExistRule _) = error "getMods ExistRule"
-
-getMods _ (DisjRule _ toadds) =
- [[BM_AddFormulas [toadd]] | toadd <- toadds]
-
-getMods _ (SemBrRule _ toaddss) =
- [[BM_AddFormulas toadds] | toadds <- toaddss]
-
-getMods _ (LazyBranchRule _ pr lit pfs) =
- [[BM_DoLazyBranch pr lit pfs]]
-
-getMods br (AtRule (PrFormula _ ds (At n f))) =
- [[BM_AddFormulas [toadd]]]
-  where toadd = PrFormula earliestPrefix (dsUnion ds ds2) f
-        (earliestPrefix,ds2,_) = getUrfatherAndDeps br (DS.Nominal n)
-
-getMods _ (AtRule _) = error "getMods AtRules"
-
-
-getMods br (DownRule df@(PrFormula pr ds f@(Down v f2)))
- = if downAlreadyDone br df
-    then getMods br (DiscardDownRule df)
-    else  [[BM_CreateNewNomTestRelevance f,  --  order  --  what about using a monadic
-            BM_AddFormulas [toadd1, toadd2], -- matters -- writing for the getMods functions ?
-            BM_AddDownRuleCheck pr f
-          ]]
- where toadd1 = PrFormula pr ds (replaceVar v newNom f2)
-       toadd2 = PrFormula pr ds $ Lit newNom
-       newNom = nextNom br
-
-getMods _ (DownRule _) = error "getMods DownRule"
-
-getMods br (DiffRule (PrFormula pr ds_ (D f2)) d) =
- case Map.lookup f2 (dDiaRlCh br) of
-  Nothing -> [[BM_AddDiffRuleCheck f2 Nothing,
-               BM_CreateNewPref, BM_CreateNewPref,
-               BM_CreateNewProp,
-               BM_AddFormulas [PrFormula newPref1 ds f2,
-                               PrFormula newPref2 ds f2,
-                               PrFormula newPref1 ds (      Lit newProp),
-                               PrFormula newPref2 ds (neg $ Lit newProp),
-                               PrFormula pr       ds (neg $ Lit newProp)]
-               ],
-              [BM_AddDiffRuleCheck f2 (Just newProp),
-               BM_CreateNewPref,
-               BM_CreateNewProp,
-               BM_AddFormulas [PrFormula newPref1 ds f2,
-                               PrFormula newPref1 ds (      Lit newProp),
-                               PrFormula pr       ds (neg $ Lit newProp)]
-               ]
-             ]
-              where newPref1 = getNewPref br
-                    newPref2 = newPref1 + 1
-                    newProp  = nextProp br
-  Just Nothing          -> [[]]
-  Just (Just diffProp)  -> [[BM_AddFormulas [PrFormula pr ds (neg $ Lit diffProp)]]]
-  where ds = d `dsInsert` ds_
-
-getMods _ (DiffRule _ _) = error "getMods DiffRule"
-
-getMods _ (DiscardDownRule _) = [[]]
-getMods _ (DiscardDiaDoneRule _) = [[]]
-getMods _ (DiscardDiaDone2Rule _) = [[]]
-getMods _ (DiscardDiaBlockedRule _) = [[]]
-getMods _ (DiscardDisjTrivialRule _) = [[]]
 
 
 instance Show Rule where
@@ -203,8 +91,11 @@ ruleToId r = case r of
 
 -- the rules application strategy is defined here:
 -- the first rule is the one that will be applied at the next tableau step
-applicableRule :: Branch -> Params -> Dependency -> Maybe (Rule,TodoList,Branch)
-applicableRule br p d = listToMaybe $ mapMaybe (ruleByChar br p d) (strategy p)
+applicableRule :: Branch -> Params -> Dependency -> Maybe (Rule,Branch)
+applicableRule br p d =
+ case mapMaybe (ruleByChar br p d) (strategy p) of
+      [] -> Nothing
+      ((rule,newtodo,newbr):_) -> Just (rule,newbr{todoList = newtodo})
 
 ruleByChar :: Branch -> Params -> Dependency -> Char -> Maybe (Rule,TodoList,Branch)
 ruleByChar br p d char =
@@ -229,14 +120,7 @@ ruleByChar br p d char =
                then return (DiscardDiaDoneRule f, todos{diaTodo = new} , br )
                else if isNotBlocked br pr
                      then return ( DiaRule f,     todos{diaTodo = new}, br )
-                     else let ur = getUrfather br (DS.Prefix pr)
-                              brBlocked = br{blockedDias = IntMap.insertWith (++) ur [f] (blockedDias br)}
-                              -- blocked formulas are added one by one to the blockedDias list.
-                              -- a better way would be to put every formula of a given blocked prefix
-                              -- to that list, but as we do not index todo formulas by prefix we can
-                              -- not do it.
-                          in
-                          return ( DiscardDiaBlockedRule f, todos{diaTodo = new}, brBlocked)
+                     else return ( DiscardDiaBlockedRule f, todos{diaTodo = new}, br)
 
   applicableAtRule    = do (f,new) <- Set.minView $ atTodo todos
                            return (AtRule f, todos{atTodo = new},br)
@@ -291,33 +175,91 @@ makeInteresting p br d df@(PrFormula pr ds (Dis fs))
 
 makeInteresting _ _ _ _ = error "makeInteresting on a non disjunction"
 
-applyRule :: Params -> Rule -> Branch -> TodoList -> [BranchInfo]
-applyRule p rule br_ todo
- = map (applyMods p br) (getMods br rule)
-   where br = br_{todoList = todo}
 
-applyMods :: Params -> Branch -> [BranchModification] -> BranchInfo
-applyMods p br (hd:tl)
-  = case (applyMod p br hd) of
-      BranchOK br2             -> applyMods p br2 tl
-      si@(BranchClash _ _ _ _) -> si
-applyMods _ br [] = BranchOK br
+(>>?) :: BranchInfo -> (Branch -> BranchInfo) -> BranchInfo
+clash@(BranchClash _ _ _ _) >>? _ = clash
+(BranchOK br) >>? f = f br
 
+applyRule :: Params -> Rule -> Branch -> [BranchInfo]
+applyRule p rule br
+ = case rule of
+    DiaRule df@(PrFormula pr ds (Dia r f))
+     -> if diaAlreadyDone br df
+         then
+            applyRule p (DiscardDiaDone2Rule df) br
+         else
+          [ addParentPrefix newPr ur br >>?
+            addAccFormula p (dsUnion ds ds2, r, ur, newPr) >>?
+            addFormulas p [PrFormula newPr ds f] >>?
+            addDiaRuleCheck pr (r,f) >>?
+            createNewPref p ]
+            where newPr      = getNewPref br
+                  (ur,ds2,_) = getUrfatherAndDeps br (DS.Prefix pr)
+    DiaRule  _ -> error "applyRule DiaRule with wrong formula kind"
+    DisjRule _ prFormulas ->
+            [ addFormulas p [toadd] br |  toadd <- prFormulas ]
+    SemBrRule _ prFormulass ->
+            [ addFormulas p toadds br |  toadds <- prFormulass ]
+    LazyBranchRule _ pr lit prFormulas ->
+            [ doLazyBranching pr lit prFormulas br ]
+    AtRule  (PrFormula _ ds (At n f)) ->
+            [ addFormulas p [toadd] br ]
+            where (ur,ds2,_) = getUrfatherAndDeps br (DS.Nominal n)
+                  toadd = PrFormula ur (dsUnion ds ds2) f
+    AtRule _ -> error "error applyMods AtRule with wrong formula (should not happen!)"
+    DownRule df@(PrFormula pr ds f@(Down v f2)) ->
+          if downAlreadyDone br df
+            then applyRule p (DiscardDownRule df) br
+            else -- order matters
+                 [ createNewNomTestRelevance f br >>?
+                   addFormulas p [toadd1, toadd2] >>?
+                   addDownRuleCheck pr f ]
+                  where toadd1 = PrFormula pr ds (replaceVar v newNom f2)
+                        toadd2 = PrFormula pr ds $ Lit newNom
+                        newNom = nextNom br
+    DownRule _ -> error "getMods DownRule"
+    DiffRule   (PrFormula pr ds_ (D f2)) d ->
+      case Map.lookup f2 (dDiaRlCh br) of
+           Nothing -> [ addDiffRuleCheck f2 Nothing br >>?
+                        createNewPref p >>?
+                        createNewPref p >>?
+                        createNewProp >>?
+                        addFormulas p [ PrFormula newPref1 ds f2,
+                                        PrFormula newPref2 ds f2,
+                                        PrFormula newPref1 ds (      Lit newProp),
+                                        PrFormula newPref2 ds (neg $ Lit newProp),
+                                        PrFormula pr       ds (neg $ Lit newProp) ]
+                        ,
+                        addDiffRuleCheck f2 (Just newProp) br >>?
+                        createNewPref p >>?
+                        createNewProp >>?
+                        addFormulas p [ PrFormula newPref1 ds f2,
+                                        PrFormula newPref1 ds (      Lit newProp),
+                                        PrFormula pr       ds (neg $ Lit newProp) ]
+                      ]
+                       where newPref1 = getNewPref br
+                             newPref2 = newPref1 + 1
+                             newProp  = nextProp br
+           Just (Just diffProp)  -> [addFormulas p [PrFormula pr ds (neg $ Lit diffProp)] br]
+           Just Nothing          -> [BranchOK br]
+           where ds = d `dsInsert` ds_
+    DiffRule _ _ -> error "getMods DiffRule"
+    ExistRule (PrFormula _ ds (E f2)) ->
+       [addFormulas p [toadd] br >>? createNewPref p]   -- this createNewPref  / getNewPref thing needs to stop
+       where toadd = PrFormula newPr ds f2
+             newPr = getNewPref br
+    ExistRule _ -> error "getMods ExistRule"
+    DiscardDownRule _         -> [BranchOK br]
+    DiscardDiaDoneRule _      -> [BranchOK br]
+    DiscardDiaDone2Rule _     -> [BranchOK br]
+    DiscardDisjTrivialRule _  -> [BranchOK br]
+    DiscardDiaBlockedRule f   -> [addToBlockedDias f br]
 
-applyMod :: Params -> Branch -> BranchModification -> BranchInfo
-applyMod p br (BM_AddFormulas li)                = addFormulas p br li
-applyMod p br (BM_AddAccFormula accFor)          = addAccFormula p br accFor
-applyMod _ br (BM_AddDiaRuleCheck pr (r,f))      = BranchOK $ addDiaRuleCheck br pr (r,f)
-applyMod _ br (BM_AddDownRuleCheck pr f)         = BranchOK $ addDownRuleCheck br pr f
-applyMod p br (BM_CreateNewPref)                 = createNewPref p br
-applyMod _ br (BM_CreateNewProp)                 = BranchOK $ createNewProp br
-applyMod _ br (BM_CreateNewNomTestRelevance f)   = BranchOK $ createNewNomTestRelevance br f
-applyMod _ br (BM_AddDiffRuleCheck f mp)         = BranchOK $ addDiffRuleCheck br f mp
-applyMod _ br (BM_AddParentPrefix son father)    = BranchOK $ addParentPrefix br son father
-applyMod _ br (BM_Clash ds (PrFormula pr ds2 f)) = BranchClash br pr (dsUnion ds ds2) f
-applyMod p br (BM_Merge pr po ds)                = merge p br pr ds po
-applyMod _ br (BM_DoLazyBranch pr l pfs)         = BranchOK $ doLazyBranching pr l pfs br
--- the actual rules and their helper functions
+    ClashDisjRule ds (PrFormula pr ds2 f) -> [BranchClash br pr (dsUnion ds ds2) f]
+    MergeRule pr po ds -> [merge p pr ds po br]
+    RoleIncRule p1 rs p2 ds ->
+     [addAccFormula p (ds, r, p1, p2) br | r <- rs]
+
 
 getNewPref :: Branch -> Prefix
 getNewPref br = lastPref br + 1

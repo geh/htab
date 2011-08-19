@@ -1,7 +1,7 @@
 module HTab.Branch
 (
 Branch(..), createNewProp, createNewPref, createNewNomTestRelevance, BranchInfo(..),
-addFormulas, addFormula, addAccFormula,
+addFormulas, addFormula, addAccFormula, addToBlockedDias,
 addDiaRuleCheck, addDownRuleCheck, addDiffRuleCheck,
 addParentPrefix, addFirstFormulas,
 TodoList(..),
@@ -231,8 +231,8 @@ emptyTodoList =
    prefixes and nominals
 -}
 
-addFormulas :: Params -> Branch -> [PrFormula] -> BranchInfo
-addFormulas p br fs =
+addFormulas :: Params -> [PrFormula] -> Branch -> BranchInfo
+addFormulas p fs br =
  foldr (\f bi ->
           case bi of
            BranchOK br2 -> addFormula p br2 f
@@ -285,7 +285,7 @@ rescheduleLazyBranching _ _ br = br
 putAwayFormula :: Params -> PrFormula -> Branch -> BranchInfo
 putAwayFormula p pf@(PrFormula pr ds f2) br =
  case f2 of
-   Con fs     -> addFormulas p br (prefix pr ds fs)
+   Con fs     -> addFormulas p (prefix pr ds fs) br
    Dis _      -> putAwayDisjunction p pf br
    Dia _ _    -> BranchOK $ addToTodo pf br
    Box r f    -> addBoxConstraint      pr r f ds p br
@@ -310,27 +310,28 @@ putAwayDisjunction p pf@(PrFormula pr ds f@(Dis fs)) br
           case mProposed of
             Nothing -> BranchOK $ addToTodo fNew br
             Just lit -- add pr, lit, ((++) disjuncts) aux witnesses
-             -> BranchOK $ doLazyBranching ur lit [fNew] br
+             -> doLazyBranching ur lit [fNew] br
  | otherwise
   = BranchOK $ addToTodo pf br
  where ur = getUrfather br (DS.Prefix pr)
 
 putAwayDisjunction _ pf _ = error ("putAwayDisjunction " ++ show pf)
 
-doLazyBranching :: Prefix -> Literal -> [PrFormula] -> Branch -> Branch
-doLazyBranching pr lit pfs br -- assume the tests have been done beforehand
+-- assume the tests have been done beforehand, always returns BranchOK
+doLazyBranching :: Prefix -> Literal -> [PrFormula] -> Branch -> BranchInfo
+doLazyBranching pr lit pfs br
  = case DMap.lookup1 pr (brWitnesses br) of
     Nothing -> let newBrW = DMap.insert pr lit pfs (brWitnesses br)
-               in br{brWitnesses = newBrW}
+               in BranchOK br{brWitnesses = newBrW}
     Just innerMap
      -> case IntMap.lookup lit innerMap of -- assume this is the only place where l or (negLit l) occur
          Nothing -> let newInner = IntMap.insert lit pfs innerMap
                         newBrW = DMap.insert1 pr newInner (brWitnesses br)
-                    in br{brWitnesses = newBrW}
+                    in BranchOK br{brWitnesses = newBrW}
          Just fs -- assume the test was already done
           -> let newInner = IntMap.insert lit (pfs++fs) innerMap
                  newBrW = DMap.insert1 pr newInner (brWitnesses br)
-             in br{brWitnesses = newBrW}
+             in BranchOK br{brWitnesses = newBrW}
 
 
 -- TODO
@@ -380,10 +381,15 @@ rescheduleBlockedDias  pr br
   where toAdd =  IntMap.findWithDefault [] pr (blockedDias br)
         br2 = br{blockedDias = IntMap.delete pr $ blockedDias br}
 
+addToBlockedDias :: PrFormula -> Branch -> BranchInfo
+addToBlockedDias f@(PrFormula pr _ _) br
+ = BranchOK br{blockedDias = IntMap.insertWith (++) ur [f] (blockedDias br)}
+   where ur = getUrfather br (DS.Prefix pr)
+
 {-    helper functions for equivalence class merge     -}
 
-merge :: Params -> Branch -> Prefix -> DependencySet -> DS.Pointer -> BranchInfo
-merge p br pr fDs pointer -- pointer is a nominal or a prefix
+merge :: Params -> Prefix -> DependencySet -> DS.Pointer -> Branch -> BranchInfo
+merge p pr fDs pointer br -- pointer is a nominal or a prefix
  = let
        (DS.Prefix ur1,classes1) = DS.find  (DS.Prefix pr) (nomPrefClasses br)
        (poAncestor   ,classes2) = DS.find  pointer classes1
@@ -447,7 +453,7 @@ merge p br pr fDs pointer -- pointer is a nominal or a prefix
                                            clashStr       = newClashStr,
                                            brWitnesses    = newBrWitnesses}
                   in
-                      addFormulas p newBr formulasToAdd
+                      addFormulas p formulasToAdd newBr
 
 mergeWitnesses :: Prefix -> Prefix -> ClashableInfoSlot -> BranchingWitnesses -> (BranchingWitnesses, [PrFormula])
 mergeWitnesses oldUr newUr urfatherSlot dbrWits@(DMap brWits)
@@ -573,7 +579,7 @@ addBoxConstraint pr_ r f ds p br_
              symApplications = [PrFormula pr ds $ Box (invRel r) f | isSymmetric (relInfo br) r]
              boxApplications = map (\(pr2,ds2) -> PrFormula pr2 (dsUnion ds ds2) f) accessiblePrDs
       in
-         addFormulas p newBr toAdd
+         addFormulas p toAdd newBr
 
  | otherwise
    = let    newBr = br{boxConstrBwd = updateBoxConstr pr (atom r) f ds (boxConstrBwd br)}
@@ -584,7 +590,7 @@ addBoxConstraint pr_ r f ds p br_
                                 else []
             boxApplications = map (\(pr2,ds2) -> PrFormula pr2 (dsUnion ds ds2) f) accessiblePrDs
      in
-        addFormulas p newBr toAdd
+        addFormulas p toAdd newBr
  where pr = getUrfather br_ (DS.Prefix pr_)
        br = addBoxRuleCheck br_ pr (r,f)
 
@@ -607,11 +613,13 @@ boxAlreadyDone b ur (r,f) =
      Nothing  -> False
      Just fset -> Set.member (r,f) fset
 
-addAccFormula :: Params -> Branch -> AccFormula -> BranchInfo
-addAccFormula p br (AccFormula ds r p1_ p2_)
- | isBackwards r = addAccFormula p br (AccFormula ds (invRel r) p2_ p1_)
+-- accessibility Formulas
+
+addAccFormula :: Params -> (DependencySet,Rel,Prefix,Prefix) -> Branch -> BranchInfo
+addAccFormula p (ds, r, p1_, p2_) br
+ | isBackwards r = addAccFormula p (ds, invRel r, p2_, p1_) br
  | otherwise -- forward
-   = addFormulas p newBr toAdd
+   = addFormulas p toAdd newBr
      where toAdd = transApplications ++ boxApplications
            transApplications = if isTransitive (relInfo br) r
                                 then
@@ -748,14 +756,14 @@ forInclusion _ (E _) = False
 forInclusion _ (D _) = False
 forInclusion _ (B _) = False
 
-addParentPrefix :: Branch -> Prefix -> Prefix -> Branch
-addParentPrefix br son father =  br{prefParent = IntMap.insert son father (prefParent br)}
+addParentPrefix :: Prefix -> Prefix -> Branch -> BranchInfo
+addParentPrefix son father br = BranchOK br{prefParent = IntMap.insert son father (prefParent br)}
 
 {-     modifications done by rule application     -}
 
-addDiaRuleCheck :: Branch -> Prefix -> (Rel,Formula) -> Branch
-addDiaRuleCheck br pr (r,f) =
-  br{diaRlCh=IntMap.insertWith Set.union ur (Set.singleton (r,f)) (diaRlCh br)}
+addDiaRuleCheck :: Prefix -> (Rel,Formula) -> Branch -> BranchInfo
+addDiaRuleCheck pr (r,f) br =
+  BranchOK br{diaRlCh=IntMap.insertWith Set.union ur (Set.singleton (r,f)) (diaRlCh br)}
    where ur = getUrfather br (DS.Prefix pr)
 
 diaAlreadyDone :: Branch -> PrFormula -> Bool
@@ -768,9 +776,9 @@ diaAlreadyDone b (PrFormula p _ (Dia r f)) =
 diaAlreadyDone _ _ = error "dia already done : wrong formula kind"
 --
 
-addDownRuleCheck :: Branch -> Prefix -> Formula -> Branch
-addDownRuleCheck br pr f =
-  br{downRlCh=IntMap.insertWith Set.union ur (Set.singleton f) (downRlCh br)}
+addDownRuleCheck :: Prefix -> Formula -> Branch -> BranchInfo
+addDownRuleCheck pr f br =
+  BranchOK br{downRlCh=IntMap.insertWith Set.union ur (Set.singleton f) (downRlCh br)}
    where ur = getUrfather br (DS.Prefix pr)
 
 downAlreadyDone :: Branch -> PrFormula -> Bool
@@ -798,8 +806,9 @@ atAlreadyDone _ _ = error "at already done : wrong formula kind"
 
 addUnivConstraint :: Formula -> DependencySet -> Params -> Branch -> BranchInfo
 addUnivConstraint f ds p br
- = addFormulas p newBr
+ = addFormulas p
                ( map (\pr -> PrFormula pr ds f) urfathers )
+               newBr
    where newBr = br{univCons = (ds,f):(univCons br)}
          prefs = [0..(lastPref br)]
          urfathers = filter (isNominalUrfather br) prefs
@@ -813,15 +822,16 @@ bRule  pr f ds p br
           br2 = br{nextNom = nextNom br + 4}
 --
 
-addDiffRuleCheck :: Branch -> Formula -> Maybe Prop -> Branch
-addDiffRuleCheck br f mp = br{dDiaRlCh=Map.insert f mp (dDiaRlCh br)}
+addDiffRuleCheck :: Formula -> Maybe Prop -> Branch -> BranchInfo
+addDiffRuleCheck f mp br = BranchOK br{dDiaRlCh=Map.insert f mp (dDiaRlCh br)}
 
 --
 
 createNewPref :: Params -> Branch -> BranchInfo
 createNewPref p br
- = addFormulas p newBrWithRefl
-                         ( map (\(ds,f) -> PrFormula newPr ds f) univConstraints )
+ = addFormulas p
+               ( map (\(ds,f) -> PrFormula newPr ds f) univConstraints )
+               newBrWithRefl
    where newPr = lastPref br + 1
          newBr = br{lastPref = newPr}
          univConstraints = univCons br
@@ -835,15 +845,16 @@ addReflexiveLinks pr br
 
 --
 
-createNewProp :: Branch -> Branch
-createNewProp br = br{nextProp = nextProp br + 4}
+createNewProp :: Branch -> BranchInfo
+createNewProp br = BranchOK br{nextProp = nextProp br + 4}
 
-createNewNomTestRelevance :: Branch -> Formula -> Branch
-createNewNomTestRelevance br f
- = br{nextNom = nextNom br + 4,
-      relevantNominals = if relevant then Set.insert newNom (relevantNominals br) else relevantNominals br,
-      downVarRelevantCh = newDVRC
-     }
+createNewNomTestRelevance :: Formula -> Branch -> BranchInfo
+createNewNomTestRelevance f br
+ = BranchOK
+    br{nextNom = nextNom br + 4,
+       relevantNominals = if relevant then Set.insert newNom (relevantNominals br) else relevantNominals br,
+       downVarRelevantCh = newDVRC
+      }
    where (relevant, newDVRC) = doMemoize checkIfVariableNegatedOnce f (downVarRelevantCh br)
          newNom = nextNom br
 
@@ -857,7 +868,7 @@ createNewNomTestRelevance br f
 --  - add functionality and injectivitty down-arrow formulas
 addFirstFormulas :: Params -> Branch -> LanguageInfo -> Formula -> BranchInfo
 addFirstFormulas p br_ fLang f
- = addFormulas p br5 ([pf]++funUniv++injUniv)
+ = addFormulas p ([pf]++funUniv++injUniv) br5
     where ns = languageNoms fLang
           nbNs = length ns
           nomWitnesses = [1..nbNs]

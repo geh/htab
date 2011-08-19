@@ -36,10 +36,10 @@ tableauDown p depth branchInfo =
                   Nothing  ->
                       do verbose ">> Saturated open branch"
                          return $ OPEN $ buildModel br
-                  Just (rule,newTodo,newBranch)  -> -- of course then merge newBranch and newTodo
+                  Just (rule,newBranch)  ->
                       do verbose $ ">> Rule : " ++ show rule
                          recordFiredRule $ ruleToId rule
-                         case applyRule p rule newBranch newTodo of
+                         case applyRule p rule newBranch of
                           [newBi] -> tableauDown  p (depth + 1) newBi
                           bis     -> tableauRight p (depth + 1) bis dsEmpty
 

@@ -5,7 +5,7 @@ Rel, Prefix, Formula(..),
 DependencySet, Dependency,
 dsUnion, dsUnions, dsInsert, dsMember,
 dsEmpty, dsMin, dsShow, addDeps,
-PrFormula(..),showLess, AccFormula(..),
+PrFormula(..),showLess,
 LanguageInfo(..), neg,
 conj, disj, taut,
 prop, nom, formulaLanguageInfo, prefix,
@@ -437,14 +437,6 @@ prefix p bps fs = [PrFormula p bps formula|formula <- Set.toList fs]
 
 firstPrefixedFormula :: Formula -> PrFormula
 firstPrefixedFormula = PrFormula 0 dsEmpty
-
--- accessibility Formulas
-
-data AccFormula = AccFormula DependencySet Rel Prefix Prefix
-     deriving (Eq, Ord)
-
-instance Show AccFormula where
- show (AccFormula bprs r p1 p2) = show bprs ++ ":" ++ show p1 ++ "<" ++ showRel r ++ ">" ++ show p2
 
 -- formula language
 
