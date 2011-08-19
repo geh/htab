@@ -201,8 +201,8 @@ applyRule p rule br
     LazyBranchRule _ pr lit prFormulas ->
             [ doLazyBranching pr lit prFormulas br ]
     AtRule  (PrFormula _ ds (At n f)) ->
-            [ addFormulas p [toadd] br ]
-            where (ur,ds2,_) = getUrfatherAndDeps br (DS.Nominal n)
+            [ addFormulas p [toadd] br{ nomPrefClasses = equiv }]
+            where (ur,ds2,equiv) = getUrfatherAndDeps br (DS.Nominal n)
                   toadd = PrFormula ur (dsUnion ds ds2) f
     AtRule _ -> error "error applyMods AtRule with wrong formula (should not happen!)"
     DownRule df@(PrFormula pr ds f@(Down v f2)) ->
