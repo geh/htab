@@ -1,8 +1,8 @@
 signature {
 propositions { p }
 nominals { n,a,b }
-relations { r,
-            s : { inverseof r, functional } }
+relations { r : { injective } ,
+            s : { inverseof r } }
 }
 
 theory

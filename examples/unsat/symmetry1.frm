@@ -1,14 +1,14 @@
 signature {
 propositions { p }
 nominals { n,m }
-relations { s : {symmetric}, t : {trclosureof s} }
+relations { s : {symmetric} }
 }
 
 theory
 
 {
- n:<s><s><s><s>m;
+ n:<s><s><s>m;
  n:p;
- m:[t]!p
+ m:[s][s][s]!p
 
 }
