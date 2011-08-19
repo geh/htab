@@ -16,7 +16,7 @@ showRelInfo, showRel, showLit, negLit, isForward, isBackwards,
 encodeValidityTest, encodeSatTest, encodeRetrieveTask,
 HyLoFormula, RelProperty(..), Encoding(..), maxNom, maxProp, toPropSymbol, toNomSymbol, toRelSymbol,
 isTop, isBottom, isPositiveNom, isPositiveProp, isPositive, isNegative, isNominal, isProp, atom,
-inv, invRel, int
+invRel, int
 )
 
  where
@@ -140,8 +140,6 @@ type RelInfo = Map Rel [RelProperty]
 data RelProperty   =   Reflexive
                      | Symmetric
                      | Transitive
-                     | Functional
-                     | Injective
                      | Universal
                      | Difference
                      --
@@ -224,9 +222,7 @@ forceProperties p encoding relI
          conds = map snd $
                    filter fst   [(allTransitive p, Transitive),
                                  (allReflexive  p, Reflexive ),
-                                 (allSymmetric  p, Symmetric ),
-                                 (allFunctional p, Functional),
-                                 (allInjective  p, Injective )]
+                                 (allSymmetric  p, Symmetric )]
 
 convertToOurType :: PRelInfo -> Encoding -> RelInfo -- and add for each relation in the formula, the relevant key
 convertToOurType prelI e = foldr insertRelProp Map.empty (concatMap convertOne prelI)
@@ -235,8 +231,6 @@ convertToOurType prelI e = foldr insertRelProp Map.empty (concatMap convertOne p
        c r P.Reflexive       = [(int e r,Reflexive    )]
        c r P.Symmetric       = [(int e r,Symmetric    )]
        c r P.Transitive      = [(int e r,Transitive   )]
-       c r P.Functional      = [(int e r,Functional   )]
-       c r P.Injective       = [(int e r,Injective    )]
        c r P.Universal       = [(int e r,Universal    )]
        c r P.Difference      = [(int e r,Difference   )]
        c r (P.InverseOf s)   = [(int e r,InverseOf   (int e s))]
@@ -244,6 +238,8 @@ convertToOurType prelI e = foldr insertRelProp Map.empty (concatMap convertOne p
        c r (P.Equals ss)     = [(int e r,SubsetOf [ int e s | s <- ss])] ++ [(int e s,SubsetOf [int e r]) | s <- ss]
        c _ (P.TClosureOf _)  = error "TClosureOf not handled"
        c _ (P.TRClosureOf _) = error "TRClosureOf not handled"
+       c _ P.Functional      = error "Functional not handled"
+       c _ P.Injective       = error "Injective not handled"
 
 simpleParse :: Params -> String -> (Theory,RelInfo,Encoding,[Task])
 simpleParse p s = parse p $ "signature { automatic } theory { " ++ removeBeginEnd s ++ "}"
@@ -295,12 +291,6 @@ specialise (S.RelSymbol r) relI (relational, difference, global) e
                      invRS (S.RelSymbol s)       = S.InvRelSymbol s
                      invRS (S.InvRelSymbol s)    = S.RelSymbol s
  where props = Map.findWithDefault [] (int e r) relI
-
-inv :: Rel -> RelInfo -> Rel
-inv r relI
- = case Map.lookup r relI of
-    Nothing         -> r
-    Just properties -> if Symmetric `elem` properties then r else invRel r
 
 type HyLoFormula = F.Formula S.NomSymbol S.PropSymbol S.RelSymbol
 

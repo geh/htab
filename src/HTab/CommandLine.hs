@@ -24,9 +24,7 @@ data Params = Params {
            showFormula     :: Bool,
            allTransitive   :: Bool,
            allReflexive    :: Bool,
-           allSymmetric    :: Bool,
-           allFunctional   :: Bool,
-           allInjective    :: Bool
+           allSymmetric    :: Bool
          } deriving (Show, Data, Typeable)
 
 data UnitProp = Eager | UPYes | UPNo deriving (Data, Typeable, Eq, Show)
@@ -50,9 +48,7 @@ defaultParams
        showFormula    := False   += help "display formula",
        allTransitive  := False   += help "make all relations transitive",
        allReflexive   := False   += help "make all relations reflexive",
-       allSymmetric   := False   += help "make all relations symmetric",
-       allFunctional  := False   += help "make all relations functional",
-       allInjective   := False   += help "make all relations injective"
+       allSymmetric   := False   += help "make all relations symmetric"
       ] += verbosity
 
 strategyVal :: String

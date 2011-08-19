@@ -127,8 +127,6 @@ emptyBranch fLang relInfo_ encoding_ =
  where blockingMode =
          if    languagePast fLang
             || relInfo_ `oneIs` Symmetric
-            || relInfo_ `oneIs` Functional
-            || relInfo_ `oneIs` Injective
            then ChainTwinBlocking
            else AnywhereBlocking
 
@@ -865,10 +863,9 @@ createNewNomTestRelevance f br
 --  - add a nominal formula at a fresh prefix for each nominal of the input language
 --    (even if the nominal was filtered out during lexical normalisation) -- <= TODO currently not the case. Get the nominals from the encoding 
 --  - add reflexive links for prefixes 0 and nominal witnesses
---  - add functionality and injectivitty down-arrow formulas
 addFirstFormulas :: Params -> Branch -> LanguageInfo -> Formula -> BranchInfo
 addFirstFormulas p br_ fLang f
- = addFormulas p ([pf]++funUniv++injUniv) br5
+ = addFormulas p [pf] br4
     where ns = languageNoms fLang
           nbNs = length ns
           nomWitnesses = [1..nbNs]
@@ -885,15 +882,7 @@ addFirstFormulas p br_ fLang f
           br3 = foldr (\(pr,n) -> bookKeepFormula p (PrFormula pr dsEmpty (Lit n)))
                       br2
                       (zip [1..] ns)
-          funUniv = map (\r -> PrFormula 0 dsEmpty
-                                $ A $ Down newNom $ Box (inv r (relInfo br)) $ Box r (Lit newNom)) funRels
-                       where funRels = Map.keys $ Map.filter (elem Functional) (relInfo br)
-          injUniv = map (\r -> PrFormula 0 dsEmpty
-                                $ A $ Down newNom $ Box r $ Box (inv r (relInfo br)) (Lit newNom)) injRels
-                       where injRels = Map.keys $ Map.filter (elem Injective) (relInfo br)
-          newNom = nextNom br3
-          br4 = br3{nextNom = nextNom br3 + 4}
-          br5 = br4{unblockedPrefsLim = nbNs}
+          br4 = br3{unblockedPrefsLim = nbNs}
 
 {-     functions to handle the "clashable information", ie literals associated to prefixes     -}
 
