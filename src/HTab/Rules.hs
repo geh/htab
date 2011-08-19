@@ -24,7 +24,7 @@ import HTab.Branch( Branch(..), createNewPref, createNewProp, createNewNomTestRe
                     diaAlreadyDone, downAlreadyDone,
                     ReducedDisjunct(..), getUrfather,
                     TodoList(..))
-import HTab.CommandLine(Params, UnitProp(..), lazyBranching, semBranch, unitProp, strategy, noLoopCheck)
+import HTab.CommandLine(Params, UnitProp(..), lazyBranching, semBranch, unitProp, strategy)
 import HTab.RuleId(RuleId(..))
 import qualified HTab.DisjSet as DS
 
@@ -114,13 +114,11 @@ ruleByChar br p d char =
 
   applicableDiaRule
    = do (f@(PrFormula pr _ _),new) <- Set.minView $ diaTodo todos
-        if noLoopCheck p
-         then return (DiaRule f, todos{diaTodo = new},br)
-         else if diaAlreadyDone br f
-               then return (DiscardDiaDoneRule f, todos{diaTodo = new} , br )
-               else if isNotBlocked br pr
-                     then return ( DiaRule f,     todos{diaTodo = new}, br )
-                     else return ( DiscardDiaBlockedRule f, todos{diaTodo = new}, br)
+        if diaAlreadyDone br f
+          then       return ( DiscardDiaDoneRule f,    todos{diaTodo = new}, br)
+          else if isNotBlocked br pr
+                then return ( DiaRule f,               todos{diaTodo = new}, br)
+                else return ( DiscardDiaBlockedRule f, todos{diaTodo = new}, br)
 
   applicableAtRule    = do (f,new) <- Set.minView $ atTodo todos
                            return (AtRule f, todos{atTodo = new},br)
