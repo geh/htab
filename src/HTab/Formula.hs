@@ -8,7 +8,7 @@ dsEmpty, dsMin, dsShow, addDeps,
 PrFormula(..),showLess,
 LanguageInfo(..), neg,
 conj, disj, taut,
-prop, nom, formulaLanguageInfo, prefix,
+prop, nom, formulaLanguageInfo, prefix, negPr,
 checkIfVariableNegatedOnce, replaceVar,
 firstPrefixedFormula,
 parse, simpleParse, Theory, RelInfo, Task,
@@ -427,6 +427,9 @@ prefix p bps fs = [PrFormula p bps formula|formula <- Set.toList fs]
 
 firstPrefixedFormula :: Formula -> PrFormula
 firstPrefixedFormula = PrFormula 0 dsEmpty
+
+negPr :: PrFormula -> PrFormula
+negPr (PrFormula p ds f) = PrFormula p ds (neg f)
 
 -- formula language
 

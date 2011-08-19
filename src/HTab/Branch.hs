@@ -1,18 +1,19 @@
 module HTab.Branch
 (
-Branch(..), createNewProp, createNewPref, createNewNomTestRelevance, BranchInfo(..),
-addFormulas, addFormula, addAccFormula, addToBlockedDias,
+Branch(..), BranchInfo(..), TodoList(..),
+createNewPref, createNewProp, createNewNomTestRelevance,
+addFormulas, addAccFormula,
+addToBlockedDias,
 addDiaRuleCheck, addDownRuleCheck, addDiffRuleCheck,
 addParentPrefix, addFirstFormulas,
-TodoList(..),
-emptyBranch,prefixes,
+emptyBranch,
 reduceDisjunctionProposeLazy, doLazyBranching,
 merge,
-getUrfather, getUrfatherAndDeps, isInTheModel, relationIsInTheModel,
+getUrfather, getUrfatherAndDeps,
 getModelRepresentative, isNotBlocked,
-BlockingMode(..), diaAlreadyDone,
-downAlreadyDone,
+diaAlreadyDone, downAlreadyDone,
 ReducedDisjunct(..),
+prefixes, isInTheModel, relationIsInTheModel,
 isSymmetric, isTransitive
 ) where
 
@@ -38,7 +39,6 @@ import qualified HTab.DMap as DMap
 
 import HTab.Relations ( Relations(..), emptyRels, insertRelation, mergePrefixes,
                         successors, predecessors, linksFromTo )
-import qualified HTab.Relations as Relations
 
 data BranchInfo = BranchOK Branch |
                   BranchClash Branch Prefix DependencySet Formula
@@ -50,7 +50,10 @@ type EquivClasses = DS.DisjSet DS.Pointer
 data BlockingMode = AnywhereBlocking | ChainTwinBlocking  deriving (Eq,Show)
 
 data Branch =
-              Branch {clashStr :: ClashableInfo,
+              Branch {
+                 -- the premodel
+                      clashStr :: ClashableInfo,
+                        accStr :: Relations,
                  -- pending formulas / todo lists
                       todoList :: TodoList,
                  -- immediate rules constraints
@@ -64,13 +67,11 @@ data Branch =
                         atRlCh :: Set Formula,
                      existRlCh :: Set Formula,
                       dDiaRlCh :: Map Formula (Maybe Prop),
-                 -- formulas true in an equivalence class
+                 -- set of formulas true at each point of the premodel
                    prefToForms :: IntMap {- Prefix -} (Set Formula),
                  -- backjumping data attached to equivalence classes
                     prToDepSet :: IntMap {- Prefix -} DependencySet,
-                 -- other data
-                        accStr :: Relations,
-                 -- equivalence classes
+                 -- prefix/nominal equivalence classes
                 nomPrefClasses :: EquivClasses,
                  -- book keeping
                       lastPref :: Prefix,
@@ -96,8 +97,8 @@ emptyBranch :: LanguageInfo -> RelInfo -> Encoding -> Branch
 emptyBranch fLang relInfo_ encoding_ =
                 Branch
                 { clashStr          = DMap.empty,
-                  todoList          = emptyTodoList,
                   accStr            = emptyRels,
+                  todoList          = emptyTodoList,
                   boxConstrBwd      = DMap.empty,
                   boxConstrFwd      = DMap.empty,
                   diaRlCh           = IntMap.empty,
@@ -135,67 +136,34 @@ instance Show Branch where
   = concat [  show (inputLanguage br),
               "\nClashable formulas:", showIMap (\v -> "(" ++ showMap_lits v ++ ")") "\n " (toMap $ clashStr br),
               "\n", show (todoList br),
-              showl "\nRelations: "       (accStr br),
-              ifNotEmpty (boxConstrFwd br)
-                         (\c -> "\nBox fwd: " ++ showIMap (\v -> "(" ++ showMap_rel v ++ ")") "\n " (toMap c)),
-              ifNotEmpty (boxConstrBwd br)
-                         (\c -> "\nBox bwd: " ++ showIMap (\v -> "(" ++ showMap_rel v ++ ")") "\n " (toMap c)),
-              ifNotEmpty (brWitnesses br)
-                         (\c -> "\nWitnesses: " ++ showIMap (\v  -> "(" ++ showMap_lits2 v ++ ")") "\n " (toMap c)),
-              showl "\nDia rule chart: "  (diaRlCh br),
-              showl "\nDown rule chart: " (downRlCh br),
-              showl "\n@ rule chart: "     (list $ atRlCh br),
-              showl "\nExist rule chart: " (list $ existRlCh br),
-              showl "\nDiff dia rule chart: "   (dDiaRlCh br),
-              showl "\nDown var relevant chart: " (downVarRelevantCh br),
-              showl "\nUniv constraints: " (univCons br),
-              ifNotEmpty (prToDepSet br) (\m -> "\nPrefix to dependency set:" ++ showIMap  dsShow "\n " m),
-              ifNotEmpty (prefToForms br) (\m -> "\nPrefix to formulas:"       ++ showIMap  (show . Set.toList) "\n " m),
-              showl "\nParent: " (prefParent br),
+              "\nRelations: ", show (accStr br),
+              "\nBox fwd: ", showIMap (\v -> "(" ++ showMap_rel v ++ ")") "\n " (toMap $ boxConstrFwd br),
+              "\nBox bwd: ", showIMap (\v -> "(" ++ showMap_rel v ++ ")") "\n " (toMap $ boxConstrBwd br),
+              "\nWitnesses: ", showIMap (\v  -> "(" ++ showMap_lits2 v ++ ")") "\n " (toMap $ brWitnesses br),
+              "\nDia rule chart: ", show (diaRlCh br),
+              "\nDown rule chart: ", show (downRlCh br),
+              "\n@ rule chart: ", show (list $ atRlCh br),
+              "\nExist rule chart: ", show (list $ existRlCh br),
+              "\nDiff dia rule chart: ", show (dDiaRlCh br),
+              "\nDown var relevant chart: ", show (downVarRelevantCh br),
+              "\nUniv constraints: ", show (univCons br),
+              "\nPrefix to dependency set: ", showIMap  dsShow "\n " (prToDepSet br),
+              "\nPrefix to formulas: ", showIMap  (show . Set.toList) "\n " (prefToForms br),
+              "\nParent: ", show (prefParent br),
               "\nBlocking mode: ", show (blockMode br),
-              "\nPrefix-Nominal classes : ", showMap show ", " (nomPrefClasses br),
-              "\nModel-relevant nominals : " ++ unwords (map showLit $ list $ relevantNominals br),
-              "\nlastPref : " ++ show (lastPref br) ++
-              " nextnom : "  ++ showLit (nextNom br) ++
-              " nextprop : " ++ showLit (nextProp br)
+              "\nPrefix-Nominal classes : ", showMap ", " (nomPrefClasses br),
+              "\nModel-relevant nominals : ", unwords $ map showLit $ list $ relevantNominals br,
+              "\nlastPref : ", show (lastPref br),
+              " nextnom : ", showLit (nextNom br),
+              " nextprop : ", showLit (nextProp br)
            ]
               where
-                  ifNotEmpty :: Emptyable a => a -> (a -> String) -> String
-                  ifNotEmpty b f = if empty b then "" else f b
-
-                  showl :: (Emptyable a, Show a) => String -> a -> String
-                  showl intro b  = if empty b then "" else intro ++ show b
-
-                  showIMap :: (a -> String) -> String -> IntMap a -> String
-                  showIMap vShow sep = IntMap.foldWithKey (\k v -> (++ sep ++ show k ++ " -> " ++ vShow v )) ""
-                  --
-                  showMap vShow sep  = Map.foldrWithKey (\k v -> (++ sep ++ show k ++ " -> " ++ vShow v )) ""
-                  showMap_lits       = IntMap.foldWithKey (\l d   -> (++ showLit l ++ " " ++ dsShow d  ++ ", ")) ""
-                  showMap_lits2      = IntMap.foldWithKey (\l fs  -> (++ showLit l ++ " " ++ ":" ++ show fs ++ ", ")) ""
-                  showMap_rel        = IntMap.foldWithKey (\r dxs -> (++ "-" ++ showRel r ++ "-> " ++ show dxs ++ ", ")) ""
-
-class Emptyable a where
- empty :: a -> Bool
-
-instance Emptyable [a] where
- empty [] = True
- empty _  = False
-
-instance Emptyable (Map a b) where
- empty = Map.null
-
-instance Emptyable (IntMap b) where
- empty = IntMap.null
-
-instance Emptyable (DMap c) where
- empty (DMap m) = IntMap.null m
-
-instance Emptyable Relations where
- empty = Relations.null
-
-instance Emptyable (Set a) where
- empty = Set.null
-
+               showIMap :: (a -> String) -> String -> IntMap a -> String
+               showIMap vShow sep = IntMap.foldWithKey (\k v -> (++ sep ++ show k ++ " -> " ++ vShow v )) ""
+               showMap sep        = Map.foldrWithKey (\k v -> (++ sep ++ show k ++ " -> " ++ show v )) ""
+               showMap_lits       = IntMap.foldWithKey (\l d   -> (++ showLit l ++ " " ++ dsShow d  ++ ", ")) ""
+               showMap_lits2      = IntMap.foldWithKey (\l fs  -> (++ showLit l ++ " " ++ ":" ++ show fs ++ ", ")) ""
+               showMap_rel        = IntMap.foldWithKey (\r dxs -> (++ "-" ++ showRel r ++ "-> " ++ show dxs ++ ", ")) ""
 
 data TodoList= TodoList{disjTodo :: Set PrFormula,
                          diaTodo :: Set PrFormula,
@@ -205,12 +173,7 @@ data TodoList= TodoList{disjTodo :: Set PrFormula,
                         diffTodo :: Set PrFormula,
                        mergeTodo :: Set (DependencySet, Prefix, DS.Pointer),
                      roleIncTodo :: Set (DependencySet, Prefix, Prefix, [Rel]) }
-
-instance Show TodoList where
- show (TodoList disjs dias es ars downs diffs merges rolein)
-   = "Todo lists:" ++ concatMap (\el -> "\n" ++ show (list el)) [disjs, dias, es, ars, downs, diffs]
-                   ++ "\n" ++ show (list merges)
-                   ++ "\n" ++ show (list rolein)
+ deriving Show
 
 emptyTodoList :: TodoList
 emptyTodoList =
@@ -986,7 +949,6 @@ cisQuery br pr l
 
 {-     function used for unit propagation     -}
 
-
 data ReducedDisjunct
  =   Triviality
    | Contradiction DependencySet
@@ -1038,10 +1000,6 @@ isTransitive :: RelInfo -> Rel -> Bool
 isTransitive = hasProperty Transitive
 
 almostCartesianProduct :: [a] -> [b] -> [(a,b)]
--- example:
--- acp [a1,a2,a3] [b1,b2,b3] = [(a1,b2),(a1,b3),(a2,b1),(a2,b3),(a3,b1),(a3,b2)]
---
--- require : as and bs must be of the same size
 almostCartesianProduct [] _  = error "almostCartesianProduct: first list empty"
 almostCartesianProduct _  [] = error "almostCartesianProduct: second list empty"
 almostCartesianProduct as bs = [(a,b) | (idxA,a) <- zip [(0::Int)..] as,
