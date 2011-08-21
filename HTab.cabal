@@ -42,8 +42,6 @@ Executable          htab
   Build-Depends:       base >= 4, base < 5,
                        mtl >= 2, mtl < 3,
                        containers < 1,
-                       filepath > 1, filepath <= 2,
-                       directory > 1, directory <= 2,
                        deepseq >= 1, deepseq <2,
                        strict < 1,
                        cmdargs >= 0.8, cmdargs < 0.9,
