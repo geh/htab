@@ -16,7 +16,7 @@ import HTab.Formula( PrFormula(..), Formula(..),
                      Prefix, Rel, LanguageInfo(..), Encoding, int,
                      RelInfo, toPropSymbol, toNomSymbol, toRelSymbol, isPositiveProp )
 import HTab.Branch( Branch(..), prefixes, getUrfather, BlockingMode(..),
-                    patternOf,
+                    patternOf, findByPattern,
                     isInTheModel, relationIsInTheModel, getModelRepresentative,
                     isTransitive, isSymmetric )
 import qualified HTab.DisjSet as DS
@@ -29,7 +29,6 @@ buildModel :: Branch -> Model
 buildModel branch =
   completeModel e (relInfo branch) $ inducedModel $ H.herbrand es ps rs
  where
-       inModel = flip getModelRepresentative
        e = encoding branch
        bias = if null $ languageNoms $ inputLanguage branch
                then 0
@@ -47,18 +46,17 @@ buildModel branch =
              [(S.NomSymbol $ show (pre + bias), pro)
              | (pre,pro) <- prefixAndProps branch]
        pbBlocked =
-          if blockMode branch == PatternBlocking
+          if blockMode branch `elem` [PatternBlocking,AnywhereBlocking]
              then
                   [ (pr, r, pr2) |
                          pr <- prefixes branch,
                          isInTheModel branch pr,
                          blockedDia@(PrFormula _ _ (Dia r _)) <- IntMap.findWithDefault [] pr (blockedDias branch),
                          let pat = patternOf branch blockedDia,
-                         let pr2 = head $ map fst
-                                        $ filter (\(_,pat2) -> pat `Set.isSubsetOf` pat2)
-                                        $ IntMap.toList $ individualPattern branch ]
+                         let pr2 = findByPattern branch pat ]
              else []
        rels = (filter (relationIsInTheModel branch) $ allRels $ accStr branch) ++ pbBlocked
+       inModel = flip getModelRepresentative
        rs =      Set.fromList $ map (toSimpSig e)
                               $ map (\(p1,r,p2) -> ((p1 `inModel` branch) + bias , r,(p2 `inModel` branch) + bias))
                                 rels

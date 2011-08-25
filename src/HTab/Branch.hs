@@ -13,7 +13,7 @@ getUrfather, getUrfatherAndDeps,
 getModelRepresentative, isNotBlocked,
 diaAlreadyDone, downAlreadyDone,
 ReducedDisjunct(..),
-patternOf,
+patternOf, findByPattern,
 prefixes, isInTheModel, relationIsInTheModel,
 isSymmetric, isTransitive
 ) where
@@ -658,7 +658,7 @@ isInTheModel :: Branch -> Prefix -> Bool
 isInTheModel br pr | isNominalUrfather br pr
  = case blockMode br of
     PatternBlocking   ->  True
-    AnywhereBlocking  ->  getModelRepresentative br pr == pr
+    AnywhereBlocking  ->  True
     ChainTwinBlocking ->  case findModelRepresentativeChainTwinBlocking br pr of
                                  Nothing   -> False
                                  Just repr -> repr == pr
@@ -668,8 +668,8 @@ relationIsInTheModel :: Branch -> (Prefix,Rel,Prefix) -> Bool
 relationIsInTheModel br (p1,_,p2)
  = case blockMode br of
      PatternBlocking              -> True
+     AnywhereBlocking             -> True
      ChainTwinBlocking            -> hasIdentityUrfather br p1 && hasIdentityUrfather br p2
-     AnywhereBlocking             -> isInTheModel br p1
    where hasIdentityUrfather br_ pr_
           = case findModelRepresentativeChainTwinBlocking br_ pr_ of {Nothing -> False ; _ -> True }
 
@@ -677,13 +677,10 @@ getModelRepresentative :: Branch -> Prefix -> Prefix
 getModelRepresentative br pr
  = case blockMode br of
     PatternBlocking -> ur
-    AnywhereBlocking-> case map fst $ filter (Set.isSubsetOf fs . snd) $ ascPrefToForm br of
-                         []     -> pr
-                         (hd:_) -> hd
+    AnywhereBlocking-> ur
     ChainTwinBlocking -> fromMaybe ( error $ "interesting counter example " ++ show pr)
                                    $ findModelRepresentativeChainTwinBlocking br pr
    where ur = getUrfather br (DS.Prefix pr)
-         fs = formulasOf br ur
 
 findModelRepresentativeChainTwinBlocking :: Branch -> Prefix -> Maybe Prefix
 findModelRepresentativeChainTwinBlocking br pr
@@ -728,6 +725,18 @@ boxesOf :: Branch -> Prefix -> Rel -> Set Formula
 boxesOf br p r
  = set [ f' | Box r' f' <- list $ IntMap.findWithDefault Set.empty p (prefToForms br), -- can work with boxconstaintsfw
               r' == r]
+
+findByPattern :: Branch -> Set Formula -> Prefix
+findByPattern br pattern
+ | blockMode br == PatternBlocking  =
+       head $ map fst
+            $ filter (\(_,pat2) -> pattern `Set.isSubsetOf` pat2)
+            $ IntMap.toList $ individualPattern br
+ | blockMode br == AnywhereBlocking =
+       head $ map fst
+            $ filter (\(_,pat2) -> pattern `Set.isSubsetOf` pat2)
+            $ IntMap.toList $ prefToForms br
+ | otherwise = error "findByPattern called with ChainTwinBlocking"
 
 -- maybe should get the urfather of given prefix, so that the caller functions won't have to do it
 formulasOf :: Branch -> Prefix -> Set Formula
