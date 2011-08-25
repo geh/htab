@@ -473,11 +473,12 @@ toUrfather br f@(PrFormula pr ds f2)
                  then f else PrFormula urfather (dsUnion ds ds2) f2
 
 addToPrefToForms :: PrFormula -> Branch -> Branch
-addToPrefToForms (PrFormula pr _ f) br | forInclusion br f =
-  br{prefToForms = newMap}
+addToPrefToForms (PrFormula pr _ f) br
+ | blockMode br == PatternBlocking = br
+ | forInclusion br f               = br{prefToForms = newMap}
+ | otherwise                       = br
  where currentPtf = prefToForms br
        newMap = IntMap.insertWith Set.union pr (Set.singleton f) currentPtf
-addToPrefToForms _ br = br
 
 {-     handling nominal urfathers, equivalence classes and dependencies     -}
 
@@ -710,6 +711,7 @@ patternBlocked br f = not $ IntMap.null $ IntMap.filter lookForSuperset (individ
 
 -- given a p:<r>f formula, return the pattern:
 -- { f } U { f' | p:[r]f' in branch }
+-- r has to be forward
 patternOf :: Branch -> PrFormula -> Set Formula
 patternOf br (PrFormula pr _ (Dia r f))
  = Set.insert f boxes
@@ -722,8 +724,7 @@ patternOf _ _ = error "patternOf called with a non diamond formula"
 
 boxesOf :: Branch -> Prefix -> Rel -> Set Formula
 boxesOf br p r
- = set [ f' | Box r' f' <- list $ IntMap.findWithDefault Set.empty p (prefToForms br), -- can work with boxconstaintsfw
-              r' == r]
+ = set $ map fst $ IntMap.findWithDefault [] r $ IntMap.findWithDefault IntMap.empty p (toMap $ boxConstrFwd br)
 
 findByPattern :: Branch -> Set Formula -> Prefix
 findByPattern br pattern
