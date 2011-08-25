@@ -13,7 +13,7 @@ import HTab.Formula( Formula(..), PrFormula(..), showLess, neg,
                      prefix, Rel, negPr,
                      Prefix,
                      replaceVar, Literal )
-import HTab.Branch( Branch(..), BranchInfo(..), TodoList(..),
+import HTab.Branch( Branch(..), BranchInfo(..), TodoList(..), BlockingMode(..),
                     -- for rules
                     createNewPref, createNewProp, createNewNomTestRelevance,
                     addFormulas, addAccFormula,
@@ -154,10 +154,10 @@ makeInteresting p br d df@(PrFormula pr ds (Dis fs))
           Contradiction ds_clash   -> Just (ClashDisjRule (dsUnion ds ds_clash) df,df)
           Reduced new_ds disjuncts mProposed
             | Set.size disjuncts == 1 -> Just (DisjRule df ( prefix ur newDeps disjuncts ), df)
-            | lazyBranching p && ur <= unblockedPrefsLim br
-                                  -> case mProposed of
-                                    Nothing  -> Nothing
-                                    Just lit -> Just (LazyBranchRule df ur lit [PrFormula ur newDeps (Dis disjuncts)], df)
+            | lazyBranching p && blockMode br /= ChainTwinBlocking
+                         -> case mProposed of
+                             Nothing  -> Nothing
+                             Just lit -> Just (LazyBranchRule df ur lit [PrFormula ur newDeps (Dis disjuncts)], df)
             | otherwise  -> Nothing
               where newDeps = dsInsert d $ dsUnion ds new_ds
                     ur = getUrfather br (DS.Prefix pr)

@@ -265,7 +265,7 @@ putAwayFormula p pf@(PrFormula pr ds f2) br =
 
 putAwayDisjunction :: Params -> PrFormula -> Branch -> BranchInfo
 putAwayDisjunction p pf@(PrFormula pr ds f@(Dis fs)) br
- | lazyBranching p && ur <= unblockedPrefsLim br
+ | lazyBranching p && blockMode br /= ChainTwinBlocking
   = case reduceDisjunctionProposeLazy br pr fs of
      Contradiction dsClash -> BranchClash br pr (dsUnion ds dsClash) f
      Triviality -> BranchOK br
