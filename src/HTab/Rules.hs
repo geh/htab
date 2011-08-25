@@ -114,10 +114,10 @@ ruleByChar br p d char =
   todos  = todoList br
 
   applicableDiaRule
-   = do (f@(PrFormula pr _ _),new) <- Set.minView $ diaTodo todos
+   = do (f,new) <- Set.minView $ diaTodo todos
         if diaAlreadyDone br f
           then       return ( DiscardDiaDoneRule f,    todos{diaTodo = new})
-          else if isNotBlocked br pr
+          else if isNotBlocked br f
                 then return ( DiaRule f,               todos{diaTodo = new})
                 else return ( DiscardDiaBlockedRule f, todos{diaTodo = new})
   applicableAtRule    = do (f,new) <- Set.minView $ atTodo todos
@@ -179,7 +179,7 @@ applyRule p rule br
      -> [ addParentPrefix newPr ur br >>?
           addAccFormula p (dsUnion ds ds2, r, ur, newPr) >>?
           addFormulas p [PrFormula newPr ds f] >>?
-          addDiaRuleCheck pr (r,f) >>?
+          addDiaRuleCheck pr (r,f) newPr >>?
           createNewPref p ]
           where newPr      = getNewPref br
                 (ur,ds2,_) = getUrfatherAndDeps br (DS.Prefix pr)

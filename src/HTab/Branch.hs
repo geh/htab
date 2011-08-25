@@ -1,6 +1,6 @@
 module HTab.Branch
 (
-Branch(..), BranchInfo(..), TodoList(..),
+Branch(..), BranchInfo(..), TodoList(..), BlockingMode(..),
 createNewPref, createNewProp, createNewNomTestRelevance,
 addFormulas, addAccFormula,
 addToBlockedDias,
@@ -13,6 +13,7 @@ getUrfather, getUrfatherAndDeps,
 getModelRepresentative, isNotBlocked,
 diaAlreadyDone, downAlreadyDone,
 ReducedDisjunct(..),
+patternOf,
 prefixes, isInTheModel, relationIsInTheModel,
 isSymmetric, isTransitive
 ) where
@@ -47,7 +48,7 @@ type ClashableInfo      = DMap {- Prefix Literal -} DependencySet
 type BoxConstraints     = DMap {- Prefix Rel -} [(Formula,DependencySet)]
 type BranchingWitnesses = DMap {- Prefix Literal -} [PrFormula]
 type EquivClasses = DS.DisjSet DS.Pointer
-data BlockingMode = AnywhereBlocking | ChainTwinBlocking  deriving (Eq,Show)
+data BlockingMode = PatternBlocking | AnywhereBlocking | ChainTwinBlocking  deriving (Eq,Show)
 
 data Branch =
               Branch {
@@ -67,6 +68,8 @@ data Branch =
                         atRlCh :: Set Formula,
                      existRlCh :: Set Formula,
                       dDiaRlCh :: Map Formula (Maybe Prop),
+                 -- pattern blocking
+             individualPattern :: IntMap (Set Formula),
                  -- set of formulas true at each point of the premodel
                    prefToForms :: IntMap {- Prefix -} (Set Formula),
                  -- backjumping data attached to equivalence classes
@@ -93,8 +96,8 @@ data Branch =
 
 --
 
-emptyBranch :: LanguageInfo -> RelInfo -> Encoding -> Branch
-emptyBranch fLang relInfo_ encoding_ =
+emptyBranch :: LanguageInfo -> RelInfo -> Encoding -> Params -> Branch
+emptyBranch fLang relInfo_ encoding_ p =
                 Branch
                 { clashStr          = DMap.empty,
                   accStr            = emptyRels,
@@ -108,6 +111,7 @@ emptyBranch fLang relInfo_ encoding_ =
                   existRlCh         = Set.empty,
                   dDiaRlCh          = Map.empty,
                   downVarRelevantCh = Map.empty,
+                  individualPattern = IntMap.empty,
                   univCons          = [],
                   lastPref          = 0,
                   nextNom           = maxNom encoding_ + 4,
@@ -125,11 +129,10 @@ emptyBranch fLang relInfo_ encoding_ =
                   relInfo           = relInfo_,
                   encoding          = encoding_
                 }
- where blockingMode =
-         if    languagePast fLang
-            || relInfo_ `oneIs` Symmetric
-           then ChainTwinBlocking
-           else AnywhereBlocking
+ where blockingMode
+        | languagePast fLang || relInfo_ `oneIs` Symmetric = ChainTwinBlocking
+        | patternBlocking p = PatternBlocking
+        | otherwise         = AnywhereBlocking
 
 instance Show Branch where
  show br
@@ -141,6 +144,7 @@ instance Show Branch where
               "\nBox bwd: ", showIMap (\v -> "(" ++ showMap_rel v ++ ")") "\n " (toMap $ boxConstrBwd br),
               "\nWitnesses: ", showIMap (\v  -> "(" ++ showMap_lits2 v ++ ")") "\n " (toMap $ brWitnesses br),
               "\nDia rule chart: ", show (diaRlCh br),
+              "\nIndividual patterns: ", show (individualPattern br),
               "\nDown rule chart: ", show (downRlCh br),
               "\n@ rule chart: ", show (list $ atRlCh br),
               "\nExist rule chart: ", show (list $ existRlCh br),
@@ -539,6 +543,7 @@ addBoxConstraint pr_ r f ds p br_
                                  else []
              symApplications = [PrFormula pr ds $ Box (invRel r) f | isSymmetric (relInfo br) r]
              boxApplications = map (\(pr2,ds2) -> PrFormula pr2 (dsUnion ds ds2) f) accessiblePrDs
+    -- todo check again with new pattern, create successor if new pattern not realized
       in
          addFormulas p toAdd newBr
 
@@ -616,11 +621,12 @@ insertRelationBranch br p1 r p2 ds
 
 {- blocking conditions -}
 
-isNotBlocked :: Branch -> Prefix -> Bool
-isNotBlocked br pr
+isNotBlocked :: Branch -> PrFormula -> Bool
+isNotBlocked br pf@(PrFormula pr _ _)
  | pr <= unblockedPrefsLim br = True
  | otherwise =
  case blockMode br of
+   PatternBlocking    -> not $ patternBlocked br pf
    AnywhereBlocking   -> not $ any isSubsumer labels
                            where ur = getUrfather br (DS.Prefix pr)
                                  fs = formulasOf br ur
@@ -651,6 +657,7 @@ test2equal [] = False
 isInTheModel :: Branch -> Prefix -> Bool
 isInTheModel br pr | isNominalUrfather br pr
  = case blockMode br of
+    PatternBlocking   ->  True
     AnywhereBlocking  ->  getModelRepresentative br pr == pr
     ChainTwinBlocking ->  case findModelRepresentativeChainTwinBlocking br pr of
                                  Nothing   -> False
@@ -660,21 +667,23 @@ isInTheModel _ _ = False
 relationIsInTheModel :: Branch -> (Prefix,Rel,Prefix) -> Bool
 relationIsInTheModel br (p1,_,p2)
  = case blockMode br of
+     PatternBlocking              -> True
      ChainTwinBlocking            -> hasIdentityUrfather br p1 && hasIdentityUrfather br p2
      AnywhereBlocking             -> isInTheModel br p1
    where hasIdentityUrfather br_ pr_
           = case findModelRepresentativeChainTwinBlocking br_ pr_ of {Nothing -> False ; _ -> True }
 
-getModelRepresentative :: Branch -> Prefix -> Prefix  -- which is also an inclusion representative
+getModelRepresentative :: Branch -> Prefix -> Prefix
 getModelRepresentative br pr
  = case blockMode br of
+    PatternBlocking -> ur
     AnywhereBlocking-> case map fst $ filter (Set.isSubsetOf fs . snd) $ ascPrefToForm br of
                          []     -> pr
                          (hd:_) -> hd
-                         where ur = getUrfather br (DS.Prefix pr)
-                               fs = formulasOf br ur
     ChainTwinBlocking -> fromMaybe ( error $ "interesting counter example " ++ show pr)
                                    $ findModelRepresentativeChainTwinBlocking br pr
+   where ur = getUrfather br (DS.Prefix pr)
+         fs = formulasOf br ur
 
 findModelRepresentativeChainTwinBlocking :: Branch -> Prefix -> Maybe Prefix
 findModelRepresentativeChainTwinBlocking br pr
@@ -695,6 +704,30 @@ areTwins br p1 p2 = formulasOf br p1 == formulasOf br p2
 
 ascPrefToForm :: Branch -> [(Prefix,Set Formula)]
 ascPrefToForm br = [ (pr,formulasOf br pr) | pr <- prefixes br ]
+
+
+-- <r>f is pattern blocked if its pattern is a subset
+-- of one pattern of the branch's pattern store
+patternBlocked :: Branch -> PrFormula -> Bool
+patternBlocked br f = not $ IntMap.null $ IntMap.filter lookForSuperset (individualPattern br) 
+ where lookForSuperset = Set.isSubsetOf (patternOf br f)
+
+-- given a p:<r>f formula, return the pattern:
+-- { f } U { f' | p:[r]f' in branch }
+patternOf :: Branch -> PrFormula -> Set Formula
+patternOf br (PrFormula pr _ (Dia r f))
+ = Set.insert f boxes
+     where ur = getUrfather br (DS.Prefix pr)
+           boxes = if isTransitive (relInfo br) r
+                    then boxesOf br ur r `Set.union` (Set.map (Box r) $ boxesOf br ur r)
+                    else boxesOf br ur r
+
+patternOf _ _ = error "patternOf called with a non diamond formula"
+
+boxesOf :: Branch -> Prefix -> Rel -> Set Formula
+boxesOf br p r
+ = set [ f' | Box r' f' <- list $ IntMap.findWithDefault Set.empty p (prefToForms br), -- can work with boxconstaintsfw
+              r' == r]
 
 -- maybe should get the urfather of given prefix, so that the caller functions won't have to do it
 formulasOf :: Branch -> Prefix -> Set Formula
@@ -722,10 +755,15 @@ addParentPrefix son father br = BranchOK br{prefParent = IntMap.insert son fathe
 
 {-     modifications done by rule application     -}
 
-addDiaRuleCheck :: Prefix -> (Rel,Formula) -> Branch -> BranchInfo
-addDiaRuleCheck pr (r,f) br =
-  BranchOK br{diaRlCh=IntMap.insertWith Set.union ur (Set.singleton (r,f)) (diaRlCh br)}
-   where ur = getUrfather br (DS.Prefix pr)
+addDiaRuleCheck :: Prefix -> (Rel,Formula) -> Prefix -> Branch -> BranchInfo
+addDiaRuleCheck pr (r,f) newPr br =
+  BranchOK br2
+   where pattern = patternOf br (PrFormula ur dsEmpty (Dia r f))
+         br1 = case blockMode br of
+                 PatternBlocking -> br{individualPattern = IntMap.insert newPr pattern (individualPattern br)}
+                 _ -> br
+         br2 = br1{diaRlCh=IntMap.insertWith Set.union ur (Set.singleton (r,f)) (diaRlCh br1)}
+         ur = getUrfather br (DS.Prefix pr)
 
 diaAlreadyDone :: Branch -> PrFormula -> Bool
 diaAlreadyDone b (PrFormula p _ (Dia r f)) =

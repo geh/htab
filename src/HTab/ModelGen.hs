@@ -12,9 +12,11 @@ import qualified HyLo.Model as M
 
 import qualified HyLo.Signature.String as S
 
-import HTab.Formula( Prefix, Rel, LanguageInfo(..), Encoding, int,
+import HTab.Formula( PrFormula(..), Formula(..),
+                     Prefix, Rel, LanguageInfo(..), Encoding, int,
                      RelInfo, toPropSymbol, toNomSymbol, toRelSymbol, isPositiveProp )
-import HTab.Branch( Branch(..), prefixes, getUrfather,
+import HTab.Branch( Branch(..), prefixes, getUrfather, BlockingMode(..),
+                    patternOf,
                     isInTheModel, relationIsInTheModel, getModelRepresentative,
                     isTransitive, isSymmetric )
 import qualified HTab.DisjSet as DS
@@ -27,6 +29,7 @@ buildModel :: Branch -> Model
 buildModel branch =
   completeModel e (relInfo branch) $ inducedModel $ H.herbrand es ps rs
  where
+       inModel = flip getModelRepresentative
        e = encoding branch
        bias = if null $ languageNoms $ inputLanguage branch
                then 0
@@ -43,9 +46,22 @@ buildModel branch =
        ps = Set.fromList
              [(S.NomSymbol $ show (pre + bias), pro)
              | (pre,pro) <- prefixAndProps branch]
-       rs = Set.fromList $ map (toSimpSig e)
-              $ map (\(p1,r,p2) -> (getModelRepresentative branch p1 + bias, r, getModelRepresentative branch p2 + bias))
-                    $ filter (relationIsInTheModel branch) $ allRels $ accStr branch
+       pbBlocked =
+          if blockMode branch == PatternBlocking
+             then
+                  [ (pr, r, pr2) |
+                         pr <- prefixes branch,
+                         isInTheModel branch pr,
+                         blockedDia@(PrFormula _ _ (Dia r _)) <- IntMap.findWithDefault [] pr (blockedDias branch),
+                         let pat = patternOf branch blockedDia,
+                         let pr2 = head $ map fst
+                                        $ filter (\(_,pat2) -> pat `Set.isSubsetOf` pat2)
+                                        $ IntMap.toList $ individualPattern branch ]
+             else []
+       rels = (filter (relationIsInTheModel branch) $ allRels $ accStr branch) ++ pbBlocked
+       rs =      Set.fromList $ map (toSimpSig e)
+                              $ map (\(p1,r,p2) -> ((p1 `inModel` branch) + bias , r,(p2 `inModel` branch) + bias))
+                                rels
 
 toSimpSig :: Encoding -> (Prefix,Rel,Prefix) -> (S.NomSymbol,S.RelSymbol,S.NomSymbol)
 toSimpSig e (p1,r,p2) = (S.NomSymbol (show p1), toRelSymbol e r, S.NomSymbol (show p2))
