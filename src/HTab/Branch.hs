@@ -18,6 +18,7 @@ prefixes, isInTheModel, relationIsInTheModel,
 isSymmetric, isTransitive
 ) where
 
+import Control.Applicative ( (<$>) )
 import Data.List(minimumBy)
 import Data.Maybe( mapMaybe, fromMaybe )
 import Data.Ord ( comparing )
@@ -63,7 +64,6 @@ data Branch =
                       univCons :: [(DependencySet,Formula)],
                  -- saturation of rules
                        diaRlCh :: IntMap {- Prefix -} (Set (Rel,Formula)),
-                       boxRlCh :: IntMap {- Prefix -} (Set (Rel,Formula)),
                       downRlCh :: IntMap {- Prefix -} (Set Formula),
                         atRlCh :: Set Formula,
                      existRlCh :: Set Formula,
@@ -105,7 +105,6 @@ emptyBranch fLang relInfo_ encoding_ p =
                   boxConstrBwd      = DMap.empty,
                   boxConstrFwd      = DMap.empty,
                   diaRlCh           = IntMap.empty,
-                  boxRlCh           = IntMap.empty,
                   downRlCh          = IntMap.empty,
                   atRlCh            = Set.empty,
                   existRlCh         = Set.empty,
@@ -389,7 +388,6 @@ merge p pr fDs pointer br -- pointer is a nominal or a prefix
                       newBoxConstrBwd = DMap.moveInnerDataDMapPlusDeps fDs (boxConstrBwd br) oldUr newUr
                       newAccStr       = mergePrefixes (accStr br) oldUr newUr fDs
                       newDiaRlCh      = moveInMap (diaRlCh br)  oldUr newUr Set.union
-                      newBoxRlCh      = moveInMap (boxRlCh br)  oldUr newUr Set.union
                       newBlockedDias  = moveInMap (blockedDias br) oldUr newUr (++)
                       (newBrWitnesses,unwitnessedToAdd) = mergeWitnesses oldUr newUr urfatherSlot (brWitnesses br)
 
@@ -413,7 +411,6 @@ merge p pr fDs pointer br -- pointer is a nominal or a prefix
                                            prToDepSet     = newPrToDepSet,
                                            prefToForms    = newPrefToForms,
                                            diaRlCh        = newDiaRlCh,
-                                           boxRlCh        = newBoxRlCh,
                                            blockedDias    = newBlockedDias,
                                            clashStr       = newClashStr,
                                            brWitnesses    = newBrWitnesses}
@@ -532,8 +529,8 @@ boxRule deps (mapBox, mapAcc)
                       (p,ds2) <- (IntMap.!) mapAcc r2     ]
 
 addBoxConstraint :: Prefix -> Rel -> Formula -> DependencySet -> Params -> Branch -> BranchInfo
-addBoxConstraint pr_ r f ds p br_
- | boxAlreadyDone br_ pr (r,f) = BranchOK br_
+addBoxConstraint pr_ r f ds p br
+ | boxAlreadyDone br pr (r,f) = BranchOK br
  | isForward r
     = let    newBr = br{boxConstrFwd = updateBoxConstr pr r f ds (boxConstrFwd br)}
              accessiblePrDs   = IntMap.findWithDefault [] r $ successors (accStr br) pr
@@ -557,8 +554,7 @@ addBoxConstraint pr_ r f ds p br_
             boxApplications = map (\(pr2,ds2) -> PrFormula pr2 (dsUnion ds ds2) f) accessiblePrDs
      in
         addFormulas p toAdd newBr
- where pr = getUrfather br_ (DS.Prefix pr_)
-       br = addBoxRuleCheck br_ pr (r,f)
+ where pr = getUrfather br (DS.Prefix pr_)
 
 updateBoxConstr :: Prefix -> Rel -> Formula -> DependencySet -> BoxConstraints -> BoxConstraints
 updateBoxConstr p1_ r_ f_ ds_ (DMap boxConstr_) =
@@ -569,15 +565,18 @@ updateBoxConstr p1_ r_ f_ ds_ (DMap boxConstr_) =
         Nothing             -> DMap $ IntMap.insert p1_ (IntMap.insert r_ [(f_,ds_)] innerMap)                boxConstr_
         Just innerInnerList -> DMap $ IntMap.insert p1_ (IntMap.insert r_ ((f_,ds_):innerInnerList) innerMap) boxConstr_
 
-addBoxRuleCheck :: Branch -> Prefix -> (Rel,Formula) -> Branch
-addBoxRuleCheck br ur (r,f) =
-  br{boxRlCh=IntMap.insertWith Set.union ur (Set.singleton (r,f)) (boxRlCh br)}
-
 boxAlreadyDone :: Branch -> Prefix -> (Rel,Formula) -> Bool
-boxAlreadyDone b ur (r,f) =
-  case IntMap.lookup ur (boxRlCh b) of
-     Nothing  -> False
-     Just fset -> Set.member (r,f) fset
+boxAlreadyDone br ur (r,f)
+ | isForward r  = case ( do inner <- IntMap.lookup ur (toMap $ boxConstrFwd br)
+                            boxes <- map fst <$> IntMap.lookup r inner
+                            return (f `elem` boxes) ) of
+                    Just True -> True
+                    _         -> False
+ | otherwise    = case ( do inner <- IntMap.lookup ur (toMap $ boxConstrBwd br)
+                            boxes <- map fst <$> IntMap.lookup (atom r) inner
+                            return (f `elem` boxes) ) of
+                    Just True -> True
+                    _         -> False
 
 -- accessibility Formulas
 
