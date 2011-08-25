@@ -88,8 +88,7 @@ runOneTask (query,mOutFile,fs) relInfo encoding theory p =
  $ do
      myPutStrLn $ "\n* " ++ case query of {Valid       -> "Validity task";
                                            Satisfiable -> "Satisfiability task";
-                                           Retrieve    -> "Instance retrieval task";
-                                           Counting    -> error "counting task not supported"}
+                                           Retrieve    -> "Instance retrieval task"}
      --
      result <-
       case query of
@@ -152,7 +151,6 @@ runOneTask (query,mOutFile,fs) relInfo encoding theory p =
                (Valid      , SUCCESS ) -> FAILURE
                (Valid      , FAILURE ) -> SUCCESS
                (Retrieve   , _       ) -> SUCCESS
-               (Counting   , _       ) -> error "counting task not supported"
 
 --
 

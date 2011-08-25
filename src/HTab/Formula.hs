@@ -239,7 +239,6 @@ convertToOurType prelI e = foldr insertRelProp Map.empty (concatMap convertOne p
        c _ (P.TClosureOf _)  = error "TClosureOf not handled"
        c _ (P.TRClosureOf _) = error "TRClosureOf not handled"
        c _ P.Functional      = error "Functional not handled"
-       c _ P.Injective       = error "Injective not handled"
 
 simpleParse :: Params -> String -> (Theory,RelInfo,Encoding,[Task])
 simpleParse p s = parse p $ "signature { automatic } theory { " ++ removeBeginEnd s ++ "}"
@@ -266,7 +265,6 @@ conv_ relI e (F.A f)             = univMod     (conv_ relI e f)
 conv_ relI e (F.E f)             = existMod    (conv_ relI e f)
 conv_ relI e (F.D f)             = dExistMod   (conv_ relI e f)
 conv_ relI e (F.B f)             = dUnivMod    (conv_ relI e f)
-conv_ _    _ (F.Count _ _ _ _)   = error "counting modalities not supported"
 
 type Connector = Formula -> Formula
 
