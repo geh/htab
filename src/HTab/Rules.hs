@@ -211,8 +211,7 @@ applyRule p rule br
                         addFormulas p [ PrFormula newPref1 ds f2,
                                         PrFormula newPref2 ds f2,
                                         PrFormula newPref1 ds (      Lit newProp),
-                                        PrFormula newPref2 ds (neg $ Lit newProp),
-                                        PrFormula pr       ds (neg $ Lit newProp) ]
+                                        PrFormula newPref2 ds (neg $ Lit newProp) ]
                         ,
                         addDiffRuleCheck f2 (Just newProp) br >>?
                         createNewPref p >>?
