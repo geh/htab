@@ -1,3 +1,10 @@
+* 2011.12.02 : 1.6.0
+      o pattern based blocking by default
+      o lazy branching on all nodes except with chain blocking
+      o cumulative model building with pattern or inclusion blocking
+      o remove support for transitive closure modalities
+      o remove support for injective and functional modalities
+      o remove noloopcheck flag
 * 2010.09.27 : 1.5.4
       o lazy branching by default
       o fix memory leak
