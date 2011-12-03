@@ -87,7 +87,6 @@ data Branch =
                  -- information about language of input formula and blocking mode
                  inputLanguage :: LanguageInfo,
                      blockMode :: BlockingMode,
-             unblockedPrefsLim :: Prefix,
                    blockedDias :: IntMap {- Prefix -} [PrFormula],
                     prefParent :: IntMap {- Prefix -} Prefix,
               relevantNominals :: Set Nom,
@@ -121,7 +120,6 @@ emptyBranch fLang relInfo_ encoding_ p =
                   nomPrefClasses    = DS.mkDSet,
                   inputLanguage     = fLang,
                   blockMode         = blockingMode,
-                  unblockedPrefsLim = 0,
                   blockedDias       = IntMap.empty,
                   prefParent        = IntMap.empty,
                   relevantNominals  = set $ relevantNoms fLang,
@@ -622,9 +620,7 @@ insertRelationBranch br p1 r p2 ds
 {- blocking conditions -}
 
 isNotBlocked :: Branch -> PrFormula -> Bool
-isNotBlocked br pf@(PrFormula pr _ _)
- | pr <= unblockedPrefsLim br = True
- | otherwise =
+isNotBlocked br pf@(PrFormula pr _ _) =
  case blockMode br of
    PatternBlocking    -> not $ patternBlocked br pf
    AnywhereBlocking   -> not $ any isSubsumer labels
@@ -875,7 +871,7 @@ createNewNomTestRelevance f br
 --  - add reflexive links for prefixes 0 and nominal witnesses
 addFirstFormulas :: Params -> Branch -> LanguageInfo -> Formula -> BranchInfo
 addFirstFormulas p br_ fLang f
- = addFormulas p [pf] br4
+ = addFormulas p [pf] br3
     where ns = languageNoms fLang
           nbNs = length ns
           nomWitnesses = [1..nbNs]
@@ -892,7 +888,6 @@ addFirstFormulas p br_ fLang f
           br3 = foldr (\(pr,n) -> bookKeepFormula p (PrFormula pr dsEmpty (Lit n)))
                       br2
                       (zip [1..] ns)
-          br4 = br3{unblockedPrefsLim = nbNs}
 
 {-     functions to handle the "clashable information", ie literals associated to prefixes     -}
 
