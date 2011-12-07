@@ -15,7 +15,7 @@ import HTab.Formula( Formula(..), PrFormula(..), showLess, neg,
                      replaceVar, Literal )
 import HTab.Branch( Branch(..), BranchInfo(..), TodoList(..), BlockingMode(..),
                     -- for rules
-                    createNewPref, createNewProp, createNewNomTestRelevance,
+                    createNewNode, createNewProp, createNewNomTestRelevance,
                     addFormulas, addAccFormula,
                     addDiaRuleCheck, addToBlockedDias,
                     addDownRuleCheck, addDiffRuleCheck,
@@ -180,7 +180,7 @@ applyRule p rule br
           addAccFormula p (dsUnion ds ds2, r, ur, newPr) >>?
           addFormulas p [PrFormula newPr ds f] >>?
           addDiaRuleCheck pr (r,f) newPr >>?
-          createNewPref p ]
+          createNewNode p ]
           where newPr      = getNewPref br
                 (ur,ds2,_) = getUrfatherAndDeps br (DS.Prefix pr)
     DisjRule _ prFormulas ->
@@ -205,8 +205,8 @@ applyRule p rule br
     DiffRule   (PrFormula pr ds_ (D f2)) d ->
       case Map.lookup f2 (dDiaRlCh br) of
            Nothing -> [ addDiffRuleCheck f2 Nothing br >>?
-                        createNewPref p >>?
-                        createNewPref p >>?
+                        createNewNode p >>?
+                        createNewNode p >>?
                         createNewProp >>?
                         addFormulas p [ PrFormula newPref1 ds f2,
                                         PrFormula newPref2 ds f2,
@@ -214,7 +214,7 @@ applyRule p rule br
                                         PrFormula newPref2 ds (neg $ Lit newProp) ]
                         ,
                         addDiffRuleCheck f2 (Just newProp) br >>?
-                        createNewPref p >>?
+                        createNewNode p >>?
                         createNewProp >>?
                         addFormulas p [ PrFormula newPref1 ds f2,
                                         PrFormula newPref1 ds (      Lit newProp),
@@ -227,7 +227,7 @@ applyRule p rule br
            Just Nothing          -> [BranchOK br]
            where ds = d `dsInsert` ds_
     ExistRule (PrFormula _ ds (E f2)) ->
-       [addFormulas p [toadd] br >>? createNewPref p]   -- this createNewPref  / getNewPref thing needs to stop
+       [addFormulas p [toadd] br >>? createNewNode p]   -- this createNewNode  / getNewPref thing needs to stop
        where toadd = PrFormula newPr ds f2
              newPr = getNewPref br
     DiscardDownRule _         -> [BranchOK br]

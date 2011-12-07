@@ -1,7 +1,7 @@
 module HTab.Branch
 (
 Branch(..), BranchInfo(..), TodoList(..), BlockingMode(..),
-createNewPref, createNewProp, createNewNomTestRelevance,
+createNewNode, createNewProp, createNewNomTestRelevance,
 addFormulas, addAccFormula,
 addToBlockedDias,
 addDiaRuleCheck, addDownRuleCheck, addDiffRuleCheck,
@@ -831,8 +831,8 @@ addDiffRuleCheck f mp br = BranchOK br{dDiaRlCh=Map.insert f mp (dDiaRlCh br)}
 
 --
 
-createNewPref :: Params -> Branch -> BranchInfo
-createNewPref p br
+createNewNode :: Params -> Branch -> BranchInfo
+createNewNode p br
  = addFormulas p
                ( map (\(ds,f) -> PrFormula newPr ds f) univConstraints )
                newBrWithRefl
