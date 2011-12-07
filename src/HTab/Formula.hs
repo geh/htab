@@ -14,8 +14,10 @@ firstPrefixedFormula,
 parse, simpleParse, Theory, RelInfo, Task,
 showRelInfo, showRel, showLit, negLit, isForward, isBackwards,
 encodeValidityTest, encodeSatTest, encodeRetrieveTask,
-HyLoFormula, RelProperty(..), Encoding(..), maxNom, maxProp, toPropSymbol, toNomSymbol, toRelSymbol,
-isTop, isBottom, isPositiveNom, isPositiveProp, isPositive, isNegative, isNominal, isProp, atom,
+HyLoFormula, RelProperty(..), Encoding(..), maxNom, maxProp,
+toPropSymbol, toNomSymbol, toRelSymbol,
+isTop, isBottom, isPositiveNom, isPositiveProp, isPositive, isNegative,
+isNominal, isProp, atom,
 invRel, int
 )
 
@@ -23,7 +25,7 @@ invRel, int
 
 import Data.Bits (complementBit, testBit, clearBit, (.|.) )
 import qualified Data.Set as Set
-import Data.Set ( Set )
+import Data.Set ( Set, unions )
 import qualified Data.Map as Map
 import Data.Map ( Map )
 import qualified Data.IntSet as IntSet
@@ -84,7 +86,8 @@ type Prop = Int
 type Nom = Int
 type Literal = Int
 
-isTop, isBottom, isPositiveNom, isNegativeNom, isNominal, isPositiveProp, isProp, isNegative, isPositive :: Int -> Bool
+isTop, isBottom, isPositiveNom, isNegativeNom, isNominal, isPositiveProp,
+ isProp, isNegative, isPositive :: Int -> Bool
 isTop            = (==0)
 isBottom         = (==1)
 isPositiveNom a  = ((a `mod` 4) == 0) && (a > 1)
@@ -152,7 +155,7 @@ parse p s
     where parseOutput = InputFile.myparse s       -- direct parse from hylolib
           encoding    = getEncoding parseOutput
           pRelInfo    = P.relations parseOutput
-          relInfo     = forceProperties p encoding $ convertToOurType pRelInfo encoding -- TODO
+          relInfo     = forceProperties p encoding $ convertToOurType pRelInfo encoding
           theory      = convert relInfo encoding $ P.theory parseOutput
           tasks       = P.tasks parseOutput
 
@@ -172,19 +175,22 @@ maxProp e = case Map.elems $ propMap e of
               els -> maximum els
 
 toPropSymbol :: Encoding -> Int -> S.PropSymbol
-toPropSymbol e i = S.PropSymbol $ case Map.lookup (atom i) (invertMap $ propMap e) of
-                                    Nothing -> {- new prop symbol -} "new_prop_" ++ show i
-                                    Just x -> x
+toPropSymbol e i =
+ S.PropSymbol $ case Map.lookup (atom i) (invertMap $ propMap e) of
+                  Nothing -> {- new prop symbol -} "new_prop_" ++ show i
+                  Just x -> x
 
 toNomSymbol :: Encoding -> Int -> S.NomSymbol
-toNomSymbol e i = S.NomSymbol $  case Map.lookup (atom i) (invertMap $ nomMap e) of
-                                        Nothing -> error $ show e ++ " nom symbol " ++ show i
-                                        Just x -> x
+toNomSymbol e i =
+ S.NomSymbol $ case Map.lookup (atom i) (invertMap $ nomMap e) of
+                 Nothing -> error $ show e ++ " nom symbol " ++ show i
+                 Just x -> x
 
 toRelSymbol :: Encoding -> Int -> S.RelSymbol
-toRelSymbol e i = case Map.lookup (atom i) (invertMap $ relMap e) of
-                         Nothing -> error $ show e ++ " rel symbol " ++ show i
-                         Just x -> if isForward i then S.RelSymbol x else S.InvRelSymbol x
+toRelSymbol e i =
+ case Map.lookup (atom i) (invertMap $ relMap e) of
+   Nothing -> error $ show e ++ " rel symbol " ++ show i
+   Just x -> if isForward i then S.RelSymbol x else S.InvRelSymbol x
 
 invertMap :: (Ord a, Ord b) => Map.Map a b -> Map.Map b a
 invertMap = Map.fromList . map (\(a,b) -> (b,a)) . Map.assocs
@@ -195,12 +201,15 @@ getEncoding parseOutput =
             propMap = Map.fromList $ zip props $ map (\p -> 2 + p*4) [0..],
              relMap = Map.fromList $ zip rels  $ map (\r ->     r*2) [0..] } 
  where
-   theory =  P.theory parseOutput
-   noms  = map (\(S.NomSymbol n)  -> n) $ Set.toList $ Set.unions $ map (nomSymbols . getSignature)  theory
-   props = map (\(S.PropSymbol p) -> p) $ Set.toList $ Set.unions $ map (propSymbols . getSignature) theory
-   rels1  = map fst $ P.relations parseOutput
-   rels2  = map (\(S.RelSymbol r) -> r) $ Set.toList $ Set.unions $ map (relSymbols . getSignature) theory
-   rels = nub $ rels1 ++ rels2
+  theory =  P.theory parseOutput
+  noms  =
+   map (\(S.NomSymbol n)  -> n) $ list $ unions $ map (nomSymbols . getSignature)  theory
+  props =
+   map (\(S.PropSymbol p) -> p) $ list $ unions $ map (propSymbols . getSignature) theory
+  rels1  = map fst $ P.relations parseOutput
+  rels2  =
+   map (\(S.RelSymbol r) -> r) $ list $ unions $ map (relSymbols . getSignature) theory
+  rels = nub $ rels1 ++ rels2
 
 nomsOfEncoding :: Encoding -> [Nom]
 nomsOfEncoding e = Map.elems (nomMap e)
@@ -219,7 +228,8 @@ forceProperties p encoding relI
                                  (allReflexive  p, Reflexive ),
                                  (allSymmetric  p, Symmetric )]
 
-convertToOurType :: PRelInfo -> Encoding -> RelInfo -- and add for each relation in the formula, the relevant key
+convertToOurType :: PRelInfo -> Encoding -> RelInfo
+ -- and add for each relation in the formula, the relevant key
 convertToOurType prelI e = foldr insertRelProp Map.empty (concatMap convertOne prelI)
  where insertRelProp (rs,pr) = Map.insertWith (++) rs [pr]
        convertOne (r,props)  = concatMap (c r) props
@@ -229,20 +239,24 @@ convertToOurType prelI e = foldr insertRelProp Map.empty (concatMap convertOne p
        c r P.Universal       = [(int e r,Universal    )]
        c r (P.InverseOf s)   = [(int e r,InverseOf   (int e s))]
        c r (P.SubsetOf ss)   = [(int e r,SubsetOf [ int e s | s <- ss])]
-       c r (P.Equals ss)     = [(int e r,SubsetOf [ int e s | s <- ss])] ++ [(int e s,SubsetOf [int e r]) | s <- ss]
+       c r (P.Equals ss)     = [(int e r,SubsetOf [ int e s | s <- ss])]
+                               ++ [(int e s,SubsetOf [int e r]) | s <- ss]
        c _ (P.TClosureOf _)  = error "TClosureOf not handled"
        c _ (P.TRClosureOf _) = error "TRClosureOf not handled"
        c _ P.Functional      = error "Functional not handled"
        c _ P.Difference      = error "Difference not handled"
 
 simpleParse :: Params -> String -> (Theory,RelInfo,Encoding,[Task])
-simpleParse p s = parse p $ "signature { automatic } theory { " ++ removeBeginEnd s ++ "}"
+simpleParse p s =
+ parse p $ "signature { automatic } theory { " ++ removeBeginEnd s ++ "}"
  where removeBeginEnd = unwords . delete "begin" . delete "end" . words
 
-convert :: RelInfo -> Encoding -> [F.Formula S.NomSymbol S.PropSymbol S.RelSymbol] -> Formula
+convert :: RelInfo -> Encoding -> [F.Formula S.NomSymbol S.PropSymbol S.RelSymbol]
+             -> Formula
 convert relI e = conv_ relI e . foldr (F.:&:) F.Top
 
-conv_ :: RelInfo -> Encoding -> F.Formula S.NomSymbol S.PropSymbol S.RelSymbol -> Formula
+conv_ :: RelInfo -> Encoding -> F.Formula S.NomSymbol S.PropSymbol S.RelSymbol
+           -> Formula
 conv_  _   _ F.Top               = taut
 conv_  _   _ F.Bot               = neg taut
 conv_  _   e (F.Prop p)          = prop e p
@@ -269,7 +283,8 @@ specialiseDia r relI e = specialise r relI (diamond e, existMod) e
 specialiseBox :: S.RelSymbol -> RelInfo -> Encoding -> Connector
 specialiseBox r relI e = specialise r relI (box e, univMod) e
 
-specialise :: S.RelSymbol -> RelInfo -> (S.RelSymbol -> Connector, Connector) -> Encoding -> Connector
+specialise :: S.RelSymbol -> RelInfo -> (S.RelSymbol -> Connector, Connector)
+                -> Encoding -> Connector
 specialise (S.InvRelSymbol r) _ (relational, _) _ -- happens only with simple input
  = relational $ S.InvRelSymbol r
 
@@ -294,7 +309,8 @@ encodeSatTest :: RelInfo -> Encoding -> Formula -> [HyLoFormula] -> Formula
 encodeSatTest relI e th fs
  = conj th (convert relI e fs)
 
-encodeRetrieveTask :: RelInfo -> Encoding -> LanguageInfo -> Formula -> [HyLoFormula] -> ([Int],[Formula])
+encodeRetrieveTask :: RelInfo -> Encoding -> LanguageInfo -> Formula -> [HyLoFormula]
+                        -> ([Int],[Formula])
 encodeRetrieveTask relI e fLang theory fs
  = (noms , map (\n -> conj theory (At n (neg $ convert relI e fs))) noms)
    where noms = languageNoms fLang
@@ -411,7 +427,7 @@ showLess :: PrFormula -> String
 showLess (PrFormula pr _ f) = show pr ++ ":" ++ show f
 
 prefix :: Prefix -> DependencySet -> Set Formula -> [PrFormula]
-prefix p bps fs = [PrFormula p bps formula|formula <- Set.toList fs]
+prefix p bps fs = [PrFormula p bps formula|formula <- list fs]
 
 firstPrefixedFormula :: Formula -> PrFormula
 firstPrefixedFormula = PrFormula 0 dsEmpty
@@ -481,7 +497,7 @@ composeMap baseCase g e = case e of
 extractRelevantNominals :: Formula -> Set Nom
 extractRelevantNominals (Lit n)| isNegativeNom n = Set.singleton (atom n)
 extractRelevantNominals (At _ f)                 = extractRelevantNominals f
-extractRelevantNominals f                        = composeFold Set.empty Set.union extractRelevantNominals f
+extractRelevantNominals f = composeFold Set.empty Set.union extractRelevantNominals f
 
 hasPast :: Formula -> Bool
 hasPast (Dia r _)    = testBit r 0
@@ -504,12 +520,10 @@ checkIfVarNegated :: Formula -> Bool
 checkIfVarNegated (Down v_ f_)
  = go v_ f_
    where go :: Int -> Formula -> Bool
-         go v (Down v2 f)           = if v == v2 then False {- variable capture -} else go v f
-         go v (Lit v2)              = (atom v == atom v2) && isNegative v2
-         go v f                     = composeFold False (||) (go v) f
-
+         go v (Down v2 f) = if v == v2 then False {- variable capture -} else go v f
+         go v (Lit v2)    = (atom v == atom v2) && isNegative v2
+         go v f           = composeFold False (||) (go v) f
 checkIfVarNegated _ = error "checkIfVarNegated : only down-arrow formulas"
-
 
 -- backjumping
 
