@@ -1,10 +1,10 @@
 module HTab.Branch
 (
 Branch(..), BranchInfo(..), TodoList(..), BlockingMode(..),
-createNewNode, createNewProp, createNewNomTestRelevance,
+createNewNode, createNewNomTestRelevance,
 addFormulas, addAccFormula,
 addToBlockedDias,
-addDiaRuleCheck, addDownRuleCheck, addDiffRuleCheck,
+addDiaRuleCheck, addDownRuleCheck,
 addParentPrefix, addFirstFormulas,
 emptyBranch,
 reduceDisjunctionProposeLazy, doLazyBranching,
@@ -67,7 +67,6 @@ data Branch =
                       downRlCh :: IntMap {- Prefix -} (Set Formula),
                         atRlCh :: Set Formula,
                      existRlCh :: Set Formula,
-                      dDiaRlCh :: Map Formula (Maybe Prop),
                  -- pattern blocking
              individualPattern :: IntMap (Set Formula),
                  -- set of formulas true at each point of the premodel
@@ -79,7 +78,6 @@ data Branch =
                  -- book keeping
                       lastPref :: Prefix,
                        nextNom :: Nom,
-                      nextProp :: Prop,
                  -- lazy branching
                    brWitnesses :: BranchingWitnesses,
                  -- caching / memoisation data
@@ -107,13 +105,11 @@ emptyBranch fLang relInfo_ encoding_ p =
                   downRlCh          = IntMap.empty,
                   atRlCh            = Set.empty,
                   existRlCh         = Set.empty,
-                  dDiaRlCh          = Map.empty,
                   downVarRelevantCh = Map.empty,
                   individualPattern = IntMap.empty,
                   univCons          = [],
                   lastPref          = 0,
                   nextNom           = maxNom encoding_ + 4,
-                  nextProp          = maxProp encoding_ + 4,
                   prefToForms       = IntMap.empty,
                   prToDepSet        = IntMap.empty,
                   brWitnesses       = DMap.empty,
@@ -145,7 +141,6 @@ instance Show Branch where
               "\nDown rule chart: ", show (downRlCh br),
               "\n@ rule chart: ", show (list $ atRlCh br),
               "\nExist rule chart: ", show (list $ existRlCh br),
-              "\nDiff dia rule chart: ", show (dDiaRlCh br),
               "\nDown var relevant chart: ", show (downVarRelevantCh br),
               "\nUniv constraints: ", show (univCons br),
               "\nPrefix to dependency set: ", showIMap  dsShow "\n " (prToDepSet br),
@@ -155,8 +150,7 @@ instance Show Branch where
               "\nPrefix-Nominal classes : ", showMap ", " (nomPrefClasses br),
               "\nModel-relevant nominals : ", unwords $ map showLit $ list $ relevantNominals br,
               "\nlastPref : ", show (lastPref br),
-              " nextnom : ", showLit (nextNom br),
-              " nextprop : ", showLit (nextProp br)
+              " nextnom : ", showLit (nextNom br)
            ]
               where
                showIMap :: (a -> String) -> String -> IntMap a -> String
@@ -171,7 +165,6 @@ data TodoList= TodoList{disjTodo :: Set PrFormula,
                        existTodo :: Set PrFormula,
                           atTodo :: Set PrFormula,
                         downTodo :: Set PrFormula,
-                        diffTodo :: Set PrFormula,
                        mergeTodo :: Set (DependencySet, Prefix, DS.Pointer),
                      roleIncTodo :: Set (DependencySet, Prefix, Prefix, [Rel]) }
  deriving Show
@@ -183,7 +176,6 @@ emptyTodoList =
                  existTodo = Set.empty,
                     atTodo = Set.empty,
                   downTodo = Set.empty,
-                  diffTodo = Set.empty,
                  mergeTodo = Set.empty,
                roleIncTodo = Set.empty
                }
@@ -252,9 +244,7 @@ putAwayFormula p pf@(PrFormula pr ds f2) br =
    Dia _ _    -> BranchOK $ addToTodo pf br
    Box r f    -> addBoxConstraint      pr r f ds p br
    A f        -> addUnivConstraint          f ds p br
-   B f        -> bRule                pr   f ds p br
    E _        -> BranchOK $ addToTodo pf br
-   D _        -> BranchOK $ addToTodo pf br
    At _ _     -> BranchOK $ addToTodo pf br
    Down _ _   -> BranchOK $ addToTodo pf br
    Lit l | isPositiveNom l -> addToClashable pr ds l $ addToTodo pf br
@@ -314,7 +304,6 @@ addToTodo pf@(PrFormula p ds f2) br =
          Dis _              -> utodo{ disjTodo = Set.insert pf ( disjTodo utodo)}
          Dia _ _            -> utodo{  diaTodo = Set.insert pf (  diaTodo utodo)}
          E _                -> utodo{existTodo = Set.insert pf (existTodo utodo)}
-         D _                -> utodo{ diffTodo = Set.insert pf ( diffTodo utodo)}
          At _ _             -> utodo{   atTodo = Set.insert pf (   atTodo utodo)}
          Down _ _           -> utodo{ downTodo = Set.insert pf ( downTodo utodo)}
          Lit l
@@ -323,7 +312,6 @@ addToTodo pf@(PrFormula p ds f2) br =
    alreadyDone =
     case f2 of
      E  _               -> existAlreadyDone br f2
-     D _                -> False
      At _ _             -> atAlreadyDone br f2
      Down _ _           -> downAlreadyDone br pf
      Dia  _ _           -> False -- the test happens later, when the todo list is processed
@@ -752,8 +740,6 @@ forInclusion _ (Box _ _) = True
 forInclusion _ (Dia _ _) = True
 forInclusion _ (A _) = False
 forInclusion _ (E _) = False
-forInclusion _ (D _) = False
-forInclusion _ (B _) = False
 
 addParentPrefix :: Prefix -> Prefix -> Branch -> BranchInfo
 addParentPrefix son father br = BranchOK br{prefParent = IntMap.insert son father (prefParent br)}
@@ -819,18 +805,6 @@ addUnivConstraint f ds p br
 
 --
 
-bRule :: Prefix -> Formula -> DependencySet -> Params -> Branch -> BranchInfo
-bRule  pr f ds p br
- = addFormula p br2 (PrFormula pr ds $ Down newNom $ A (Lit newNom `disj` f))
-    where newNom = nextNom br
-          br2 = br{nextNom = nextNom br + 4}
---
-
-addDiffRuleCheck :: Formula -> Maybe Prop -> Branch -> BranchInfo
-addDiffRuleCheck f mp br = BranchOK br{dDiaRlCh=Map.insert f mp (dDiaRlCh br)}
-
---
-
 createNewNode :: Params -> Branch -> BranchInfo
 createNewNode p br
  = addFormulas p
@@ -848,9 +822,6 @@ addReflexiveLinks pr br
 
 
 --
-
-createNewProp :: Branch -> BranchInfo
-createNewProp br = BranchOK br{nextProp = nextProp br + 4}
 
 createNewNomTestRelevance :: Formula -> Branch -> BranchInfo
 createNewNomTestRelevance f br

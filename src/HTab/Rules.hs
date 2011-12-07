@@ -5,20 +5,19 @@ applicableRule, applyRule, ruleToId
 ) where
 
 import qualified Data.Set as Set
-import qualified Data.Map as Map
 import Data.Maybe ( mapMaybe )
 
-import HTab.Formula( Formula(..), PrFormula(..), showLess, neg,
+import HTab.Formula( Formula(..), PrFormula(..), showLess,
                      Dependency, DependencySet, dsUnion, dsInsert,
                      prefix, Rel, negPr,
                      Prefix,
                      replaceVar, Literal )
 import HTab.Branch( Branch(..), BranchInfo(..), TodoList(..), BlockingMode(..),
                     -- for rules
-                    createNewNode, createNewProp, createNewNomTestRelevance,
+                    createNewNode, createNewNomTestRelevance,
                     addFormulas, addAccFormula,
                     addDiaRuleCheck, addToBlockedDias,
-                    addDownRuleCheck, addDiffRuleCheck,
+                    addDownRuleCheck,
                     addParentPrefix, doLazyBranching,
                     getUrfatherAndDeps, merge,
                     -- for choosing rule in todo list
@@ -40,7 +39,6 @@ data Rule =  DiaRule    PrFormula                 -- creates a prefix
            | LazyBranchRule PrFormula Prefix Literal [PrFormula]
            | AtRule     PrFormula
            | DownRule   PrFormula
-           | DiffRule   PrFormula Dependency      -- creates a prefix
            | ExistRule  PrFormula                 -- creates a prefix
            | DiscardDownRule PrFormula
            | DiscardDiaDoneRule PrFormula
@@ -59,7 +57,6 @@ instance Show Rule where
    show (AtRule    todelete )             = "at:                 " ++ showLess todelete
    show (DownRule  todelete )             = "down:               " ++ showLess todelete
    show (ExistRule todelete )             = "E:                  " ++ showLess todelete
-   show (DiffRule  todelete _)            = "D:                  " ++ showLess todelete
 
    show (DiscardDownRule todelete)        = "Discard:            " ++ showLess todelete
    show (DiscardDiaDoneRule todelete)     = "Discard done:       " ++ showLess todelete
@@ -81,7 +78,6 @@ ruleToId r = case r of
               (AtRule _ )        -> R_At
               (DownRule _)       -> R_Down
               (ExistRule _)      -> R_Exist
-              (DiffRule _ _)     -> R_Diff
               (DiscardDownRule _)        -> R_DiscardDown
               (DiscardDiaDoneRule _)     -> R_DiscardDiaDone
               (DiscardDiaBlockedRule _)  -> R_DiscardDiaBlocked
@@ -106,7 +102,6 @@ ruleByChar br p d char =
   '<' -> applicableDiaRule
   '@' -> applicableAtRule
   'E' -> applicableExistRule
-  'D' -> applicableDiffRule
   'b' -> applicableDownRule
   'r' -> applicableRoleIncRule
   _   -> error "ruleByChar"
@@ -128,8 +123,6 @@ ruleByChar br p d char =
                             else return (DownRule f, todos{downTodo = new})
   applicableExistRule = do (f,new) <- Set.minView $ existTodo todos
                            return (ExistRule f, todos{existTodo = new})
-  applicableDiffRule  = do (f,new) <- Set.minView $ diffTodo todos
-                           return (DiffRule f d, todos{diffTodo = new})
   applicableRoleIncRule = do ((ds, p1, p2, rs),new) <- Set.minView $ roleIncTodo todos
                              return (RoleIncRule p1 rs p2 (dsInsert d ds), todos{roleIncTodo = new})
   applicableMergeRule  = do ((ds,pr,po),new) <- Set.minView $ mergeTodo todos
@@ -181,7 +174,7 @@ applyRule p rule br
           addFormulas p [PrFormula newPr ds f] >>?
           addDiaRuleCheck pr (r,f) newPr >>?
           createNewNode p ]
-          where newPr      = getNewPref br
+          where newPr      = lastPref br + 1
                 (ur,ds2,_) = getUrfatherAndDeps br (DS.Prefix pr)
     DisjRule _ prFormulas ->
             [ addFormulas p [toadd] br |  toadd <- prFormulas ]
@@ -202,34 +195,10 @@ applyRule p rule br
                   where toadd1 = PrFormula pr ds (replaceVar v newNom f2)
                         toadd2 = PrFormula pr ds $ Lit newNom
                         newNom = nextNom br
-    DiffRule   (PrFormula pr ds_ (D f2)) d ->
-      case Map.lookup f2 (dDiaRlCh br) of
-           Nothing -> [ addDiffRuleCheck f2 Nothing br >>?
-                        createNewNode p >>?
-                        createNewNode p >>?
-                        createNewProp >>?
-                        addFormulas p [ PrFormula newPref1 ds f2,
-                                        PrFormula newPref2 ds f2,
-                                        PrFormula newPref1 ds (      Lit newProp),
-                                        PrFormula newPref2 ds (neg $ Lit newProp) ]
-                        ,
-                        addDiffRuleCheck f2 (Just newProp) br >>?
-                        createNewNode p >>?
-                        createNewProp >>?
-                        addFormulas p [ PrFormula newPref1 ds f2,
-                                        PrFormula newPref1 ds (      Lit newProp),
-                                        PrFormula pr       ds (neg $ Lit newProp) ]
-                      ]
-                       where newPref1 = getNewPref br
-                             newPref2 = newPref1 + 1
-                             newProp  = nextProp br
-           Just (Just diffProp)  -> [addFormulas p [PrFormula pr ds (neg $ Lit diffProp)] br]
-           Just Nothing          -> [BranchOK br]
-           where ds = d `dsInsert` ds_
     ExistRule (PrFormula _ ds (E f2)) ->
-       [addFormulas p [toadd] br >>? createNewNode p]   -- this createNewNode  / getNewPref thing needs to stop
+       [addFormulas p [toadd] br >>? createNewNode p]
        where toadd = PrFormula newPr ds f2
-             newPr = getNewPref br
+             newPr = lastPref br + 1
     DiscardDownRule _         -> [BranchOK br]
     DiscardDiaDoneRule _      -> [BranchOK br]
     DiscardDisjTrivialRule _  -> [BranchOK br]
@@ -240,10 +209,6 @@ applyRule p rule br
     RoleIncRule p1 rs p2 ds ->
      [addAccFormula p (ds, r, p1, p2) br | r <- rs]
     _ -> error $ "applyRule with bad argument: " ++ show rule
-
-
-getNewPref :: Branch -> Prefix
-getNewPref br = lastPref br + 1
 
 disjRule :: Params -> PrFormula -> Branch -> Dependency -> Rule
 disjRule p df@(PrFormula pr ds (Dis fs)) br d

@@ -43,7 +43,6 @@ data RuleId = R_Dia     -- Diamond <r>
             | R_Down    -- Down-arrow rule
             | R_NegNom  -- Negation before nominal rule
             | R_Exist   -- Existential modality
-            | R_Diff    -- Difference modality
             | R_Discard -- Discarding a formula
             | R_DiscardDown
             | R_DiscardDiaDone

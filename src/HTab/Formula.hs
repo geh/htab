@@ -62,8 +62,6 @@ data Formula
      | Down   Nom Formula
      | A      Formula
      | E      Formula
-     | D      Formula
-     | B      Formula
   deriving (Eq, Ord)
 
 -- convention : bit0 = OFF -> positive literal, negative otherwise
@@ -126,8 +124,6 @@ instance Show Formula where
  show (Dia r f)    = "<" ++ showRel r ++ ">"   ++ show f
  show (A f)      = "A" ++ show f
  show (E f)      = "E" ++ show f
- show (D f)      = "D" ++ show f
- show (B f)      = "B" ++ show f
  show (Down n f) = "down " ++ showLit n ++ "." ++ show f
 
 -- parsing of the input file
@@ -141,7 +137,6 @@ data RelProperty   =   Reflexive
                      | Symmetric
                      | Transitive
                      | Universal
-                     | Difference
                      --
                      | InverseOf Rel
                      | TRClosureOf Rel
@@ -232,13 +227,13 @@ convertToOurType prelI e = foldr insertRelProp Map.empty (concatMap convertOne p
        c r P.Symmetric       = [(int e r,Symmetric    )]
        c r P.Transitive      = [(int e r,Transitive   )]
        c r P.Universal       = [(int e r,Universal    )]
-       c r P.Difference      = [(int e r,Difference   )]
        c r (P.InverseOf s)   = [(int e r,InverseOf   (int e s))]
        c r (P.SubsetOf ss)   = [(int e r,SubsetOf [ int e s | s <- ss])]
        c r (P.Equals ss)     = [(int e r,SubsetOf [ int e s | s <- ss])] ++ [(int e s,SubsetOf [int e r]) | s <- ss]
        c _ (P.TClosureOf _)  = error "TClosureOf not handled"
        c _ (P.TRClosureOf _) = error "TRClosureOf not handled"
        c _ P.Functional      = error "Functional not handled"
+       c _ P.Difference      = error "Difference not handled"
 
 simpleParse :: Params -> String -> (Theory,RelInfo,Encoding,[Task])
 simpleParse p s = parse p $ "signature { automatic } theory { " ++ removeBeginEnd s ++ "}"
@@ -263,24 +258,23 @@ conv_ relI e (F.At   n f)        = at        e n (conv_ relI e f)
 conv_ relI e (F.Down v f)        = downArrow e v (conv_ relI e f)
 conv_ relI e (F.A f)             = univMod     (conv_ relI e f)
 conv_ relI e (F.E f)             = existMod    (conv_ relI e f)
-conv_ relI e (F.D f)             = dExistMod   (conv_ relI e f)
-conv_ relI e (F.B f)             = dUnivMod    (conv_ relI e f)
+conv_ _    _ (F.D _)             = error "D not supported"
+conv_ _    _ (F.B _)             = error "B not supported"
 
 type Connector = Formula -> Formula
 
 specialiseDia :: S.RelSymbol -> RelInfo -> Encoding -> Connector
-specialiseDia r relI e = specialise r relI (diamond e, dExistMod, existMod) e
+specialiseDia r relI e = specialise r relI (diamond e, existMod) e
 
 specialiseBox :: S.RelSymbol -> RelInfo -> Encoding -> Connector
-specialiseBox r relI e = specialise r relI (box e, dUnivMod, univMod) e
+specialiseBox r relI e = specialise r relI (box e, univMod) e
 
-specialise :: S.RelSymbol -> RelInfo -> (S.RelSymbol -> Connector, Connector, Connector) -> Encoding -> Connector
-specialise (S.InvRelSymbol r) _ (relational, _ , _) _ -- happens only with simple input
+specialise :: S.RelSymbol -> RelInfo -> (S.RelSymbol -> Connector, Connector) -> Encoding -> Connector
+specialise (S.InvRelSymbol r) _ (relational, _) _ -- happens only with simple input
  = relational $ S.InvRelSymbol r
 
 -- below we don't attempt checking if r is an inverse of an inverse
-specialise (S.RelSymbol r) relI (relational, difference, global) e
- | Difference `elem` props = difference
+specialise (S.RelSymbol r) relI (relational, global) e
  | Universal `elem` props  = global
  | otherwise = case [ r2 | InverseOf r2 <- props] of
                  []     -> relational $ S.RelSymbol r
@@ -318,15 +312,13 @@ prop e (S.PropSymbol p) = Lit ( propMap e Map.! p )
 
 {- Modalities -}
 box, diamond :: Encoding -> S.RelSymbol -> Formula -> Formula
-univMod, existMod, dUnivMod, dExistMod :: Formula -> Formula
+univMod, existMod :: Formula -> Formula
 box        e (S.RelSymbol r)    = Box   $ int e r
 box        e (S.InvRelSymbol r) = Box   $ invRel $ int e r
 diamond    e (S.RelSymbol r)    = Dia   $ int e r
 diamond    e (S.InvRelSymbol r) = Dia   $ invRel $ int e r
 univMod    = A
 existMod   = E
-dUnivMod   = B
-dExistMod  = D
 
 int :: Encoding -> String -> Int
 int e s = relMap e Map.! s
@@ -404,8 +396,6 @@ neg (Box r f)        = Dia  r (neg f)
 neg (Dia r f)        = Box  r (neg f)
 neg (A f)            = E (neg f)
 neg (E f)            = A (neg f)
-neg (D f)            = B (neg f)
-neg (B f)            = D (neg f)
 neg (Lit n)          = Lit $ negLit n
 
 
@@ -471,8 +461,6 @@ composeFold zero combine g e = case e of
     Down _ f   -> g f
     A f        -> g f
     E f        -> g f
-    D f        -> g f
-    B f        -> g f
     _          -> zero
 
 composeMap :: (Formula -> Formula)
@@ -486,8 +474,6 @@ composeMap baseCase g e = case e of
     At   i f   -> At  i (g f)
     A f        -> A (g f)
     E f        -> E (g f)
-    D f        -> D (g f)
-    B f        -> B (g f)
     Down x f   -> Down x (g f)
     f          -> baseCase f
 
