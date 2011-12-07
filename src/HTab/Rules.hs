@@ -27,7 +27,8 @@ import HTab.Branch( Branch(..), BranchInfo(..), TodoList(..), BlockingMode(..),
                     reduceDisjunctionProposeLazy, getUrfather,
                     ReducedDisjunct(..)
                     )
-import HTab.CommandLine(Params, UnitProp(..), lazyBranching, semBranch, unitProp, strategy)
+import HTab.CommandLine(Params, UnitProp(..),
+                        lazyBranching, semBranch, unitProp, strategy)
 import HTab.RuleId(RuleId(..))
 import qualified HTab.DisjSet as DS
 
@@ -36,7 +37,7 @@ import qualified HTab.DisjSet as DS
 data Rule =  DiaRule    PrFormula                 -- creates a prefix
            | DisjRule   PrFormula [PrFormula]
            | SemBrRule  PrFormula [PrFormula]
-           | LazyBranchRule PrFormula Prefix Literal [PrFormula]
+           | LazyBrRule PrFormula Prefix Literal [PrFormula]
            | AtRule     PrFormula
            | DownRule   PrFormula
            | ExistRule  PrFormula                 -- creates a prefix
@@ -65,8 +66,7 @@ instance Show Rule where
 
    show (ClashDisjRule bprs f)     = "Clash:              " ++ show bprs ++ " " ++ show f
    show (RoleIncRule p1 rs p2 _)   = "Role inclusion      " ++ show (p1,rs,p2)
-   show (LazyBranchRule todelete _ _ _)
-                                   = "Lazy Branch "         ++ showLess todelete
+   show (LazyBrRule todelete _ _ _)= "Lazy Branch "         ++ showLess todelete
 
 --
 ruleToId :: Rule -> RuleId
@@ -84,7 +84,7 @@ ruleToId r = case r of
               (DiscardDisjTrivialRule _) -> R_DiscardDisjTrivial
               (ClashDisjRule _ _)      -> R_ClashDisj
               (RoleIncRule _ _ _ _)    -> R_RoleInc
-              (LazyBranchRule _ _ _ _) -> R_LazyBranch
+              (LazyBrRule _ _ _ _)     -> R_LazyBranch
 
 -- the rules application strategy is defined here:
 -- the first rule is the one that will be applied at the next tableau step
@@ -123,13 +123,15 @@ ruleByChar br p d char =
                             else return (DownRule f, todos{downTodo = new})
   applicableExistRule = do (f,new) <- Set.minView $ existTodo todos
                            return (ExistRule f, todos{existTodo = new})
-  applicableRoleIncRule = do ((ds, p1, p2, rs),new) <- Set.minView $ roleIncTodo todos
-                             return (RoleIncRule p1 rs p2 (dsInsert d ds), todos{roleIncTodo = new})
+  applicableRoleIncRule
+   = do ((ds, p1, p2, rs),new) <- Set.minView $ roleIncTodo todos
+        return (RoleIncRule p1 rs p2 (dsInsert d ds), todos{roleIncTodo = new})
   applicableMergeRule  = do ((ds,pr,po),new) <- Set.minView $ mergeTodo todos
                             return (MergeRule pr po ds, todos{mergeTodo = new})
   applicableDisjRule
    = case unitProp p of
-      Eager -> {- scan all disjuncts until one can be discarded, reduced to one disjunct or clashes -}
+      Eager -> {- scan all disjuncts until one can be discarded,
+                  reduced to one disjunct or clashes -}
           case mapMaybe (makeInteresting p br d) $ Set.toList $ disjTodo todos of
             ((r,pf):_) -> return (r, todos{disjTodo = Set.delete pf $ disjTodo todos})
             [] -> regularApplicableDisjRule
@@ -146,17 +148,20 @@ makeInteresting p br d df@(PrFormula pr ds (Dis fs))
           Triviality               -> Just (DiscardDisjTrivialRule df,df)
           Contradiction ds_clash   -> Just (ClashDisjRule (dsUnion ds ds_clash) df,df)
           Reduced new_ds disjuncts mProposed
-            | Set.size disjuncts == 1 -> Just (DisjRule df ( prefix ur newDeps disjuncts ), df)
-            | lazyBranching p && blockMode br /= ChainTwinBlocking
-                         -> case mProposed of
-                             Nothing  -> Nothing
-                             Just lit -> Just (LazyBranchRule df ur lit [PrFormula ur newDeps (Dis disjuncts)], df)
-            | otherwise  -> Nothing
-              where newDeps = dsInsert d $ dsUnion ds new_ds
-                    ur = getUrfather br (DS.Prefix pr)
-            -- TODO should not insert d if the formula was actually not changed
-               -- --> reduceDisjunctionProposeLazy should return a boolean
-               -- -->  or have a constructor "Unchanged" ?
+           | Set.size disjuncts == 1
+              -> Just (DisjRule df ( prefix ur newDeps disjuncts ), df)
+           | lazyBranching p && blockMode br /= ChainTwinBlocking
+              -> case mProposed of
+                  Nothing  -> Nothing
+                  Just lit
+                   -> Just (LazyBrRule df ur lit [PrFormula ur newDeps (Dis disjuncts)],
+                            df)
+           | otherwise  -> Nothing
+             where newDeps = dsInsert d $ dsUnion ds new_ds
+                   ur = getUrfather br (DS.Prefix pr)
+           -- TODO should not insert d if the formula was actually not changed
+              -- --> reduceDisjunctionProposeLazy should return a boolean
+              -- -->  or have a constructor "Unchanged" ?
 
 makeInteresting _ _ _ _ = error "makeInteresting on a non disjunction"
 
@@ -182,7 +187,7 @@ applyRule p rule br
             [ addFormulas p toadds br |  toadds <- go prFormulas [] ]
              where go (hd:tl) negs = (hd:negs):(go tl (negPr hd:negs))
                    go [] _ = []
-    LazyBranchRule _ pr lit prFormulas ->
+    LazyBrRule _ pr lit prFormulas ->
             [ doLazyBranching pr lit prFormulas br ]
     AtRule  (PrFormula _ ds (At n f)) ->
             [ addFormulas p [toadd] br{ nomPrefClasses = equiv }]
