@@ -5,7 +5,7 @@ module HTab.Relations
 
 where
 
-import qualified Data.IntMap as IntMap
+import qualified Data.IntMap as I
 import Data.IntMap ( IntMap )
 
 import qualified Data.List as List
@@ -26,7 +26,7 @@ emptyRels :: Relations
 emptyRels = Relations { inRel = D.empty, outRel = D.empty }
 
 null :: Relations -> Bool
-null = IntMap.null . outRel
+null = I.null . outRel
 
 allRels :: Relations -> [(Prefix,Rel,Prefix)]
 allRels rels = [ (p1,r,p2) | ((p1,r),ds_out_s) <-  D.flatten $ outRel rels,
@@ -34,35 +34,36 @@ allRels rels = [ (p1,r,p2) | ((p1,r),ds_out_s) <-  D.flatten $ outRel rels,
 
 
 successors :: Relations -> Prefix -> IntMap {- Rel -} [(Prefix,DependencySet)]
-successors rels p = IntMap.findWithDefault IntMap.empty p (outRel rels)
+successors rels p = I.findWithDefault I.empty p (outRel rels)
 
 predecessors :: Relations -> Prefix -> IntMap {- Rel -} [(Prefix,DependencySet)]
-predecessors rels p = IntMap.findWithDefault IntMap.empty p (inRel rels)
+predecessors rels p = I.findWithDefault I.empty p (inRel rels)
 
 linksFromTo :: Relations -> Prefix -> Prefix -> [Rel]
 linksFromTo rels p1 p2
-  = map fst $ filter (\(_,p_d_s) -> p2 `elem` map fst p_d_s ) outs  where outs = IntMap.toList $ successors rels p1
+  = map fst $ filter (\(_,p_d_s) -> p2 `elem` map fst p_d_s ) outs
+     where outs = I.toList $ successors rels p1
 
 -- assumes you never add twice the same relation
 insertRelation :: Relations -> Prefix -> Rel -> Prefix -> DependencySet -> Relations
 insertRelation rels p1 r p2 ds =
  let
-  outRelMap = outRel rels
-  inRelMap = inRel rels
+  outr = outRel rels
+  inr  = inRel rels
   outRel_
-   = case IntMap.lookup p1 outRelMap of
-      Nothing       -> IntMap.insert p1 (IntMap.singleton r [(p2,ds)]) outRelMap
-      Just innerMap
-        -> case IntMap.lookup r innerMap of
-             Nothing             -> IntMap.insert p1 (IntMap.insert r [(p2,ds)] innerMap)                outRelMap
-             Just innerInnerList -> IntMap.insert p1 (IntMap.insert r ((p2,ds):innerInnerList) innerMap) outRelMap
+   = case I.lookup p1 outr of
+      Nothing       -> I.insert p1 (I.singleton r [(p2,ds)]) outr
+      Just inner
+        -> case I.lookup r inner of
+             Nothing        -> I.insert p1 (I.insert r [(p2,ds)] inner)           outr
+             Just innerList -> I.insert p1 (I.insert r ((p2,ds):innerList) inner) outr
   inRel_
-   = case IntMap.lookup p2 inRelMap of
-      Nothing       -> IntMap.insert p2 (IntMap.singleton r [(p1,ds)]) inRelMap
-      Just innerMap
-        -> case IntMap.lookup r innerMap of
-            Nothing             -> IntMap.insert p2 (IntMap.insert r [(p1,ds)] innerMap)                inRelMap
-            Just innerInnerList -> IntMap.insert p2 (IntMap.insert r ((p1,ds):innerInnerList) innerMap) inRelMap
+   = case I.lookup p2 inr of
+      Nothing       -> I.insert p2 (I.singleton r [(p1,ds)]) inr
+      Just inner
+        -> case I.lookup r inner of
+            Nothing        -> I.insert p2 (I.insert r [(p1,ds)] inner)           inr
+            Just innerList -> I.insert p2 (I.insert r ((p1,ds):innerList) inner) inr
  in
    Relations {outRel = outRel_ , inRel = inRel_ }
 
@@ -75,15 +76,18 @@ mergePrefixes r pr ur ds
    in Relations { outRel = outRel_ , inRel = inRel_ }
 
 instance Show Relations where
- show r  = "\nAccesibility: " ++ prettyShowMap_ (outRel r) (\v -> "(" ++ prettyShowMap_rel_bps_x v ++ ")") "\n "
+ show r = "\nRelations: " ++
+            prettyShowMap_ (outRel r)
+                           (\v -> "(" ++ prettyShowMap_rel_bps_x v ++ ")") "\n "
 
 prettyShowMap_ :: (Show y) => IntMap y -> (y -> String) -> String -> String
 prettyShowMap_ dasMap valueShow separator
  = List.intercalate separator $ map (\(k,v) -> show k ++ " -> " ++ valueShow v)
-          $ IntMap.toList dasMap
+          $ I.toList dasMap
 
 prettyShowMap_rel_bps_x :: (Show a) => IntMap {- Rel -} [(a,DependencySet)] -> String
-prettyShowMap_rel_bps_x dasMap
- = List.intercalate ", " $ map (\(r,x_bp_s) -> (++) ("-" ++ show r ++ "-> ") $ List.intercalate ", "
-                                 $ map (\(x,bp) -> show x ++ " " ++ dsShow bp) x_bp_s )
-          $ IntMap.toList dasMap
+prettyShowMap_rel_bps_x m
+ = List.intercalate ", "
+      $ map (\(r,x_bp_s) -> (++) ("-" ++ show r ++ "-> ") $ List.intercalate ", "
+                  $ map (\(x,bp) -> show x ++ " " ++ dsShow bp) x_bp_s )
+      $ I.toList m
