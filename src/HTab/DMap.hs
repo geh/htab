@@ -1,5 +1,5 @@
 module HTab.DMap
-(DMap(..), empty, toMap, flatten,
+(DMap, empty, flatten,
  delete, insert, insertWith, (!),
  insert1, lookup, lookup1, lookupInter,
  moveInnerDataDMapPlusDeps )
@@ -7,7 +7,7 @@ module HTab.DMap
 where
 
 import Data.IntMap ( IntMap )
-import qualified Data.IntMap as IM
+import qualified Data.IntMap as I
 
 import HTab.Formula(DependencySet, dsUnion)
 
@@ -15,72 +15,68 @@ import Prelude hiding ( lookup )
 
 {- a DMap , or double map, is a nesting of two Maps -}
 
-newtype DMap c = DMap (IntMap (IntMap c))
-
-toMap :: DMap c -> IntMap (IntMap c)
-toMap (DMap m) = m
+type DMap c = IntMap (IntMap c)
 
 empty :: DMap c
-empty = DMap IM.empty
+empty = I.empty
 
 insert1 :: Int -> IntMap c -> DMap c -> DMap c
-insert1 k1 v (DMap m) = DMap $ IM.insert k1 v m
+insert1 k1 v m = I.insert k1 v m
 
 insert :: Int -> Int -> c -> DMap c -> DMap c
-insert k1 k2 v (DMap m)
- = case IM.lookup k1 m of
-    Nothing     -> DMap $ IM.insert k1 (IM.singleton k2 v) m
-    Just innerM -> DMap $ IM.insert k1 (IM.insert k2 v innerM) m
+insert k1 k2 v m
+ = case I.lookup k1 m of
+    Nothing     -> I.insert k1 (I.singleton k2 v) m
+    Just innerM -> I.insert k1 (I.insert k2 v innerM) m
 
 
 insertWith :: (c -> c -> c) -> Int -> Int -> c -> DMap c -> DMap c
-insertWith f k1 k2 v (DMap m)
- = case IM.lookup k1 m of
-    Nothing     -> DMap $ IM.insert k1 (IM.singleton k2 v) m
-    Just innerM -> DMap $ IM.insert k1 (IM.insertWith f k2 v innerM) m
+insertWith f k1 k2 v m
+ = case I.lookup k1 m of
+    Nothing     -> I.insert k1 (I.singleton k2 v) m
+    Just innerM -> I.insert k1 (I.insertWith f k2 v innerM) m
 
 flatten :: DMap c -> [((Int,Int),c)]
-flatten (DMap m)
- = let ambcs = IM.assocs m  in --  [(a,IntMap c)]
-    concatMap (\(a_,innerM_) ->  map  (\(b_,c_) -> ((a_,b_),c_))  (IM.assocs innerM_ )) ambcs
+flatten m
+ = let ambcs = I.assocs m  in --  [(a,IntMap c)]
+    concatMap (\(a_,innerM_) ->  map  (\(b_,c_) -> ((a_,b_),c_))  (I.assocs innerM_ )) ambcs
 
 infixl 9 !
 
 (!) :: DMap c -> Int -> Int -> c
-(!) (DMap m) k1 k2 = (IM.!) ( (IM.!) m k1 ) k2
+(!) m k1 k2 = (I.!) ( (I.!) m k1 ) k2
 
 
 lookup :: Int -> Int -> DMap c -> Maybe c
-lookup k1 k2 (DMap m) = do innerMap <- IM.lookup k1 m
-                           IM.lookup k2 innerMap
+lookup k1 k2 m = do innerMap <- I.lookup k1 m
+                    I.lookup k2 innerMap
 
 lookup1 :: Int -> DMap c -> Maybe (IntMap c)
-lookup1 k1 (DMap m) = IM.lookup k1 m
+lookup1 k1 m = I.lookup k1 m
 
 delete ::  Int -> DMap c -> DMap c
-delete k1 (DMap m) = DMap $ IM.delete k1 m
+delete k1 m = I.delete k1 m
 
 lookupInter :: Int -> DMap c -> [Int]
-lookupInter k1 (DMap m) = case IM.lookup k1 m of
-                           Nothing -> []
-                           Just innerMap -> IM.keys innerMap 
+lookupInter k1 m = case I.lookup k1 m of
+                    Nothing -> []
+                    Just innerMap -> I.keys innerMap
 
 -- provided two keys of the DMap and a merge function, merge the inner maps of
 -- both keys using the merge function when needed for inner values
 -- delete the first inner map
 -- and add the given dependencies
 moveInnerDataDMapPlusDeps :: DependencySet -> DMap [(c,DependencySet)] -> Int -> Int -> DMap [(c,DependencySet)]
-moveInnerDataDMapPlusDeps newDeps (DMap m) origKey destKey
- = DMap
-    $ case IM.lookup origKey m of
-        Nothing  -> m
-        Just origInnerMap
-            -> let origInnerMapPlusDeps = IM.map (addDeps newDeps) origInnerMap
-                   prunedM = IM.delete origKey m
-                   addDeps newBps = map (\(el,oldBps) -> (el,dsUnion newBps oldBps))
-               in case IM.lookup destKey m of
-                    Nothing -> IM.insert destKey origInnerMapPlusDeps prunedM
-                    Just destInnerMap
-                       -> let mergedInnerMap = IM.unionWith (++) origInnerMapPlusDeps destInnerMap
-                          in  IM.insert destKey mergedInnerMap prunedM
+moveInnerDataDMapPlusDeps newDeps m origKey destKey
+ = case I.lookup origKey m of
+     Nothing  -> m
+     Just origInnerMap
+        -> let origInnerMapPlusDeps = I.map (addDeps newDeps) origInnerMap
+               prunedM = I.delete origKey m
+               addDeps newBps = map (\(el,oldBps) -> (el,dsUnion newBps oldBps))
+           in case I.lookup destKey m of
+                Nothing -> I.insert destKey origInnerMapPlusDeps prunedM
+                Just destInnerMap
+                   -> let mergedInnerMap = I.unionWith (++) origInnerMapPlusDeps destInnerMap
+                      in  I.insert destKey mergedInnerMap prunedM
 

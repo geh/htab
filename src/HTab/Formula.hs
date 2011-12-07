@@ -9,7 +9,7 @@ PrFormula(..),showLess,
 LanguageInfo(..), neg,
 conj, disj, taut,
 prop, nom, formulaLanguageInfo, prefix, negPr,
-checkIfVariableNegatedOnce, replaceVar,
+checkIfVarNegated, replaceVar,
 firstPrefixedFormula,
 parse, simpleParse, Theory, RelInfo, Task,
 showRelInfo, showRel, showLit, negLit, isForward, isBackwards,
@@ -500,15 +500,15 @@ replaceVar v n (At v2 f)     = if v == v2 then At n (replaceVar v n f)
                                           else At v2 (replaceVar v n f)
 replaceVar v n f = composeMap id (replaceVar v n) f
 
-checkIfVariableNegatedOnce :: Formula -> Bool
-checkIfVariableNegatedOnce (Down v_ f_)
+checkIfVarNegated :: Formula -> Bool
+checkIfVarNegated (Down v_ f_)
  = go v_ f_
    where go :: Int -> Formula -> Bool
          go v (Down v2 f)           = if v == v2 then False {- variable capture -} else go v f
          go v (Lit v2)              = (atom v == atom v2) && isNegative v2
          go v f                     = composeFold False (||) (go v) f
 
-checkIfVariableNegatedOnce _ = error "checkIfVariableNegatedOnce : only down-arrow formulas"
+checkIfVarNegated _ = error "checkIfVarNegated : only down-arrow formulas"
 
 
 -- backjumping
