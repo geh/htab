@@ -838,7 +838,7 @@ createNewNomTestRelevance f br
 -- preparation of the branch at the beginning of the calculus:
 --  - add the input formula at prefix 0
 --  - add a nominal formula at a fresh prefix for each nominal of the input language
---    (even if the nominal was filtered out during lexical normalisation) -- <= TODO currently not the case. Get the nominals from the encoding 
+--    (even if the nominal was filtered out during lexical normalisation)
 --  - add reflexive links for prefixes 0 and nominal witnesses
 addFirstFormulas :: Params -> Branch -> LanguageInfo -> Formula -> BranchInfo
 addFirstFormulas p br_ fLang f
