@@ -92,58 +92,58 @@ runOneTask (query,mOutFile,fs) relInfo encoding theory p =
      --
      result <-
       case query of
-        Retrieve
-          ->
-            do let fLang = formulaLanguageInfo theory encoding
-               let initialBranch = emptyBranch fLang relInfo encoding p
-               let (noms,encfs) = encodeRetrieveTask relInfo encoding fLang theory fs
-               --
-               myPutStrLn $ "Instances making true: " ++ show fs
-               --
-               results <- mapM (tableauInit p . addFirstFormulas p initialBranch fLang) encfs
-               let goodnoms = [ toNomSymbol encoding n | (n,(CLOSED _ ,_))  <- zip noms results]
-               myPutStrLn $ show goodnoms
-               let doWrite f = do writeFile f (show goodnoms ++ "\n")
-                                  myPutStrLn ("Nominals saved as " ++ f)
-               maybe (return ()) doWrite mOutFile
-               return SUCCESS
+       Retrieve
+        ->
+         do let fLang = formulaLanguageInfo theory encoding
+            let initialBranch = emptyBranch fLang relInfo encoding p
+            let (noms,encfs) = encodeRetrieveTask relInfo encoding fLang theory fs
+            --
+            myPutStrLn $ "Instances making true: " ++ show fs
+            --
+            results <- mapM (tableauInit p . addFirstFormulas p initialBranch fLang) encfs
+            let goods = [ toNomSymbol encoding n | (n,(CLOSED _ ,_)) <- zip noms results]
+            myPutStrLn $ show goods
+            let doWrite f = do writeFile f (show goods ++ "\n")
+                               myPutStrLn ("Nominals saved as " ++ f)
+            maybe (return ()) doWrite mOutFile
+            return SUCCESS
 
-        valOrSat
-          ->
-            do let f = case valOrSat of
-                        Valid       -> encodeValidityTest relInfo encoding theory fs
-                        Satisfiable -> encodeSatTest      relInfo encoding theory fs
-                        _           -> error "never happens"
-               --
-               when (showFormula p)
-                  $ myPutStrLn
-                         $ unlines ["Input for SAT test:",
-                                    "{ " ++ show f ++ " }",
-                                    "End of input",
-                                    "Relations properties :" ++ showRelInfo relInfo ]
-               --
-               let fLang         = formulaLanguageInfo f encoding
-               let initialBranch = emptyBranch fLang relInfo encoding p
-               let branchInfo    = addFirstFormulas p initialBranch fLang f
-               --
-               result <- tableauInit p branchInfo
-               --
-               case result of
-                  (OPEN m, stats)   -> do myPutStrLn $
-                                            case query of
-                                                Valid       -> "The formula is not valid."
-                                                Satisfiable -> "The formula is satisfiable."
-                                                _           -> error "never happens"
-                                          saveGenModel mOutFile p m
-                                          whenNormal $ printOutMetricsFinal stats
-                                          return SUCCESS
-                  (CLOSED _, stats) -> do myPutStrLn $
-                                            case query of
-                                                Valid       -> "The formula is valid."
-                                                Satisfiable -> "The formula is unsatisfiable."
-                                                _           -> error "never happens"
-                                          whenNormal $ printOutMetricsFinal stats
-                                          return FAILURE
+       valOrSat
+        ->
+         do let f = case valOrSat of
+                     Valid       -> encodeValidityTest relInfo encoding theory fs
+                     Satisfiable -> encodeSatTest      relInfo encoding theory fs
+                     _           -> error "never happens"
+            --
+            when (showFormula p)
+               $ myPutStrLn
+                      $ unlines ["Input for SAT test:",
+                                 "{ " ++ show f ++ " }",
+                                 "End of input",
+                                 "Relations properties :" ++ showRelInfo relInfo ]
+            --
+            let fLang         = formulaLanguageInfo f encoding
+            let initialBranch = emptyBranch fLang relInfo encoding p
+            let branchInfo    = addFirstFormulas p initialBranch fLang f
+            --
+            result <- tableauInit p branchInfo
+            --
+            case result of
+               (OPEN m, stats)   -> do myPutStrLn $
+                                         case query of
+                                          Valid       -> "The formula is not valid."
+                                          Satisfiable -> "The formula is satisfiable."
+                                          _           -> error "never happens"
+                                       saveGenModel mOutFile p m
+                                       whenNormal $ printOutMetricsFinal stats
+                                       return SUCCESS
+               (CLOSED _, stats) -> do myPutStrLn $
+                                         case query of
+                                          Valid       -> "The formula is valid."
+                                          Satisfiable -> "The formula is unsatisfiable."
+                                          _           -> error "never happens"
+                                       whenNormal $ printOutMetricsFinal stats
+                                       return FAILURE
      --
      return $ case (query, result) of
                (Satisfiable, SUCCESS ) -> SUCCESS
