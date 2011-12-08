@@ -72,10 +72,11 @@ defaultStats :: Statistics
 defaultStats = Stat{metrics=[closedBranches, ruleApplicationCount],
                     count=0, step=0}
 
---------------------------- Monadic Statistics functions follow ------------------------------
+---------- Monadic Statistics functions follow -------------
 
 
-initialStatisticsStateFor :: (MonadState Statistics m) => (m a -> Statistics -> b) -> m a -> b
+initialStatisticsStateFor :: (MonadState Statistics m) => (m a -> Statistics -> b)
+                                                             -> m a -> b
 initialStatisticsStateFor f = flip f defaultStats
 
 setPrintOutInterval :: Int -> StatisticsState ()
