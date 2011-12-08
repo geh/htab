@@ -5,7 +5,8 @@ where
 import System.Console.CmdArgs ( whenLoud )
 
 import Control.Monad.State(StateT,lift,modify)
-import HTab.Statistics(Statistics,updateStep,printOutMetrics,recordClosedBranch, recordFiredRule)
+import HTab.Statistics(Statistics,updateStep,printOutMetrics,
+                       recordClosedBranch,recordFiredRule)
 import HTab.Branch(BranchInfo(..))
 import HTab.CommandLine(backjumping,Params,configureStats)
 import HTab.Rules(applyRule,applicableRule,ruleToId)
