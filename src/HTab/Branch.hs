@@ -358,12 +358,12 @@ merge p pr fDs pointer br -- pointer is a nominal or a prefix
       | otherwise
          ->
           let
-           oldUr              = max ur1 ur2
-           newUr              = min ur1 ur2
-           literalSlots       = mapMaybe (\ur -> D.lookup1 ur (literals br)) [ur1,ur2]
-           currentDeps        = dsUnions $ fDs:(map (findDeps br) [ur1,ur2])
-           newPrToDepSet      = I.insert newUr currentDeps (prToDepSet br)
-           newUrfatherSlot    = lsAddDeps currentDeps $ lsUnions literalSlots
+           oldUr           = max ur1 ur2
+           newUr           = min ur1 ur2
+           literalSlots    = mapMaybe (\ur -> D.lookup1 ur (literals br)) [ur1,ur2]
+           currentDeps     = dsUnions $ fDs:(map (findDeps br) [ur1,ur2])
+           newPrToDepSet   = I.insert newUr currentDeps (prToDepSet br)
+           newUrfatherSlot = lsAddDeps currentDeps $ lsUnions literalSlots
           in
            case newUrfatherSlot of
             SlotUpdateFailure clashingDeps ->
