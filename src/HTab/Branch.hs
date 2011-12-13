@@ -54,7 +54,7 @@ data Branch =
                  -- the premodel
                       literals :: Literals,
                         accStr :: Relations,
-                 -- immediate rules constraints
+                 -- local and global constraints
                         boxFwd :: BoxConstraints,
                         boxBwd :: BoxConstraints,
                       univCons :: [(DependencySet,Formula)],
