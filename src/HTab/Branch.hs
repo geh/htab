@@ -5,8 +5,7 @@ createNewNode, createNewNomTestRelevance,
 addFormulas, addAccFormula,
 addToBlockedDias,
 addDiaRuleCheck, addDownRuleCheck,
-addParentPrefix, addFirstFormulas,
-emptyBranch,
+addParentPrefix, initialBranch,
 reduceDisjunctionProposeLazy, doLazyBranching,
 merge,
 getUrfather, getUrfatherAndDeps,
@@ -80,7 +79,7 @@ data Branch =
                  -- lazy branching
                    brWitnesses :: BranchingWitnesses,
                  -- caching / memoisation data
-             downVarRelevantCh :: Map Formula Bool,
+                  downVarRelCh :: Map Formula Bool,
                  -- information about language of input formula and blocking mode
                  inputLanguage :: LanguageInfo,
                      blockMode :: BlockingMode,
@@ -91,40 +90,6 @@ data Branch =
                       encoding :: Encoding}
 
 --
-
-emptyBranch :: LanguageInfo -> RelInfo -> Encoding -> Params -> Branch
-emptyBranch fLang relInfo_ encoding_ p =
-                Branch
-                { literals          = D.empty,
-                  accStr            = emptyRels,
-                  todoList          = emptyTodoList,
-                  boxBwd            = D.empty,
-                  boxFwd            = D.empty,
-                  diaRlCh           = I.empty,
-                  downRlCh          = I.empty,
-                  atRlCh            = Set.empty,
-                  existRlCh         = Set.empty,
-                  downVarRelevantCh = Map.empty,
-                  patterns          = I.empty,
-                  univCons          = [],
-                  lastPref          = 0,
-                  nextNom           = maxNom encoding_ + 4,
-                  prefToForms       = I.empty,
-                  prToDepSet        = I.empty,
-                  brWitnesses       = D.empty,
-                  nomPrefClasses    = DS.mkDSet,
-                  inputLanguage     = fLang,
-                  blockMode         = blockingMode,
-                  blockedDias       = I.empty,
-                  prefParent        = I.empty,
-                  relevantNominals  = set $ relevantNoms fLang,
-                  relInfo           = relInfo_,
-                  encoding          = encoding_
-                }
- where blockingMode
-        | languagePast fLang || relInfo_ `oneIs` Symmetric = ChainTwinBlocking
-        | patternBlocking p = PatternBlocking
-        | otherwise         = AnywhereBlocking
 
 instance Show Branch where
  show br = concat
@@ -141,7 +106,7 @@ instance Show Branch where
      "\nDown rule chart: ", show (downRlCh br),
      "\n@ rule chart: ", show (list $ atRlCh br),
      "\nExist rule chart: ", show (list $ existRlCh br),
-     "\nDown var relevant chart: ", show (downVarRelevantCh br),
+     "\nDown var relevant chart: ", show (downVarRelCh br),
      "\nUniv constraints: ", show (univCons br),
      "\nPrefix to dependency set: ", showIMap  dsShow "\n " (prToDepSet br),
      "\nPrefix to formulas: ", showIMap  (show . Set.toList) "\n " (prefToForms br),
@@ -862,9 +827,9 @@ createNewNomTestRelevance f br
        relevantNominals = if relevant
                            then Set.insert newNom (relevantNominals br)
                            else relevantNominals br,
-       downVarRelevantCh = newDVRC
+       downVarRelCh = newDVRC
       }
-   where (relevant, newDVRC) = doMemoize checkIfVarNegated f (downVarRelevantCh br)
+   where (relevant, newDVRC) = memoize checkIfVarNegated f (downVarRelCh br)
          newNom = nextNom br
 
 -- preparation of the branch at the beginning of the calculus:
@@ -872,25 +837,56 @@ createNewNomTestRelevance f br
 --  - add a nominal formula at a fresh prefix for each nominal of the input language
 --    (even if the nominal was filtered out during lexical normalisation)
 --  - add reflexive links for prefixes 0 and nominal witnesses
-addFirstFormulas :: Params -> Branch -> LanguageInfo -> Formula -> BranchInfo
-addFirstFormulas p br_ fLang f
- = addFormulas p [pf] br3
-    where ns = languageNoms fLang
-          nbNs = length ns
-          nomWitnesses = [1..nbNs]
-          br =  foldr addReflexiveLinks (  br_{lastPref = nbNs} ) (0:nomWitnesses)
+initialBranch :: Params -> LanguageInfo -> RelInfo -> Encoding -> Formula
+                  -> BranchInfo
+initialBranch p fLang relInfo_ encoding_ f
+ = addFormulas p [pf] br2
+    where
           pf = firstPrefixedFormula f
-          newClasses = foldr (\(pr,n) -> DS.union (DS.Prefix pr) (DS.Nominal n))
-                             (nomPrefClasses br)
-                             (zip [1..] ns)
-          newLiterals = foldr (\(pr,n) -> D.insert pr n dsEmpty)
-                              D.empty
+          ns = languageNoms fLang
+          nbNs = length ns
+          initPrefixes = 0:[1..nbNs]
+          br = foldr addReflexiveLinks emptyBr initPrefixes
+          initClasses = foldr (\(pr,n) -> DS.union (DS.Prefix pr) (DS.Nominal n))
+                              DS.mkDSet
                               (zip [1..] ns)
-          br2 = br{nomPrefClasses = newClasses,
-                           literals = newLiterals}
-          br3 = foldr (\(pr,n) -> bookKeepFormula p (PrFormula pr dsEmpty (Lit n)))
-                      br2
+          initLiterals = foldr (\(pr,n) -> D.insert pr n dsEmpty)
+                               D.empty
+                               (zip [1..] ns)
+          br2 = foldr (\(pr,n) -> bookKeepFormula p (PrFormula pr dsEmpty (Lit n)))
+                      br
                       (zip [1..] ns)
+          emptyBr =
+           Branch{ literals          = initLiterals,
+                   accStr            = emptyRels,
+                   todoList          = emptyTodoList,
+                   boxBwd            = D.empty,
+                   boxFwd            = D.empty,
+                   diaRlCh           = I.empty,
+                   downRlCh          = I.empty,
+                   atRlCh            = Set.empty,
+                   existRlCh         = Set.empty,
+                   downVarRelCh      = Map.empty,
+                   patterns          = I.empty,
+                   univCons          = [],
+                   lastPref          = nbNs,
+                   nextNom           = maxNom encoding_ + 4,
+                   prefToForms       = I.empty,
+                   prToDepSet        = I.empty,
+                   brWitnesses       = D.empty,
+                   nomPrefClasses    = initClasses,
+                   inputLanguage     = fLang,
+                   blockMode         = blockingMode,
+                   blockedDias       = I.empty,
+                   prefParent        = I.empty,
+                   relevantNominals  = set $ relevantNoms fLang,
+                   relInfo           = relInfo_,
+                   encoding          = encoding_
+                 }
+          blockingMode
+             | languagePast fLang || relInfo_ `oneIs` Symmetric = ChainTwinBlocking
+             | patternBlocking p = PatternBlocking
+             | otherwise         = AnywhereBlocking
 
 {- functions for literals associated to prefixes -}
 
@@ -1069,8 +1065,8 @@ moveInMap m origKey destKey mergeF
                    Nothing -> m
                    Just origValue -> I.insertWith mergeF destKey origValue prunedM
 
-doMemoize :: Ord a => (a -> b) -> a -> Map.Map a b -> (b, Map.Map a b)
-doMemoize f e m = case Map.lookup e m of
+memoize :: Ord a => (a -> b) -> a -> Map.Map a b -> (b, Map.Map a b)
+memoize f e m = case Map.lookup e m of
                    Nothing     -> let result = f e in (result, Map.insert e result m)
                    Just result -> (result, m)
 

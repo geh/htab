@@ -18,7 +18,7 @@ import Prelude hiding ( readFile )
 import HyLo.InputFile.Parser ( QueryType(..) )
 
 import HTab.CommandLine( filename, timeout, Params, genModel, dotModel, showFormula )
-import HTab.Branch( BranchInfo(..), emptyBranch, addFirstFormulas)
+import HTab.Branch( BranchInfo(..), initialBranch)
 import HTab.Statistics( Statistics, initialStatisticsStateFor, printOutMetricsFinal )
 import HTab.Tableau( OpenFlag(..), tableauStart )
 import HTab.Formula( formulaLanguageInfo, Theory, RelInfo, Encoding, Task,
@@ -59,7 +59,8 @@ runTasks :: (Theory,RelInfo,Encoding,[Task]) -> Params -> IO TaskRunFlag
 runTasks allTasks@(theory,relInfo,encoding,tasks) p =
  do
     myPutStrLn "== Checking theory satisfiability =="
-    res <- runOneTask (Satisfiable, genModel p,[]) relInfo encoding theory p
+    res <- time "Task time:"
+            $ runTask (Satisfiable, genModel p,[]) relInfo encoding theory p
     case res of
      SUCCESS | null tasks -> return SUCCESS
              | otherwise  -> do myPutStrLn "\n==         Starting tasks         =="
@@ -73,7 +74,7 @@ runTasks allTasks@(theory,relInfo,encoding,tasks) p =
 runTasks2 :: (Theory,RelInfo,Encoding,[Task]) -> Params -> IO TaskRunFlag
 runTasks2 (_,_,_,[]) _                  = error "runTasks2 empty list error"
 runTasks2 (theory,relInfo,encoding,(hd:tl)) p =
- do res <- runOneTask hd relInfo encoding theory p
+ do res <- time "Task time:" $ runTask hd relInfo encoding theory p
     case res of
       SUCCESS | null tl   -> return SUCCESS
               | otherwise -> runTasks2 (theory,relInfo,encoding,tl) p
@@ -82,75 +83,69 @@ runTasks2 (theory,relInfo,encoding,(hd:tl)) p =
 
 --
 
-runOneTask :: Task -> RelInfo -> Encoding -> Formula -> Params -> IO TaskRunFlag
-runOneTask (query,mOutFile,fs) relInfo encoding theory p =
- time "Task time:"
- $ do
-     myPutStrLn $ "\n* " ++ case query of {Valid       -> "Validity task";
-                                           Satisfiable -> "Satisfiability task";
-                                           Retrieve    -> "Instance retrieval task"}
-     --
-     result <-
-      case query of
-       Retrieve
-        ->
-         do let fLang = formulaLanguageInfo theory encoding
-            let initialBranch = emptyBranch fLang relInfo encoding p
-            let (noms,encfs) = encodeRetrieveTask relInfo encoding fLang theory fs
-            --
-            myPutStrLn $ "Instances making true: " ++ show fs
-            --
-            results <- mapM (tableauInit p . addFirstFormulas p initialBranch fLang) encfs
-            let goods = [ toNomSymbol encoding n | (n,(CLOSED _ ,_)) <- zip noms results]
-            myPutStrLn $ show goods
-            let doWrite f = do writeFile f (show goods ++ "\n")
-                               myPutStrLn ("Nominals saved as " ++ f)
-            maybe (return ()) doWrite mOutFile
-            return SUCCESS
+runTask :: Task -> RelInfo -> Encoding -> Formula -> Params -> IO TaskRunFlag
+runTask (Retrieve,mOutFile,fs) relInfo encoding theory p =
+ do myPutStrLn "\n* Instance retrieval task"
+    let fLang = formulaLanguageInfo theory encoding
+    let (noms,encfs) = encodeRetrieveTask relInfo encoding fLang theory fs
+    --
+    myPutStrLn $ "Instances making true: " ++ show fs
+    --
+    results <- mapM (tableauInit p . initialBranch p fLang relInfo encoding) encfs
+    let goods = [ toNomSymbol encoding n | (n,(CLOSED _ ,_)) <- zip noms results]
+    myPutStrLn $ show goods
+    let doWrite f = do writeFile f (show goods ++ "\n")
+                       myPutStrLn ("Nominals saved as " ++ f)
+    maybe (return ()) doWrite mOutFile
+    return SUCCESS
 
-       valOrSat
-        ->
-         do let f = case valOrSat of
-                     Valid       -> encodeValidityTest relInfo encoding theory fs
-                     Satisfiable -> encodeSatTest      relInfo encoding theory fs
-                     _           -> error "never happens"
-            --
-            when (showFormula p)
-               $ myPutStrLn
-                      $ unlines ["Input for SAT test:",
-                                 "{ " ++ show f ++ " }",
-                                 "End of input",
-                                 "Relations properties :" ++ showRelInfo relInfo ]
-            --
-            let fLang         = formulaLanguageInfo f encoding
-            let initialBranch = emptyBranch fLang relInfo encoding p
-            let branchInfo    = addFirstFormulas p initialBranch fLang f
-            --
-            result <- tableauInit p branchInfo
-            --
-            case result of
-               (OPEN m, stats)   -> do myPutStrLn $
-                                         case query of
-                                          Valid       -> "The formula is not valid."
-                                          Satisfiable -> "The formula is satisfiable."
-                                          _           -> error "never happens"
-                                       saveGenModel mOutFile p m
-                                       whenNormal $ printOutMetricsFinal stats
-                                       return SUCCESS
-               (CLOSED _, stats) -> do myPutStrLn $
-                                         case query of
-                                          Valid       -> "The formula is valid."
-                                          Satisfiable -> "The formula is unsatisfiable."
-                                          _           -> error "never happens"
-                                       whenNormal $ printOutMetricsFinal stats
-                                       return FAILURE
-     --
-     return $ case (query, result) of
-               (Satisfiable, SUCCESS ) -> SUCCESS
-               (Satisfiable, FAILURE ) -> FAILURE
-               (Valid      , SUCCESS ) -> FAILURE
-               (Valid      , FAILURE ) -> SUCCESS
-               (Retrieve   , _       ) -> SUCCESS
+runTask (Satisfiable,mOutFile,fs) relInfo encoding theory p =
+ do myPutStrLn "\n* Satisfiability task"
+    let f = encodeSatTest relInfo encoding theory fs
+    --
+    when (showFormula p)
+       $ myPutStrLn
+              $ unlines ["Input for SAT test:",
+                         "{ " ++ show f ++ " }",
+                         "End of input",
+                         "Relations properties :" ++ showRelInfo relInfo ]
+    --
+    let fLang         = formulaLanguageInfo f encoding
+    --
+    (result,stats) <- tableauInit p $ initialBranch p fLang relInfo encoding f
+    --
+    whenNormal $ printOutMetricsFinal stats
+    --
+    case result of
+       OPEN m   -> do myPutStrLn "The formula is satisfiable."
+                      saveGenModel mOutFile p m
+                      return SUCCESS
+       CLOSED _ -> do myPutStrLn "The formula is unsatisfiable."
+                      return FAILURE
+
+runTask (Valid,mOutFile,fs) relInfo encoding theory p =
+ do myPutStrLn "\n* Validity task"
+    let f = encodeValidityTest relInfo encoding theory fs
+    --
+    when (showFormula p)
+       $ myPutStrLn
+              $ unlines ["Input for SAT test:",
+                         "{ " ++ show f ++ " }",
+                         "End of input",
+                         "Relations properties :" ++ showRelInfo relInfo ]
+    --
+    let fLang         = formulaLanguageInfo f encoding
+    --
+    (result,stats) <- tableauInit p $ initialBranch p fLang relInfo encoding f
+    --
+    whenNormal $ printOutMetricsFinal stats
+    --
+    case result of
+       OPEN m   -> do myPutStrLn "The formula is not valid."
+                      saveGenModel mOutFile p m
+                      return FAILURE
+       CLOSED _ -> do myPutStrLn "The formula is valid."
+                      return SUCCESS
 
 --
 
