@@ -91,7 +91,6 @@ recordClosedBranch = modify (updateMetrics recordClosedBranchM)
 
 printOutMetricsFinal :: Statistics -> IO ()
 printOutMetricsFinal stats =
-        do liftIO $ putStrLn "(final statistics)"
            liftIO $ printOutList (metrics stats)
 
 printOutMetrics :: StatisticsStateIO ()
