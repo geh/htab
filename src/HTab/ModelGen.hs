@@ -41,7 +41,7 @@ buildModel br =
   ps = Set.fromList
         [(S.NomSymbol $ show (pre + bias), pro) | (pre,pro) <- prefixAndProps br]
   pbBlocked =
-     if blockMode br `elem` [PatternBlocking,AnywhereBlocking]
+     if blockMode br == PatternBlocking
         then
          [ (pr, r, pr2) |
              pr <- prefixes br,

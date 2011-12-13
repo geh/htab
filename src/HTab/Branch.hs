@@ -45,7 +45,6 @@ type BoxConstraints     = DMap {- Prefix Rel -} [(Formula,DependencySet)]
 type BranchingWitnesses = DMap {- Prefix Literal -} [PrFormula]
 type EquivClasses = DS.DisjSet DS.Pointer
 data BlockingMode =   PatternBlocking
-                    | AnywhereBlocking
                     | ChainTwinBlocking
                     deriving (Eq,Show)
 
@@ -601,12 +600,6 @@ isNotBlocked br pf@(PrFormula pr _ _) =
  case blockMode br of
    PatternBlocking
      -> not $ patternBlocked br pf
-   AnywhereBlocking
-     -> not $ any isSubsumer labels
-         where ur = getUrfather br (DS.Prefix pr)
-               fs = formulasOf br ur
-               isSubsumer fs_ = fs `Set.isSubsetOf` fs_
-               labels = map snd $ takeWhile ((< ur).fst) $  ascPrefToForm br
    ChainTwinBlocking
      -> isNotChainTwinBlocked br pr
 
@@ -635,7 +628,6 @@ isInTheModel :: Branch -> Prefix -> Bool
 isInTheModel br pr | isNominalUrfather br pr
  = case blockMode br of
     PatternBlocking   ->  True
-    AnywhereBlocking  ->  True
     ChainTwinBlocking ->  case findModelReprChain br pr of
                                  Nothing   -> False
                                  Just repr -> repr == pr
@@ -645,7 +637,6 @@ relationIsInTheModel :: Branch -> (Prefix,Rel,Prefix) -> Bool
 relationIsInTheModel br (p1,_,p2)
  = case blockMode br of
      PatternBlocking    -> True
-     AnywhereBlocking   -> True
      ChainTwinBlocking  -> hasIdentityUrfather br p1 && hasIdentityUrfather br p2
    where hasIdentityUrfather br_ pr_
           = case findModelReprChain br_ pr_ of {Nothing -> False ; _ -> True }
@@ -654,7 +645,6 @@ getModelRepresentative :: Branch -> Prefix -> Prefix
 getModelRepresentative br pr
  = case blockMode br of
     PatternBlocking -> ur
-    AnywhereBlocking-> ur
     ChainTwinBlocking -> fromMaybe (error $ "interesting counter example " ++ show pr)
                                   $ findModelReprChain br pr
    where ur = getUrfather br (DS.Prefix pr)
@@ -674,11 +664,6 @@ findModelReprChain br pr
 
 areTwins :: Branch -> Prefix -> Prefix -> Bool
 areTwins br p1 p2 = formulasOf br p1 == formulasOf br p2
-
-
-ascPrefToForm :: Branch -> [(Prefix,Set Formula)]
-ascPrefToForm br = [ (pr,formulasOf br pr) | pr <- prefixes br ]
-
 
 -- <r>f is pattern blocked if its pattern is a subset
 -- of one pattern of the branch's pattern store
@@ -710,10 +695,6 @@ findByPattern br pattern
        head $ map fst
             $ filter (\(_,pat2) -> pattern `Set.isSubsetOf` pat2)
             $ I.toList $ patterns br
- | blockMode br == AnywhereBlocking =
-       head $ map fst
-            $ filter (\(_,pat2) -> pattern `Set.isSubsetOf` pat2)
-            $ I.toList $ prefToForms br
  | otherwise = error "findByPattern called with ChainTwinBlocking"
 
 -- maybe should get the urfather of given prefix,
@@ -885,8 +866,7 @@ initialBranch p fLang relInfo_ encoding_ f
                  }
           blockingMode
              | languagePast fLang || relInfo_ `oneIs` Symmetric = ChainTwinBlocking
-             | patternBlocking p = PatternBlocking
-             | otherwise         = AnywhereBlocking
+             | otherwise         = PatternBlocking
 
 {- functions for literals associated to prefixes -}
 
