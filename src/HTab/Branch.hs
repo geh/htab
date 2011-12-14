@@ -146,11 +146,6 @@ emptyTodoList =
                roleIncTodo = Set.empty
                }
 
-{-
-   "add formula" functions, that handle
-   prefixes and nominals
--}
-
 addFormulas :: Params -> [PrFormula] -> Branch -> BranchInfo
 addFormulas p fs br =
  foldr (\f bi ->
@@ -167,12 +162,14 @@ addFormula p br pf
    $ bookKeepFormula p pf br
 
 bookKeepFormula :: Params -> PrFormula -> Branch -> Branch
-bookKeepFormula p pf_ br
+bookKeepFormula p pf_@(PrFormula pr ds f) br
  =   addToPrefToForms         pf
    $ rescheduleLazyBranching  p pf
    $ rescheduleBlockedDias    ur br
   where
-    (ur,pf) = toUrfather br pf_
+   (ur,ds2,_) = getUrfatherAndDeps br (DS.Prefix pr)
+   pf = if ur == pr then pf_
+         else PrFormula ur (dsUnion ds ds2) f
 
 rescheduleLazyBranching :: Params -> PrFormula -> Branch -> Branch
 rescheduleLazyBranching p (PrFormula pr ds (Lit l)) br   -- pr already urfather
@@ -218,7 +215,7 @@ putAwayFormula p pf@(PrFormula pr ds f2) br =
 
 putAwayDisjunction :: Params -> PrFormula -> Branch -> BranchInfo
 putAwayDisjunction p pf@(PrFormula pr ds f@(Dis fs)) br
- | lazyBranching p && blockMode br /= ChainTwinBlocking
+ | lazyBranching p && blockMode br == PatternBlocking
   = case reduceDisjunctionProposeLazy br pr fs of
      Contradiction dsClash -> BranchClash br pr (dsUnion ds dsClash) f
      Triviality -> BranchOK br
@@ -423,14 +420,6 @@ namd [] theMap = map (\((p,f),ds) -> PrFormula p ds f) (Map.assocs theMap)
    Functions related to nom, prefixes and nominals ...
 -}
 
-toUrfather :: Branch -> PrFormula -> (Prefix,PrFormula)
-toUrfather br f@(PrFormula pr ds f2)
- = (urfather, newF)
-   where
-     (urfather,ds2,_) = getUrfatherAndDeps br (DS.Prefix pr)
-     newF  = if urfather == pr
-                 then f else PrFormula urfather (dsUnion ds ds2) f2
-
 addToPrefToForms :: PrFormula -> Branch -> Branch
 addToPrefToForms (PrFormula pr _ f) br
  | blockMode br == PatternBlocking = br
@@ -598,10 +587,8 @@ insertRelationBranch br p1 r p2 ds
 isNotBlocked :: Branch -> PrFormula -> Bool
 isNotBlocked br pf@(PrFormula pr _ _) =
  case blockMode br of
-   PatternBlocking
-     -> not $ patternBlocked br pf
-   ChainTwinBlocking
-     -> isNotChainTwinBlocked br pr
+   PatternBlocking    -> not $ patternBlocked br pf
+   ChainTwinBlocking  -> isNotChainTwinBlocked br pr
 
 isNotChainTwinBlocked :: Branch -> Prefix -> Bool
 isNotChainTwinBlocked br pr
@@ -697,12 +684,10 @@ findByPattern br pattern
             $ I.toList $ patterns br
  | otherwise = error "findByPattern called with ChainTwinBlocking"
 
--- maybe should get the urfather of given prefix,
--- so that the caller functions won't have to do it
 formulasOf :: Branch -> Prefix -> Set Formula
 formulasOf br p = get Set.empty p (prefToForms br)
 
--- is the formula useful to calculate inclusion urfathers ?
+-- is the formula useful to discriminate nodes?
 forInclusion :: Branch -> Formula -> Bool
 forInclusion br (Lit l)
       | isProp l    = True
@@ -1038,12 +1023,10 @@ combine as bs = [(a,b) | (idxA,a) <- zip [(0::Int)..] as,
 
 moveInMap :: IntMap b -> Int -> Int -> (b -> b -> b) -> IntMap b
 moveInMap m origKey destKey mergeF
- = result
-   where mOrigValue = I.lookup origKey m
-         prunedM    = I.delete origKey m
-         result = case mOrigValue of
-                   Nothing -> m
-                   Just origValue -> I.insertWith mergeF destKey origValue prunedM
+ = case I.lookup origKey m of
+    Nothing -> m
+    Just origValue
+     -> I.insertWith mergeF destKey origValue $ I.delete origKey m
 
 memoize :: Ord a => (a -> b) -> a -> Map.Map a b -> (b, Map.Map a b)
 memoize f e m = case Map.lookup e m of

@@ -81,9 +81,9 @@ instance Show Relations where
                            (\v -> "(" ++ prettyShowMap_rel_bps_x v ++ ")") "\n "
 
 prettyShowMap_ :: (Show y) => IntMap y -> (y -> String) -> String -> String
-prettyShowMap_ dasMap valueShow separator
+prettyShowMap_ m valueShow separator
  = List.intercalate separator $ map (\(k,v) -> show k ++ " -> " ++ valueShow v)
-          $ I.toList dasMap
+          $ I.toList m
 
 prettyShowMap_rel_bps_x :: (Show a) => IntMap {- Rel -} [(a,DependencySet)] -> String
 prettyShowMap_rel_bps_x m
