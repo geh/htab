@@ -18,9 +18,7 @@ isSymmetric, isTransitive
 ) where
 
 import Control.Applicative ( (<$>) )
-import Data.List(minimumBy)
 import Data.Maybe( mapMaybe, fromMaybe )
-import Data.Ord ( comparing )
 
 import Data.Map ( Map )
 import qualified Data.Map as Map
@@ -36,11 +34,13 @@ import HTab.CommandLine(Params(..))
 import HTab.Formula
 import HTab.Relations ( Relations(..), emptyRels, insertRelation, mergePrefixes,
                         successors, predecessors, linksFromTo )
+import HTab.Literals ( UpdateResult(..), Literals,
+                       SlotUpdateResult(..), LiteralSlot,
+                       updateMap, lsUnions, lsAddDeps, lsQuery)
 
 data BranchInfo = BranchOK Branch |
                   BranchClash Branch Prefix DependencySet Formula
 
-type Literals           = DMap {- Prefix Literal -} DependencySet
 type BoxConstraints     = DMap {- Prefix Rel -} [(Formula,DependencySet)]
 type BranchingWitnesses = DMap {- Prefix Literal -} [PrFormula]
 type EquivClasses = DS.DisjSet DS.Pointer
@@ -853,9 +853,6 @@ initialBranch p fLang relInfo_ encoding_ f
              | languagePast fLang || relInfo_ `oneIs` Symmetric = ChainTwinBlocking
              | otherwise         = PatternBlocking
 
-{- functions for literals associated to prefixes -}
-
-data UpdateResult = UpdateSuccess Literals | UpdateFailure DependencySet
 
 addToLiterals :: Prefix -> DependencySet -> Literal -> Branch -> BranchInfo
 addToLiterals pr_ ds1 l br
@@ -864,98 +861,6 @@ addToLiterals pr_ ds1 l br
      UpdateFailure dsf -> BranchClash br pr dsf (Lit l)
    where (pr,ds2,_) = getUrfatherAndDeps br (DS.Prefix pr_)
          ds = ds1 `dsUnion` ds2
-
--- Insert a literal into a literal slot
-
-updateMap :: Literals -> Prefix -> DependencySet -> Literal -> UpdateResult
-updateMap ls  _  ds l | isTop l    = UpdateSuccess ls
-                      | isBottom l = UpdateFailure ds
-updateMap ls pre ds l
-  = case I.lookup pre ls of
-     Nothing   -> UpdateSuccess $ I.insert pre (I.singleton l ds) ls
-     Just slot ->
-       case lsUpdate slot l ds of
-        SlotUpdateSuccess updatedSlot -> UpdateSuccess $ I.insert pre updatedSlot ls
-        SlotUpdateFailure failureDeps -> UpdateFailure failureDeps
-
-
-type LiteralSlot = IntMap {- Literal -} DependencySet
-data SlotUpdateResult =   SlotUpdateSuccess LiteralSlot
-                        | SlotUpdateFailure DependencySet
-
-
--- Union a list of literals slots
-lsUnions :: [LiteralSlot] -> SlotUpdateResult
-lsUnions []              = SlotUpdateSuccess I.empty
-lsUnions [ls]            = SlotUpdateSuccess ls
-lsUnions (ls1:ls2:tl)
- = case lsUnion ls1 ls2 of
-     failure@(SlotUpdateFailure _) -> failure
-     SlotUpdateSuccess newLs       -> lsUnions (newLs:tl)
-
--- Union two literals slots
-
--- if there is a clash, the result reports the set of dependencies whose
--- earliest dependency is the earliest among all dep. sets that caused the clash
-lsUnion :: LiteralSlot -> LiteralSlot -> SlotUpdateResult
-lsUnion ls1 ls2
- = uls_helper ls1 (I.assocs ls2)
-    where uls_helper :: LiteralSlot -> [(Literal,DependencySet)]
-                           -> SlotUpdateResult
-          uls_helper ls l_ds_s =
-           let (updateStatus,clashing_ds_s)
-                = foldr
-                   (\(l,ds) (upResult,clashingBps_s)
-                    -> case upResult of
-                        SlotUpdateSuccess ls_  -> (lsUpdate ls_ l ds,      clashingBps_s)
-                        SlotUpdateFailure ds_s -> (lsUpdate ls  l ds, ds_s:clashingBps_s)
-                           -- we reuse the input LiteralSlot
-                   )
-                   (SlotUpdateSuccess ls,[])   l_ds_s
-           in
-            case clashing_ds_s of
-              []   -> updateStatus      -- is 'success'
-              ds_s -> SlotUpdateFailure $ findEarliestSet ds_s
-                       where findEarliestSet = minimumBy compareBPSets
-                             compareBPSets ds1 ds2 = comparing dsMin ds1 ds2
-
-
--- Insert a piece of information in a literal slot
-
-lsUpdate :: LiteralSlot -> Literal -> DependencySet -> SlotUpdateResult
-lsUpdate ls l ds  | isTop l     = SlotUpdateSuccess ls
-                  | isBottom l  = SlotUpdateFailure ds
-lsUpdate ls l ds  -- nominals, propositional symbols
- = case I.lookup (negLit l) ls of
-    Just ds2 -> SlotUpdateFailure $ dsUnion ds ds2
-    Nothing  -> SlotUpdateSuccess $ I.insertWith mergeDeps l ds ls
-                 where mergeDeps d1 d2  = if dsMin d1 < dsMin d2 then d1 else d2
-                  -- if the same information is caused by an earlier
-                  -- branching, only keep the information of the earliest
-                  -- set of dependencies
-
--- Other functions related to literals slots
-
-lsAddDeps :: DependencySet -> SlotUpdateResult -> SlotUpdateResult
-lsAddDeps ds res_ls =
- case res_ls of
-  SlotUpdateSuccess ls -> SlotUpdateSuccess $ I.map (dsUnion ds) ls
-  failure              -> failure
-
-
-
-lsQuery :: Branch -> Prefix -> Literal -> Maybe (Bool,DependencySet)
--- Output : Nothing    = nevermind
---          Just True  = already there
---          Just False = contrary there
-lsQuery _ _ l | isTop l    = Just (True,dsEmpty)
-              | isBottom l = Just (False,dsEmpty)
-lsQuery br pr l
-  = case D.lookup pr l (literals br) of
-      Just ds    -> Just (True,ds)
-      Nothing    -> case D.lookup pr (negLit l) (literals br) of
-                      Just ds -> Just (False,ds)
-                      Nothing -> Nothing
 
 {-     function used for unit propagation     -}
 
@@ -977,7 +882,7 @@ reduceDisjunctionProposeLazy br pr fs
       ur = getUrfather br (DS.Prefix pr)
       go _ Nothing = Nothing
       go l@(Lit current) (Just (disjuncts,ds_,proposed))
-       = case (lsQuery br ur current, proposed) of
+       = case (lsQuery (literals br) ur current, proposed) of
           (Just (True,_)    ,_) -> Nothing
           (Just (False,ds2) ,_) -> Just (disjuncts,dsUnion ds_ ds2, proposed)
           (Nothing, Nothing)
