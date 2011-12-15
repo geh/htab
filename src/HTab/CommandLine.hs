@@ -23,8 +23,7 @@ data Params = Params {
            unitProp        :: UnitProp,
            showFormula     :: Bool,
            allTransitive   :: Bool,
-           allReflexive    :: Bool,
-           allSymmetric    :: Bool
+           allReflexive    :: Bool
          } deriving (Show, Data, Typeable)
 
 data UnitProp = Eager | UPYes | UPNo deriving (Data, Typeable, Eq, Show)
@@ -47,8 +46,7 @@ defaultParams
                          atom UPNo  += explicit += name "no-unit-prop" += help "unit propagation: disabled"] ,
        showFormula    := False   += help "display formula",
        allTransitive  := False   += help "make all relations transitive",
-       allReflexive   := False   += help "make all relations reflexive",
-       allSymmetric   := False   += help "make all relations symmetric"
+       allReflexive   := False   += help "make all relations reflexive"
       ] += verbosity
 
 strategyVal :: String

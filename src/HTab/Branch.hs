@@ -1,24 +1,24 @@
 module HTab.Branch
 (
-Branch(..), BranchInfo(..), TodoList(..), BlockingMode(..),
-createNewNode, createNewNomTestRelevance,
+Branch(..), BranchInfo(..), TodoList(..),
+createNewNode, createNewNom,
 addFormulas, addAccFormula,
 addToBlockedDias,
 addDiaRuleCheck, addDownRuleCheck,
-addParentPrefix, initialBranch,
+initialBranch,
 reduceDisjunctionProposeLazy, doLazyBranching,
 merge,
 getUrfather, getUrfatherAndDeps,
-getModelRepresentative, isNotBlocked,
+getModelRepresentative, patternBlocked,
 diaAlreadyDone, downAlreadyDone,
 ReducedDisjunct(..),
 patternOf, findByPattern,
-prefixes, isInTheModel, relationIsInTheModel,
-isSymmetric, isTransitive
+prefixes, isInTheModel,
+isTransitive
 ) where
 
 import Control.Applicative ( (<$>) )
-import Data.Maybe( mapMaybe, fromMaybe )
+import Data.Maybe( mapMaybe )
 
 import Data.Map ( Map )
 import qualified Data.Map as Map
@@ -32,8 +32,8 @@ import qualified HTab.DMap as D
 import qualified HTab.DisjSet as DS
 import HTab.CommandLine(Params(..))
 import HTab.Formula
-import HTab.Relations ( Relations(..), emptyRels, insertRelation, mergePrefixes,
-                        successors, predecessors, linksFromTo )
+import HTab.Relations ( OutRels, emptyRels, insertRelation, mergePrefixes,
+                        successors, linksFromTo, showRels )
 import HTab.Literals ( UpdateResult(..), Literals,
                        SlotUpdateResult(..), LiteralSlot,
                        updateMap, lsUnions, lsAddDeps, lsQuery)
@@ -44,18 +44,14 @@ data BranchInfo = BranchOK Branch |
 type BoxConstraints     = DMap {- Prefix Rel -} [(Formula,DependencySet)]
 type BranchingWitnesses = DMap {- Prefix Literal -} [PrFormula]
 type EquivClasses = DS.DisjSet DS.Pointer
-data BlockingMode =   PatternBlocking
-                    | ChainTwinBlocking
-                    deriving (Eq,Show)
 
 data Branch =
               Branch {
                  -- the premodel
                       literals :: Literals,
-                        accStr :: Relations,
+                        accStr :: OutRels,
                  -- local and global constraints
                         boxFwd :: BoxConstraints,
-                        boxBwd :: BoxConstraints,
                       univCons :: [(DependencySet,Formula)],
                  -- pending formulas / todo lists
                       todoList :: TodoList,
@@ -66,8 +62,6 @@ data Branch =
                      existRlCh :: Set Formula,
                  -- pattern blocking
                       patterns :: IntMap (Set Formula),
-                 -- set of formulas true at each point of the premodel
-                   prefToForms :: IntMap {- Prefix -} (Set Formula),
                  -- backjumping data attached to equivalence classes
                     prToDepSet :: IntMap {- Prefix -} DependencySet,
                  -- prefix/nominal equivalence classes
@@ -77,14 +71,9 @@ data Branch =
                        nextNom :: Nom,
                  -- lazy branching
                    brWitnesses :: BranchingWitnesses,
-                 -- caching / memoisation data
-                  downVarRelCh :: Map Formula Bool,
                  -- information about language of input formula and blocking mode
                  inputLanguage :: LanguageInfo,
-                     blockMode :: BlockingMode,
                    blockedDias :: IntMap {- Prefix -} [PrFormula],
-                    prefParent :: IntMap {- Prefix -} Prefix,
-              relevantNominals :: Set Nom,
                        relInfo :: RelInfo,
                       encoding :: Encoding}
 
@@ -94,9 +83,8 @@ instance Show Branch where
  show br = concat
   [  show (inputLanguage br),
      "\nLiterals:", showIMap (\v -> "(" ++ showMap_lits v ++ ")") "\n " (literals br),
-     "\nRelations: ", show (accStr br),
+     "\nRelations: ", showRels (accStr br),
      "\nBoxes: ", showIMap (\v -> "(" ++ showMap_rel v ++ ")") "\n " (boxFwd br),
-     "\nBoxes inv: ", showIMap (\v -> "(" ++ showMap_rel v ++ ")") "\n " (boxBwd br),
      "\n", show (todoList br),
      "\nWitnesses: ",
      showIMap (\v -> "(" ++ showMap_lits2 v ++ ")") "\n " (brWitnesses br),
@@ -105,14 +93,9 @@ instance Show Branch where
      "\nDown rule chart: ", show (downRlCh br),
      "\n@ rule chart: ", show (list $ atRlCh br),
      "\nExist rule chart: ", show (list $ existRlCh br),
-     "\nDown var relevant chart: ", show (downVarRelCh br),
      "\nUniv constraints: ", show (univCons br),
      "\nPrefix to dependency set: ", showIMap  dsShow "\n " (prToDepSet br),
-     "\nPrefix to formulas: ", showIMap  (show . Set.toList) "\n " (prefToForms br),
-     "\nParent: ", show (prefParent br),
-     "\nBlocking mode: ", show (blockMode br),
      "\nPrefix-Nominal classes : ", showMap ", " (nomPrefClasses br),
-     "\nModel-relevant nominals : ", unwords $ map showLit $ list $ relevantNominals br,
      "\nlastPref : ", show (lastPref br),
      " nextnom : ", showLit (nextNom br)
   ]
@@ -163,8 +146,7 @@ addFormula p br pf
 
 bookKeepFormula :: Params -> PrFormula -> Branch -> Branch
 bookKeepFormula p pf_@(PrFormula pr ds f) br
- =   addToPrefToForms         pf
-   $ rescheduleLazyBranching  p pf
+ =   rescheduleLazyBranching  p pf
    $ rescheduleBlockedDias    ur br
   where
    (ur,ds2,_) = getUrfatherAndDeps br (DS.Prefix pr)
@@ -215,7 +197,7 @@ putAwayFormula p pf@(PrFormula pr ds f2) br =
 
 putAwayDisjunction :: Params -> PrFormula -> Branch -> BranchInfo
 putAwayDisjunction p pf@(PrFormula pr ds f@(Dis fs)) br
- | lazyBranching p && blockMode br == PatternBlocking
+ | lazyBranching p
   = case reduceDisjunctionProposeLazy br pr fs of
      Contradiction dsClash -> BranchClash br pr (dsUnion ds dsClash) f
      Triviality -> BranchOK br
@@ -336,9 +318,7 @@ merge p pr fDs n br
               newLiterals = I.delete oldUr $ I.insert newUr slot $ literals br
 
               -- structures that merge
-              newPrefToForms  = moveInMap (prefToForms br) oldUr newUr Set.union
               newBoxFwd = D.moveInnerDataDMapPlusDeps fDs (boxFwd br) oldUr newUr
-              newBoxBwd = D.moveInnerDataDMapPlusDeps fDs (boxBwd br) oldUr newUr
               newAccStr       = mergePrefixes (accStr br) oldUr newUr fDs
               newDiaRlCh      = moveInMap (diaRlCh br)  oldUr newUr Set.union
               newBlockedDias  = moveInMap (blockedDias br) oldUr newUr (++)
@@ -349,18 +329,12 @@ merge p pr fDs n br
               mapAccFwd = map (successors (accStr br)) [ur1,ur2]
               forms1    = concatMap (boxRule currentDeps) $ combine mapBoxFwd mapAccFwd
 
-              mapBoxBwd = map (\idx -> get I.empty idx (boxBwd br) ) [ur1,ur2]
-              mapAccBwd = map (predecessors (accStr br)) [ur1,ur2]
-              forms2    = concatMap (boxRule currentDeps) $ combine mapBoxBwd mapAccBwd
-
-              formulasToAdd = nubAndMergeDeps $ forms1 ++ forms2 ++ unwitnessed
+              formulasToAdd = nubAndMergeDeps $ forms1 ++ unwitnessed
 
               newBr           = br{nomPrefClasses = classes3,
                                    boxFwd         = newBoxFwd,
-                                   boxBwd         = newBoxBwd,
                                    accStr         = newAccStr,
                                    prToDepSet     = newPrToDepSet,
-                                   prefToForms    = newPrefToForms,
                                    diaRlCh        = newDiaRlCh,
                                    blockedDias    = newBlockedDias,
                                    literals       = newLiterals,
@@ -415,18 +389,6 @@ namd ((PrFormula p ds f):prfs) theMap =
   namd prfs (Map.insertWith dsUnion (p,f) ds theMap)
 
 namd [] theMap = map (\((p,f),ds) -> PrFormula p ds f) (Map.assocs theMap)
-
-{-
-   Functions related to nom, prefixes and nominals ...
--}
-
-addToPrefToForms :: PrFormula -> Branch -> Branch
-addToPrefToForms (PrFormula pr _ f) br
- | blockMode br == PatternBlocking = br
- | forInclusion br f               = br{prefToForms = newMap}
- | otherwise                       = br
- where currentPtf = prefToForms br
-       newMap = I.insertWith Set.union pr (Set.singleton f) currentPtf
 
 {-     handling nominal urfathers, equivalence classes and dependencies     -}
 
@@ -487,29 +449,17 @@ addBoxConstraint pr_ r f ds p br
  | isForward r
     = let newBr = br{boxFwd = updateBoxConstr pr r f ds (boxFwd br)}
           succs  = get [] r $ successors (accStr br) pr
-          toAdd = fromSym ++ fromTrans ++ fromBox
+          toAdd = fromTrans ++ fromBox
           fromTrans
            = if isTransitive (relInfo br) r
               then map (\(pr2,ds2) -> PrFormula pr2 (dsUnion ds ds2) (Box r f)) succs
               else []
-          fromSym = [PrFormula pr ds $ Box (invRel r) f | isSymmetric (relInfo br) r]
           fromBox = map (\(pr2,ds2) -> PrFormula pr2 (dsUnion ds ds2) f) succs
     -- todo check again with new pattern, create successor if new pattern not realized
       in
          addFormulas p toAdd newBr
 
- | otherwise
-   = let newBr = br{boxBwd = updateBoxConstr pr (atom r) f ds (boxBwd br)}
-         preds = get [] (atom r) $ predecessors (accStr br) pr
-         toAdd = fromTrans ++ fromBox
-          -- no symApplications cause inv rewritten as forward during parsing
-         fromTrans
-          = if isTransitive (relInfo br) (atom r)
-             then map (\(pr2,ds2) -> PrFormula pr2 (dsUnion ds ds2) (Box r f)) preds
-             else []
-         fromBox = map (\(pr2,ds2) -> PrFormula pr2 (dsUnion ds ds2) f) preds
-     in
-        addFormulas p toAdd newBr
+ | otherwise = error "backwards relation"
  where pr = getUrfather br (DS.Prefix pr_)
 
 updateBoxConstr :: Prefix -> Rel -> Formula -> DependencySet -> BoxConstraints
@@ -531,34 +481,25 @@ boxAlreadyDone br ur (r,f)
                             return (f `elem` boxes) ) of
                     Just True -> True
                     _         -> False
- | otherwise    = case ( do inner <- I.lookup ur (boxBwd br)
-                            boxes <- map fst <$> I.lookup (atom r) inner
-                            return (f `elem` boxes) ) of
-                    Just True -> True
-                    _         -> False
+ | otherwise    = error "backwards relation"
 
 -- accessibility Formulas
 
 addAccFormula :: Params -> (DependencySet,Rel,Prefix,Prefix) -> Branch -> BranchInfo
 addAccFormula p (ds, r, p1_, p2_) br
- | isBackwards r = addAccFormula p (ds, invRel r, p2_, p1_) br
+ | isBackwards r = error "backwards relation"
  | otherwise -- forward
    = addFormulas p toAdd newBr
      where
       toAdd = transApplications ++ boxApplications
       transApplications =
        if isTransitive (relInfo br) r
-        then
-          (  ( map (\(f,ds2) -> PrFormula p2 (dsUnion ds ds2) (Box r f)) toSendFwd )
-          ++ ( map (\(f,ds2) -> PrFormula p1 (dsUnion ds ds2) (Box r f)) toSendBwd )  )
+        then map (\(f,ds2) -> PrFormula p2 (dsUnion ds ds2) (Box r f)) toSendFwd
         else []
-      boxApplications =
-          (   ( map (\(f,ds2) -> PrFormula p2 (dsUnion ds ds2) f) toSendFwd )
-           ++ ( map (\(f,ds2) -> PrFormula p1 (dsUnion ds ds2) f) toSendBwd )  )
+      boxApplications = map (\(f,ds2) -> PrFormula p2 (dsUnion ds ds2) f) toSendFwd
       p1 = getUrfather br (DS.Prefix p1_)
       p2 = getUrfather br (DS.Prefix p2_)
       toSendFwd = get [] r $ get I.empty p1 (boxFwd br)
-      toSendBwd = get [] r $ get I.empty p2 (boxBwd br)
       newBr = scheduleInclusionRule p1 p2 r ds $ insertRelationBranch br p1 r p2 ds
 
 
@@ -581,76 +522,15 @@ insertRelationBranch :: Branch -> Prefix -> Rel -> Prefix -> DependencySet -> Br
 insertRelationBranch br p1 r p2 ds
  = br{accStr = insertRelation (accStr br) p1 r p2 ds}
 
-
-{- blocking conditions -}
-
-isNotBlocked :: Branch -> PrFormula -> Bool
-isNotBlocked br pf@(PrFormula pr _ _) =
- case blockMode br of
-   PatternBlocking    -> not $ patternBlocked br pf
-   ChainTwinBlocking  -> isNotChainTwinBlocked br pr
-
-isNotChainTwinBlocked :: Branch -> Prefix -> Bool
-isNotChainTwinBlocked br pr
- = not $ test2equal $ map (formulasOf br) (getAllParents br pr)
-
-getAllParents :: Branch -> Prefix -> [Prefix]
--- getAllParents up to one that has an input nominal
-getAllParents br pr = getUrfather br (DS.Prefix pr):rest
- where rest = case I.lookup pr (prefParent br) of
-                Nothing     -> []
-                Just parent -> if isNominalUrfather br parent
-                                then getAllParents br parent
-                                else [getUrfather br (DS.Prefix parent)]
-
-
-test2equal :: (Ord a) => [Set a] -> Bool -- inefficient
-test2equal (s:sets) = any (s ==) sets || test2equal sets
-test2equal [] = False
-
-
 {- model building -}
 
 isInTheModel :: Branch -> Prefix -> Bool
-isInTheModel br pr | isNominalUrfather br pr
- = case blockMode br of
-    PatternBlocking   ->  True
-    ChainTwinBlocking ->  case findModelReprChain br pr of
-                                 Nothing   -> False
-                                 Just repr -> repr == pr
+isInTheModel br pr | isNominalUrfather br pr = True
 isInTheModel _ _ = False
-
-relationIsInTheModel :: Branch -> (Prefix,Rel,Prefix) -> Bool
-relationIsInTheModel br (p1,_,p2)
- = case blockMode br of
-     PatternBlocking    -> True
-     ChainTwinBlocking  -> hasIdentityUrfather br p1 && hasIdentityUrfather br p2
-   where hasIdentityUrfather br_ pr_
-          = case findModelReprChain br_ pr_ of {Nothing -> False ; _ -> True }
 
 getModelRepresentative :: Branch -> Prefix -> Prefix
 getModelRepresentative br pr
- = case blockMode br of
-    PatternBlocking -> ur
-    ChainTwinBlocking -> fromMaybe (error $ "interesting counter example " ++ show pr)
-                                  $ findModelReprChain br pr
-   where ur = getUrfather br (DS.Prefix pr)
-
-findModelReprChain :: Branch -> Prefix -> Maybe Prefix
-findModelReprChain br pr
- = go br pr 0
-    where
-     go :: Branch -> Prefix -> Prefix -> Maybe Prefix
-     go br_ initial current =
-        let urCurrent =  getUrfather br (DS.Prefix current) in
-         if urCurrent == initial
-          then if isNotChainTwinBlocked br initial then Just initial else Nothing
-          else if areTwins br_ initial urCurrent && isNotChainTwinBlocked br urCurrent
-                 then Just urCurrent
-                 else go br_ initial (current+1)
-
-areTwins :: Branch -> Prefix -> Prefix -> Bool
-areTwins br p1 p2 = formulasOf br p1 == formulasOf br p2
+ = getUrfather br (DS.Prefix pr)
 
 -- <r>f is pattern blocked if its pattern is a subset
 -- of one pattern of the branch's pattern store
@@ -677,34 +557,10 @@ boxesOf br p r
  = set $ map fst $ get [] r $ get I.empty p (boxFwd br)
 
 findByPattern :: Branch -> Set Formula -> Prefix
-findByPattern br pattern
- | blockMode br == PatternBlocking  =
+findByPattern br pattern =
        head $ map fst
             $ filter (\(_,pat2) -> pattern `Set.isSubsetOf` pat2)
             $ I.toList $ patterns br
- | otherwise = error "findByPattern called with ChainTwinBlocking"
-
-formulasOf :: Branch -> Prefix -> Set Formula
-formulasOf br p = get Set.empty p (prefToForms br)
-
--- is the formula useful to discriminate nodes?
-forInclusion :: Branch -> Formula -> Bool
-forInclusion br (Lit l)
-      | isProp l    = True
-      | isNominal l = Set.member (atom l) (relevantNominals br)
-      | otherwise   = False -- top, bottom
-forInclusion _ (Con _) = False
-forInclusion _ (Dis _) = False
-forInclusion _ (At _ _) = False
-forInclusion _ (Down _ _) = False
-forInclusion _ (Box _ _) = True
-forInclusion _ (Dia _ _) = True
-forInclusion _ (A _) = False
-forInclusion _ (E _) = False
-
-addParentPrefix :: Prefix -> Prefix -> Branch -> BranchInfo
-addParentPrefix son father br
- = BranchOK br{prefParent = I.insert son father (prefParent br)}
 
 {-     modifications done by rule application     -}
 
@@ -712,10 +568,7 @@ addDiaRuleCheck :: Prefix -> (Rel,Formula) -> Prefix -> Branch -> BranchInfo
 addDiaRuleCheck pr (r,f) newPr br =
   BranchOK br2
    where pattern = patternOf br (PrFormula ur dsEmpty (Dia r f))
-         br1 = case blockMode br of
-                PatternBlocking ->
-                 br{patterns = I.insert newPr pattern (patterns br)}
-                _ -> br
+         br1 = br{patterns = I.insert newPr pattern (patterns br)}
          br2 = br1{diaRlCh=I.insertWith Set.union ur (Set.singleton (r,f)) (diaRlCh br1)}
          ur = getUrfather br (DS.Prefix pr)
 
@@ -764,17 +617,9 @@ addReflexiveLinks pr br
  = foldr (\rel_ br_ -> insertRelationBranch br_ pr rel_ pr dsEmpty) br reflRels
    where reflRels = Map.keys $ Map.filter (elem Reflexive) (relInfo br)
 
-createNewNomTestRelevance :: Formula -> Branch -> BranchInfo
-createNewNomTestRelevance f br
- = BranchOK
-    br{nextNom = nextNom br + 4,
-       relevantNominals = if relevant
-                           then Set.insert newNom (relevantNominals br)
-                           else relevantNominals br,
-       downVarRelCh = newDVRC
-      }
-   where (relevant, newDVRC) = memoize checkIfVarNegated f (downVarRelCh br)
-         newNom = nextNom br
+createNewNom :: Branch -> BranchInfo
+createNewNom br
+ = BranchOK br{nextNom = nextNom br + 4}
 
 -- preparation of the branch at the beginning of the calculus:
 --  - add the input formula at prefix 0
@@ -804,33 +649,23 @@ initialBranch p fLang relInfo_ encoding_ f
            Branch{ literals          = initLiterals,
                    accStr            = emptyRels,
                    todoList          = emptyTodoList,
-                   boxBwd            = D.empty,
                    boxFwd            = D.empty,
                    diaRlCh           = I.empty,
                    downRlCh          = I.empty,
                    atRlCh            = Set.empty,
                    existRlCh         = Set.empty,
-                   downVarRelCh      = Map.empty,
                    patterns          = I.empty,
                    univCons          = [],
                    lastPref          = nbNs,
                    nextNom           = maxNom encoding_ + 4,
-                   prefToForms       = I.empty,
                    prToDepSet        = I.empty,
                    brWitnesses       = D.empty,
                    nomPrefClasses    = initClasses,
                    inputLanguage     = fLang,
-                   blockMode         = blockingMode,
                    blockedDias       = I.empty,
-                   prefParent        = I.empty,
-                   relevantNominals  = set $ relevantNoms fLang,
                    relInfo           = relInfo_,
                    encoding          = encoding_
                  }
-          blockingMode
-             | languagePast fLang || relInfo_ `oneIs` Symmetric = ChainTwinBlocking
-             | otherwise         = PatternBlocking
-
 
 addToLiterals :: Prefix -> DependencySet -> Literal -> Branch -> BranchInfo
 addToLiterals pr_ ds1 l br
@@ -883,16 +718,10 @@ reduceDisjunctionProposeLazy br pr fs
 prefixes :: Branch -> [Prefix]
 prefixes br = [0..(lastPref br)]
 
-oneIs :: RelInfo -> RelProperty -> Bool
-oneIs relI p = any ( elem p . snd) $ Map.toList relI
-
 hasProperty :: RelProperty -> RelInfo -> Rel -> Bool
 hasProperty p relI r = case Map.lookup r relI of
                         Nothing         -> False
                         Just properties -> p `elem` properties
-
-isSymmetric :: RelInfo -> Rel -> Bool
-isSymmetric = hasProperty Symmetric
 
 isTransitive :: RelInfo -> Rel -> Bool
 isTransitive = hasProperty Transitive
@@ -910,11 +739,6 @@ moveInMap m origKey destKey mergeF
     Nothing -> m
     Just origValue
      -> I.insertWith mergeF destKey origValue $ I.delete origKey m
-
-memoize :: Ord a => (a -> b) -> a -> Map.Map a b -> (b, Map.Map a b)
-memoize f e m = case Map.lookup e m of
-                   Nothing     -> let result = f e in (result, Map.insert e result m)
-                   Just result -> (result, m)
 
 list :: Ord a => Set.Set a -> [a]
 list = Set.toList

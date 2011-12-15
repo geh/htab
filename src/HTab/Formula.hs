@@ -9,7 +9,7 @@ PrFormula(..),showLess,
 LanguageInfo(..), neg,
 conj, disj, taut,
 prop, nom, formulaLanguageInfo, prefix, negPr,
-checkIfVarNegated, replaceVar,
+replaceVar,
 firstPrefixedFormula,
 parse, simpleParse, Theory, RelInfo, Task,
 showRelInfo, showRel, showLit, negLit, isForward, isBackwards,
@@ -86,12 +86,11 @@ type Prop = Int
 type Nom = Int
 type Literal = Int
 
-isTop, isBottom, isPositiveNom, isNegativeNom, isNominal, isPositiveProp,
+isTop, isBottom, isPositiveNom, isNominal, isPositiveProp,
  isProp, isNegative, isPositive :: Int -> Bool
 isTop            = (==0)
 isBottom         = (==1)
 isPositiveNom a  = ((a `mod` 4) == 0) && (a > 1)
-isNegativeNom a  = ((a `mod` 4) == 1) && (a > 1)
 isNominal a      = ((a `mod` 4) < 2)  && (a > 1)
 isPositiveProp a = (a `mod` 4) == 2
 isProp a         = (a `mod` 4) >= 2
@@ -137,12 +136,9 @@ type PRelInfo = [P.RelInfo]
 
 type RelInfo = Map Rel [RelProperty]
 data RelProperty   =   Reflexive
-                     | Symmetric
                      | Transitive
                      | Universal
                      --
-                     | InverseOf Rel
-                     | TRClosureOf Rel
                      | SubsetOf [Rel]
                      deriving (Eq, Show, Ord)
 
@@ -190,7 +186,8 @@ toRelSymbol :: Encoding -> Int -> S.RelSymbol
 toRelSymbol e i =
  case Map.lookup (atom i) (invertMap $ relMap e) of
    Nothing -> error $ show e ++ " rel symbol " ++ show i
-   Just x -> if isForward i then S.RelSymbol x else S.InvRelSymbol x
+   Just x -> if isForward i then S.RelSymbol x
+              else error "backwards relations not supported"
 
 invertMap :: (Ord a, Ord b) => Map.Map a b -> Map.Map b a
 invertMap = Map.fromList . map (\(a,b) -> (b,a)) . Map.assocs
@@ -225,8 +222,7 @@ forceProperties p encoding relI
          addToAll r = Map.insertWith (\c1 c2 -> nub $ c1 ++ c2) r conds
          conds = map snd $
                    filter fst   [(allTransitive p, Transitive),
-                                 (allReflexive  p, Reflexive ),
-                                 (allSymmetric  p, Symmetric )]
+                                 (allReflexive  p, Reflexive )]
 
 convertToOurType :: PRelInfo -> Encoding -> RelInfo
  -- and add for each relation in the formula, the relevant key
@@ -234,10 +230,10 @@ convertToOurType prelI e = foldr insertRelProp Map.empty (concatMap convertOne p
  where insertRelProp (rs,pr) = Map.insertWith (++) rs [pr]
        convertOne (r,props)  = concatMap (c r) props
        c r P.Reflexive       = [(int e r,Reflexive    )]
-       c r P.Symmetric       = [(int e r,Symmetric    )]
+       c _ P.Symmetric       = error "Symmetric not handled"
        c r P.Transitive      = [(int e r,Transitive   )]
        c r P.Universal       = [(int e r,Universal    )]
-       c r (P.InverseOf s)   = [(int e r,InverseOf   (int e s))]
+       c _ (P.InverseOf _)   = error "InverseOf not handled" 
        c r (P.SubsetOf ss)   = [(int e r,SubsetOf [ int e s | s <- ss])]
        c r (P.Equals ss)     = [(int e r,SubsetOf [ int e s | s <- ss])]
                                ++ [(int e s,SubsetOf [int e r]) | s <- ss]
@@ -288,15 +284,9 @@ specialise :: S.RelSymbol -> RelInfo -> (S.RelSymbol -> Connector, Connector)
 specialise (S.InvRelSymbol r) _ (relational, _) _ -- happens only with simple input
  = relational $ S.InvRelSymbol r
 
--- below we don't attempt checking if r is an inverse of an inverse
 specialise (S.RelSymbol r) relI (relational, global) e
  | Universal `elem` props  = global
- | otherwise = case [ r2 | InverseOf r2 <- props] of
-                 []     -> relational $ S.RelSymbol r
-                 (r2:_) -> relational $ invRS $ toRelSymbol e r2
-                   where
-                     invRS (S.RelSymbol s)       = S.InvRelSymbol s
-                     invRS (S.InvRelSymbol s)    = S.RelSymbol s
+ | otherwise = relational $ S.RelSymbol r
  where props = Map.findWithDefault [] (int e r) relI
 
 type HyLoFormula = F.Formula S.NomSymbol S.PropSymbol S.RelSymbol
@@ -437,48 +427,21 @@ negPr (PrFormula p ds f) = PrFormula p ds (neg f)
 
 -- formula language
 
-data LanguageInfo = LanguageInfo {   languageNoms :: [Int], -- ascending list
-                                     relevantNoms :: [Int],
-                                     languagePast :: Bool}
+data LanguageInfo = LanguageInfo { languageNoms :: [Int] } -- ascending
 
 instance Show LanguageInfo where
  show li =         "Input Language:"
            ++ "\n|" ++ yesnol "Noms" ( languageNoms li )
-           ++ "\n|" ++ yesnol "Relevant Noms" ( relevantNoms li ) ++ "\n"
-           ++ yesno "Past, " ( languagePast li )
-  where yesno :: String -> Bool -> String
-        yesno s b = ( if b then "" else "no " ) ++ s
-        yesnol s l | null l = "no " ++ s
+  where yesnol s l | null l = "no " ++ s
         yesnol s l = s ++ concatMap (\l_ -> ", " ++ showLit l_)  l
 
-formulaLanguageInfo :: Formula -> Encoding -> LanguageInfo
-formulaLanguageInfo f e
- = LanguageInfo {   languageNoms = noms,
-                    relevantNoms = relNoms,
-                    languagePast = hasPast f}
-
-    where allNoms_ = nomsOfEncoding e
-          relNoms_ = extractRelevantNominals f
-          noms     = sort allNoms_
-          relNoms  = Set.toAscList relNoms_
+formulaLanguageInfo :: Encoding -> LanguageInfo
+formulaLanguageInfo e
+ = LanguageInfo { languageNoms = noms }
+    where noms = sort $ nomsOfEncoding e
 
 -- composeXX functions follow the idea from
 -- "A pattern for almost compositional functions", Bringert and Ranta.
-composeFold :: b
-            -> (b -> b -> b)
-            -> (Formula -> b)
-            -> (Formula -> b)
-composeFold zero combine g e = case e of
-    Con fs     -> foldr1 combine $ map g $ list fs
-    Dis fs     -> foldr1 combine $ map g $ list fs
-    Dia _ f    -> g f
-    Box _ f    -> g f
-    At  _ f    -> g f
-    Down _ f   -> g f
-    A f        -> g f
-    E f        -> g f
-    _          -> zero
-
 composeMap :: (Formula -> Formula)
            -> (Formula -> Formula)
            -> (Formula -> Formula)
@@ -493,17 +456,6 @@ composeMap baseCase g e = case e of
     Down x f   -> Down x (g f)
     f          -> baseCase f
 
-
-extractRelevantNominals :: Formula -> Set Nom
-extractRelevantNominals (Lit n)| isNegativeNom n = Set.singleton (atom n)
-extractRelevantNominals (At _ f)                 = extractRelevantNominals f
-extractRelevantNominals f = composeFold Set.empty Set.union extractRelevantNominals f
-
-hasPast :: Formula -> Bool
-hasPast (Dia r _)    = testBit r 0
-hasPast (Box r _)    = testBit r 0
-hasPast f            = composeFold False (||) hasPast f
-
 replaceVar :: Int -> Int -> Formula -> Formula
 replaceVar v n a@(Lit v2)
    | isNominal v2 = if atom v /= atom v2 then a
@@ -515,15 +467,6 @@ replaceVar v n a@(Down v2 f) = if v == v2 then a   -- variable capture
 replaceVar v n (At v2 f)     = if v == v2 then At n (replaceVar v n f)
                                           else At v2 (replaceVar v n f)
 replaceVar v n f = composeMap id (replaceVar v n) f
-
-checkIfVarNegated :: Formula -> Bool
-checkIfVarNegated (Down v_ f_)
- = go v_ f_
-   where go :: Int -> Formula -> Bool
-         go v (Down v2 f) = if v == v2 then False {- variable capture -} else go v f
-         go v (Lit v2)    = (atom v == atom v2) && isNegative v2
-         go v f           = composeFold False (||) (go v) f
-checkIfVarNegated _ = error "checkIfVarNegated : only down-arrow formulas"
 
 -- backjumping
 

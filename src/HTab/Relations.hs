@@ -1,7 +1,8 @@
 module HTab.Relations
 
-( Relations(..), emptyRels, insertRelation, mergePrefixes,
-  successors, predecessors, allRels, null, linksFromTo )
+( OutRels, emptyRels, insertRelation, mergePrefixes,
+  successors, allRels, null, linksFromTo,
+  showRels )
 
 where
 
@@ -16,69 +17,46 @@ import HTab.DMap ( DMap )
 import HTab.Formula (Prefix, Rel, DependencySet, dsShow )
 import Prelude hiding (id, pred, succ, null)
 
-type InRel  = DMap {- Prefix Rel -} [(Prefix,DependencySet)]
-type OutRel = DMap {- Prefix Rel -} [(Prefix,DependencySet)]
+type OutRels = DMap {- Prefix Rel -} [(Prefix,DependencySet)]
 
-data Relations =  Relations {  inRel :: InRel ,
-                              outRel :: OutRel }
+emptyRels :: OutRels
+emptyRels = D.empty
 
-emptyRels :: Relations
-emptyRels = Relations { inRel = D.empty, outRel = D.empty }
+null :: OutRels -> Bool
+null = I.null
 
-null :: Relations -> Bool
-null = I.null . outRel
-
-allRels :: Relations -> [(Prefix,Rel,Prefix)]
-allRels rels = [ (p1,r,p2) | ((p1,r),ds_out_s) <-  D.flatten $ outRel rels,
+allRels :: OutRels -> [(Prefix,Rel,Prefix)]
+allRels rels = [ (p1,r,p2) | ((p1,r),ds_out_s) <-  D.flatten rels,
                              (p2,_) <- ds_out_s ]
 
 
-successors :: Relations -> Prefix -> IntMap {- Rel -} [(Prefix,DependencySet)]
-successors rels p = I.findWithDefault I.empty p (outRel rels)
+successors :: OutRels -> Prefix -> IntMap {- Rel -} [(Prefix,DependencySet)]
+successors rels p = I.findWithDefault I.empty p rels
 
-predecessors :: Relations -> Prefix -> IntMap {- Rel -} [(Prefix,DependencySet)]
-predecessors rels p = I.findWithDefault I.empty p (inRel rels)
-
-linksFromTo :: Relations -> Prefix -> Prefix -> [Rel]
+linksFromTo :: OutRels -> Prefix -> Prefix -> [Rel]
 linksFromTo rels p1 p2
   = map fst $ filter (\(_,p_d_s) -> p2 `elem` map fst p_d_s ) outs
      where outs = I.toList $ successors rels p1
 
 -- assumes you never add twice the same relation
-insertRelation :: Relations -> Prefix -> Rel -> Prefix -> DependencySet -> Relations
+insertRelation :: OutRels -> Prefix -> Rel -> Prefix -> DependencySet -> OutRels
 insertRelation rels p1 r p2 ds =
- let
-  outr = outRel rels
-  inr  = inRel rels
-  outRel_
-   = case I.lookup p1 outr of
-      Nothing       -> I.insert p1 (I.singleton r [(p2,ds)]) outr
+  case I.lookup p1 rels of
+      Nothing       -> I.insert p1 (I.singleton r [(p2,ds)]) rels
       Just inner
         -> case I.lookup r inner of
-             Nothing        -> I.insert p1 (I.insert r [(p2,ds)] inner)           outr
-             Just innerList -> I.insert p1 (I.insert r ((p2,ds):innerList) inner) outr
-  inRel_
-   = case I.lookup p2 inr of
-      Nothing       -> I.insert p2 (I.singleton r [(p1,ds)]) inr
-      Just inner
-        -> case I.lookup r inner of
-            Nothing        -> I.insert p2 (I.insert r [(p1,ds)] inner)           inr
-            Just innerList -> I.insert p2 (I.insert r ((p1,ds):innerList) inner) inr
- in
-   Relations {outRel = outRel_ , inRel = inRel_ }
+             Nothing        -> I.insert p1 (I.insert r [(p2,ds)] inner)           rels
+             Just innerList -> I.insert p1 (I.insert r ((p2,ds):innerList) inner) rels
 
 
-mergePrefixes :: Relations -> Prefix -> Prefix -> DependencySet -> Relations
+mergePrefixes :: OutRels -> Prefix -> Prefix -> DependencySet -> OutRels
 mergePrefixes r pr ur _ | pr == ur = r
 mergePrefixes r pr ur ds
- = let outRel_ = D.moveInnerDataDMapPlusDeps ds (outRel r) pr ur
-       inRel_  = D.moveInnerDataDMapPlusDeps ds (inRel  r) pr ur
-   in Relations { outRel = outRel_ , inRel = inRel_ }
+ = D.moveInnerDataDMapPlusDeps ds r pr ur
 
-instance Show Relations where
- show r = "\nRelations: " ++
-            prettyShowMap_ (outRel r)
-                           (\v -> "(" ++ prettyShowMap_rel_bps_x v ++ ")") "\n "
+showRels :: OutRels -> String
+showRels r = "\nRelations: " ++
+              prettyShowMap_ r (\v -> "(" ++ prettyShowMap_rel_bps_x v ++ ")") "\n "
 
 prettyShowMap_ :: (Show y) => IntMap y -> (y -> String) -> String -> String
 prettyShowMap_ m valueShow separator

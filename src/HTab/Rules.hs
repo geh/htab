@@ -12,16 +12,16 @@ import HTab.Formula( Formula(..), PrFormula(..), showLess,
                      prefix, Rel, negPr,
                      Prefix, Nom, showLit,
                      replaceVar, Literal )
-import HTab.Branch( Branch(..), BranchInfo(..), TodoList(..), BlockingMode(..),
+import HTab.Branch( Branch(..), BranchInfo(..), TodoList(..),
                     -- for rules
-                    createNewNode, createNewNomTestRelevance,
+                    createNewNode, createNewNom,
                     addFormulas, addAccFormula,
                     addDiaRuleCheck, addToBlockedDias,
                     addDownRuleCheck,
-                    addParentPrefix, doLazyBranching,
+                    doLazyBranching,
                     getUrfatherAndDeps, merge,
                     -- for choosing rule in todo list
-                    isNotBlocked,
+                    patternBlocked,
                     diaAlreadyDone, downAlreadyDone,
                     -- for rules and choosing rule in todo list
                     reduceDisjunctionProposeLazy, getUrfather,
@@ -112,9 +112,9 @@ ruleByChar br p d char =
    = do (f,new) <- Set.minView $ diaTodo todos
         if diaAlreadyDone br f
           then       return ( DiscardDiaDoneRule f,    todos{diaTodo = new})
-          else if isNotBlocked br f
-                then return ( DiaRule f,               todos{diaTodo = new})
-                else return ( DiscardDiaBlockedRule f, todos{diaTodo = new})
+          else if patternBlocked br f
+                then return ( DiscardDiaBlockedRule f, todos{diaTodo = new})
+                else return ( DiaRule f,               todos{diaTodo = new})
   applicableAtRule    = do (f,new) <- Set.minView $ atTodo todos
                            return (AtRule f, todos{atTodo = new})
   applicableDownRule  = do (f,new) <- Set.minView $ downTodo todos
@@ -150,7 +150,7 @@ makeInteresting p br d df@(PrFormula pr ds (Dis fs))
           Reduced new_ds disjuncts mProposed
            | Set.size disjuncts == 1
               -> Just (DisjRule df ( prefix ur newDeps disjuncts ), df)
-           | lazyBranching p && blockMode br /= ChainTwinBlocking
+           | lazyBranching p
               -> case mProposed of
                   Nothing  -> Nothing
                   Just lit
@@ -174,8 +174,7 @@ applyRule :: Params -> Rule -> Branch -> [BranchInfo]
 applyRule p rule br
  = case rule of
     DiaRule (PrFormula pr ds (Dia r f))
-     -> [ addParentPrefix newPr ur br >>?
-          addAccFormula p (dsUnion ds ds2, r, ur, newPr) >>?
+     -> [ addAccFormula p (dsUnion ds ds2, r, ur, newPr) br >>?
           addFormulas p [PrFormula newPr ds f] >>?
           addDiaRuleCheck pr (r,f) newPr >>?
           createNewNode p ]
@@ -194,7 +193,7 @@ applyRule p rule br
             where (ur,ds2,equiv) = getUrfatherAndDeps br (DS.Nominal n)
                   toadd = PrFormula ur (dsUnion ds ds2) f
     DownRule (PrFormula pr ds f@(Down v f2)) ->
-                 [ createNewNomTestRelevance f br >>?
+                 [ createNewNom br >>?
                    addFormulas p [toadd1, toadd2] >>?
                    addDownRuleCheck pr f ]
                   where toadd1 = PrFormula pr ds (replaceVar v newNom f2)

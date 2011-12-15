@@ -86,7 +86,7 @@ runTasks2 (theory,relInfo,encoding,(hd:tl)) p =
 runTask :: Task -> RelInfo -> Encoding -> Formula -> Params -> IO TaskRunFlag
 runTask (Retrieve,mOutFile,fs) relInfo encoding theory p =
  do myPutStrLn "\n* Instance retrieval task"
-    let fLang = formulaLanguageInfo theory encoding
+    let fLang = formulaLanguageInfo encoding
     let (noms,encfs) = encodeRetrieveTask relInfo encoding fLang theory fs
     --
     myPutStrLn $ "Instances making true: " ++ show fs
@@ -110,7 +110,7 @@ runTask (Satisfiable,mOutFile,fs) relInfo encoding theory p =
                          "End of input",
                          "Relations properties :" ++ showRelInfo relInfo ]
     --
-    let fLang         = formulaLanguageInfo f encoding
+    let fLang         = formulaLanguageInfo encoding
     --
     (result,stats) <- tableauInit p $ initialBranch p fLang relInfo encoding f
     --
@@ -134,7 +134,7 @@ runTask (Valid,mOutFile,fs) relInfo encoding theory p =
                          "End of input",
                          "Relations properties :" ++ showRelInfo relInfo ]
     --
-    let fLang         = formulaLanguageInfo f encoding
+    let fLang         = formulaLanguageInfo encoding
     --
     (result,stats) <- tableauInit p $ initialBranch p fLang relInfo encoding f
     --
