@@ -10,7 +10,7 @@ import Data.Maybe ( mapMaybe )
 import HTab.Formula( Formula(..), PrFormula(..), showLess,
                      Dependency, DependencySet, dsUnion, dsInsert,
                      prefix, Rel, negPr,
-                     Prefix,
+                     Prefix, Nom, showLit,
                      replaceVar, Literal )
 import HTab.Branch( Branch(..), BranchInfo(..), TodoList(..), BlockingMode(..),
                     -- for rules
@@ -46,12 +46,12 @@ data Rule =  DiaRule    PrFormula                 -- creates a prefix
            | DiscardDiaBlockedRule PrFormula
            | DiscardDisjTrivialRule PrFormula
            | ClashDisjRule DependencySet PrFormula
-           | MergeRule Prefix DS.Pointer DependencySet
+           | MergeRule Prefix Nom DependencySet
            | RoleIncRule Prefix [Rel] Prefix DependencySet
 
 
 instance Show Rule where
-   show (MergeRule pr po _)               = "merge:              " ++ show (pr,po)
+   show (MergeRule pr n _)                = "merge:              " ++ show (pr, showLit n)
    show (DiaRule   todelete)              = "diamond:            " ++ showLess todelete
    show (DisjRule  todelete _ )           = "disjunction:        " ++ showLess todelete
    show (SemBrRule todelete _ )           = "semantic branching: " ++ showLess todelete
@@ -126,8 +126,8 @@ ruleByChar br p d char =
   applicableRoleIncRule
    = do ((ds, p1, p2, rs),new) <- Set.minView $ roleIncTodo todos
         return (RoleIncRule p1 rs p2 (dsInsert d ds), todos{roleIncTodo = new})
-  applicableMergeRule  = do ((ds,pr,po),new) <- Set.minView $ mergeTodo todos
-                            return (MergeRule pr po ds, todos{mergeTodo = new})
+  applicableMergeRule  = do ((ds,pr,n),new) <- Set.minView $ mergeTodo todos
+                            return (MergeRule pr n ds, todos{mergeTodo = new})
   applicableDisjRule
    = case unitProp p of
       Eager -> {- scan all disjuncts until one can be discarded,
@@ -210,7 +210,7 @@ applyRule p rule br
     DiscardDiaBlockedRule f   -> [addToBlockedDias f br]
 
     ClashDisjRule ds (PrFormula pr ds2 f) -> [BranchClash br pr (dsUnion ds ds2) f]
-    MergeRule pr po ds -> [merge p pr ds po br]
+    MergeRule pr n ds -> [merge p pr ds n br]
     RoleIncRule p1 rs p2 ds ->
      [addAccFormula p (ds, r, p1, p2) br | r <- rs]
     _ -> error $ "applyRule with bad argument: " ++ show rule

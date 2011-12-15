@@ -131,7 +131,7 @@ data TodoList= TodoList{disjTodo :: Set PrFormula,
                        existTodo :: Set PrFormula,
                           atTodo :: Set PrFormula,
                         downTodo :: Set PrFormula,
-                       mergeTodo :: Set (DependencySet, Prefix, DS.Pointer),
+                       mergeTodo :: Set (DependencySet, Prefix, Nom),
                      roleIncTodo :: Set (DependencySet, Prefix, Prefix, [Rel]) }
  deriving Show
 
@@ -272,7 +272,7 @@ addToTodo pf@(PrFormula p ds f2) br =
          At _ _             -> utodo{   atTodo = Set.insert pf (   atTodo utodo)}
          Down _ _           -> utodo{ downTodo = Set.insert pf ( downTodo utodo)}
          Lit l
-          | isPositiveNom l -> utodo{mergeTodo = Set.insert (ds,p,DS.Nominal l)
+          | isPositiveNom l -> utodo{mergeTodo = Set.insert (ds,p,l)
                                                             (mergeTodo utodo)}
          _                  -> error $ "addToTodo: " ++ show f2
    alreadyDone =
@@ -304,16 +304,16 @@ addToBlockedDias f@(PrFormula pr _ _) br
 
 {-    helper functions for equivalence class merge     -}
 
-merge :: Params -> Prefix -> DependencySet -> DS.Pointer -> Branch -> BranchInfo
-merge p pr fDs pointer br -- pointer is a nominal or a prefix
+merge :: Params -> Prefix -> DependencySet -> Nom -> Branch -> BranchInfo
+merge p pr fDs n br
  = let
        (DS.Prefix ur1,classes1) = DS.find  (DS.Prefix pr) (nomPrefClasses br)
-       (poAncestor   ,classes2) = DS.find  pointer classes1
-       classes3                 = DS.union (DS.Prefix pr) pointer classes2
+       (poAncestor   ,classes2) = DS.find  (DS.Nominal n) classes1
+       classes3                 = DS.union (DS.Prefix pr) (DS.Nominal n) classes2
    in
     case poAncestor of
      DS.Nominal _   -> BranchOK $ addClassDeps ur1 fDs $ br { nomPrefClasses = classes3 }
-                         -- nominal not yet in the equivalence classes
+                         -- new nominal from down-arrow rule
      DS.Prefix ur2
       | ur1 == ur2 -> BranchOK $ addClassDeps ur1 fDs br
       | otherwise
