@@ -62,7 +62,7 @@ data Branch =
                  -- saturation of rules
                        diaRlCh :: IntMap {- Prefix -} (Set (Rel,Formula)),
                       downRlCh :: IntMap {- Prefix -} (Set Formula),
-                        atRlCh :: Set Formula,
+                        atRlCh :: Set (Nom,Formula),
                      existRlCh :: Set Formula,
                  -- pattern blocking
                       patterns :: IntMap (Set Formula),
@@ -277,8 +277,8 @@ addToTodo pf@(PrFormula p ds f2) br =
          _                  -> error $ "addToTodo: " ++ show f2
    alreadyDone =
     case f2 of
-     E  _               -> existAlreadyDone br f2
-     At _ _             -> atAlreadyDone br f2
+     E  f3              -> Set.member f3 (existRlCh br)
+     At n f3            -> Set.member (n,f3) (atRlCh br)
      Down _ _           -> downAlreadyDone br pf
      Dia  _ _           -> False -- test happens when the todo list is processed
      Dis _              -> False -- test happens when the todo list is processed
@@ -287,8 +287,8 @@ addToTodo pf@(PrFormula p ds f2) br =
      _                  -> error $ "alreadyDone: " ++ show f2
    brWithSaturation =
     case f2 of
-     E _         -> br{existRlCh = Set.insert f2 (existRlCh br)}
-     At _ _      -> br{atRlCh    = Set.insert f2 (atRlCh br)}
+     E f3        -> br{existRlCh = Set.insert f3 (existRlCh br)}
+     At n f3     -> br{atRlCh    = Set.insert (n,f3) (atRlCh br)}
      _           -> br
 
 rescheduleBlockedDias :: Prefix -> Branch -> Branch
@@ -727,7 +727,6 @@ diaAlreadyDone b (PrFormula p _ (Dia r f)) =
  where ur = getUrfather b (DS.Prefix p)
 
 diaAlreadyDone _ _ = error "dia already done : wrong formula kind"
---
 
 addDownRuleCheck :: Prefix -> Formula -> Branch -> BranchInfo
 addDownRuleCheck pr f br =
@@ -743,30 +742,12 @@ downAlreadyDone b (PrFormula p _ f@(Down _ _)) =
 
 downAlreadyDone _ _ = error "down already done : wrong formula kind"
 
---
-
-existAlreadyDone :: Branch -> Formula -> Bool
-existAlreadyDone b f@(E _) = Set.member f (existRlCh b)
-existAlreadyDone _ _ = error "exist already done : wrong formula kind"
-
---
-
-atAlreadyDone :: Branch -> Formula -> Bool
-atAlreadyDone b f@(At _ _) = Set.member f (atRlCh b)
-atAlreadyDone _ _ = error "at already done : wrong formula kind"
-
---
-
 addUnivConstraint :: Formula -> DependencySet -> Params -> Branch -> BranchInfo
 addUnivConstraint f ds p br
- = addFormulas p
-               ( map (\pr -> PrFormula pr ds f) urfathers )
-               newBr
+ = addFormulas p [PrFormula pr ds f | pr <- urfathers] newBr
    where newBr = br{univCons = (ds,f):(univCons br)}
          prefs = [0..(lastPref br)]
          urfathers = filter (isNominalUrfather br) prefs
-
---
 
 createNewNode :: Params -> Branch -> BranchInfo
 createNewNode p br
@@ -782,9 +763,6 @@ addReflexiveLinks :: Prefix -> Branch -> Branch
 addReflexiveLinks pr br
  = foldr (\rel_ br_ -> insertRelationBranch br_ pr rel_ pr dsEmpty) br reflRels
    where reflRels = Map.keys $ Map.filter (elem Reflexive) (relInfo br)
-
-
---
 
 createNewNomTestRelevance :: Formula -> Branch -> BranchInfo
 createNewNomTestRelevance f br
