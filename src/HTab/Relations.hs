@@ -29,14 +29,12 @@ allRels :: OutRels -> [(Prefix,Rel,Prefix)]
 allRels rels = [ (p1,r,p2) | ((p1,r),ds_out_s) <-  D.flatten rels,
                              (p2,_) <- ds_out_s ]
 
+linksFromTo :: OutRels -> Prefix -> Prefix -> [Rel]
+linksFromTo rels p1 p2
+  = List.nub [ r | (pa,r,pb) <- allRels rels, pa == p1, pb == p2]
 
 successors :: OutRels -> Prefix -> IntMap {- Rel -} [(Prefix,DependencySet)]
 successors rels p = I.findWithDefault I.empty p rels
-
-linksFromTo :: OutRels -> Prefix -> Prefix -> [Rel]
-linksFromTo rels p1 p2
-  = map fst $ filter (\(_,p_d_s) -> p2 `elem` map fst p_d_s ) outs
-     where outs = I.toList $ successors rels p1
 
 -- assumes you never add twice the same relation
 insertRelation :: OutRels -> Prefix -> Rel -> Prefix -> DependencySet -> OutRels
@@ -51,8 +49,7 @@ insertRelation rels p1 r p2 ds =
 
 mergePrefixes :: OutRels -> Prefix -> Prefix -> DependencySet -> OutRels
 mergePrefixes r pr ur _ | pr == ur = r
-mergePrefixes r pr ur ds
- = D.moveInnerDataDMapPlusDeps ds r pr ur
+mergePrefixes r pr ur ds = D.moveInnerDataDMapPlusDeps ds r pr ur
 
 showRels :: OutRels -> String
 showRels r = "\nRelations: " ++
