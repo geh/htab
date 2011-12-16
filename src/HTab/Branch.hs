@@ -629,7 +629,7 @@ createNewNom br
 initialBranch :: Params -> LanguageInfo -> RelInfo -> Encoding -> Formula
                   -> BranchInfo
 initialBranch p fLang relInfo_ encoding_ f
- = addFormulas p [pf] br2
+ = addFormulas p [pf] br
     where
           pf = firstPrefixedFormula f
           ns = languageNoms fLang
@@ -642,9 +642,6 @@ initialBranch p fLang relInfo_ encoding_ f
           initLiterals = foldr (\(pr,n) -> D.insert pr n dsEmpty)
                                D.empty
                                (zip [1..] ns)
-          br2 = foldr (\(pr,n) -> bookKeepFormula p (PrFormula pr dsEmpty (Lit n)))
-                      br
-                      (zip [1..] ns)
           emptyBr =
            Branch{ literals          = initLiterals,
                    accStr            = emptyRels,
