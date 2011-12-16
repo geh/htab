@@ -15,7 +15,6 @@ Build-type:          Simple
 Data-files:  NEWS
              examples/*.sh
              examples/sat/*.frm
-             examples/sat_no_mod/*.frm
              examples/unsat/*.frm
 
 Extra-source-files:  tests/test-example-formulas.hs
