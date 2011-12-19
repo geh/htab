@@ -558,9 +558,8 @@ boxesOf br p r
 
 findByPattern :: Branch -> Set Formula -> Prefix
 findByPattern br pattern =
-       head $ map fst
-            $ filter (\(_,pat2) -> pattern `Set.isSubsetOf` pat2)
-            $ I.toList $ patterns br
+       head $ [ pr | (pr,pat2)  <- I.toList $ patterns br,
+                     pattern `Set.isSubsetOf` pat2 ]
 
 {-     modifications done by rule application     -}
 
