@@ -268,8 +268,7 @@ conv_ relI e (F.At   n f)        = at        e n (conv_ relI e f)
 conv_ relI e (F.Down v f)        = downArrow e v (conv_ relI e f)
 conv_ relI e (F.A f)             = univMod     (conv_ relI e f)
 conv_ relI e (F.E f)             = existMod    (conv_ relI e f)
-conv_ _    _ (F.D _)             = error "D not supported"
-conv_ _    _ (F.B _)             = error "B not supported"
+conv_ _    _ f                   = error (show f ++ "not supported")
 
 type Connector = Formula -> Formula
 
@@ -281,9 +280,6 @@ specialiseBox r relI e = specialise r relI (box e, univMod) e
 
 specialise :: S.RelSymbol -> RelInfo -> (S.RelSymbol -> Connector, Connector)
                 -> Encoding -> Connector
-specialise (S.InvRelSymbol r) _ (relational, _) _ -- happens only with simple input
- = relational $ S.InvRelSymbol r
-
 specialise (S.RelSymbol r) relI (relational, global) e
  | Universal `elem` props  = global
  | otherwise = relational $ S.RelSymbol r
@@ -320,9 +316,7 @@ prop e (S.PropSymbol p) = Lit ( propMap e Map.! p )
 box, diamond :: Encoding -> S.RelSymbol -> Formula -> Formula
 univMod, existMod :: Formula -> Formula
 box        e (S.RelSymbol r)    = Box   $ int e r
-box        e (S.InvRelSymbol r) = Box   $ invRel $ int e r
 diamond    e (S.RelSymbol r)    = Dia   $ int e r
-diamond    e (S.InvRelSymbol r) = Dia   $ invRel $ int e r
 univMod    = A
 existMod   = E
 
