@@ -6,12 +6,10 @@ module HTab.CommandLine (
 
 import System.Console.CmdArgs
 import Data.List ( sort )
-import Data.Maybe ( isNothing )
 import HTab.Statistics( StatisticsState, setPrintOutInterval )
 
 data Params = Params {
-           filename        :: Maybe FilePath,
-           stdin           :: Bool,
+           filename        :: FilePath,
            genModel        :: Maybe FilePath,
            dotModel        :: Bool,
            timeout         :: Int,
@@ -31,8 +29,7 @@ data UnitProp = Eager | UPYes | UPNo deriving (Data, Typeable, Eq, Show)
 defaultParams :: Annotate Ann
 defaultParams
  = record Params{}
-     [ filename       := Nothing += name "f" += typFile += help "input file",
-       stdin          := False   += help "use standard input instead of file",
+     [ filename       := "" += name "f" += typFile += help "input file",
        genModel       := Nothing += name "m" += typFile += help "output model file",
        dotModel       := False   += help "output model in dot format (otherwise: hylolib format)",
        timeout        := 0       += name "t" += help "timeout (in seconds, default=none)",
@@ -67,7 +64,7 @@ checkParams p
                    "The rules conjunction, box, universal modality and converse difference",
                    "modality are immediate, thus do not belong to the strategy."]
        return False
- | not (stdin p) && isNothing (filename p) =
+ | null (filename p) =
     do putStrLn $ unlines ["ERROR: No input specified.","Run with --help for usage options"]
        return False
  | otherwise = return True

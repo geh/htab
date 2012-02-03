@@ -9,7 +9,6 @@ import Control.Monad.State( runStateT )
 
 import System.Console.CmdArgs ( whenNormal, whenLoud )
 
-import System.IO           ( hSetBuffering, stdin, BufferMode(LineBuffering)) 
 import System.CPUTime( getCPUTime )
 import qualified System.Timeout as T
 import System.IO.Strict ( readFile )
@@ -33,13 +32,9 @@ runWithParams :: Params -> IO (Maybe TaskRunFlag)
 runWithParams p =
  time "Total time: "
   $ do
-     let fromStdIn = do myPutStrLn "Reading from stdin."
-                        hSetBuffering stdin LineBuffering
-                        getContents
-
      let parse i = if head (words i)  == "begin"
                         then F.simpleParse p i else F.parse p i
-     allTasks <- parse <$> maybe fromStdIn readFile (filename p)
+     allTasks <- parse <$> readFile (filename p)
      --
      result <- if timeout p == 0
                 then Just <$> runTasks allTasks p
