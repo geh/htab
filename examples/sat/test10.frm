@@ -1,5 +1,4 @@
-signature { automatic } theory
-{
+begin
  !(P1 & P1);
  !(P1 & P1);
  P2 | P1;
@@ -20,4 +19,4 @@ signature { automatic } theory
  ([]P3);
  ([](P3 --> (P5 | P2)));
  (P10 & (P10 & (P10 & P10))) & (P30 & (P20 & P10) & (P10 & (P20 & P30)))
-}
+end

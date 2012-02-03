@@ -1,5 +1,4 @@
-signature { automatic } theory
-{
+begin
 p1 v <><><><>p1 v down(N1 <>(N1:[]p1));
 A !p1
-}
+end

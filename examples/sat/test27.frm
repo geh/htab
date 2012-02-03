@@ -1,4 +1,3 @@
-signature { automatic } theory
-{
+begin
 A (p1 ^ []!p1)
-}
+end
