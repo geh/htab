@@ -41,7 +41,7 @@ import HTab.Literals ( UpdateResult(..), Literals,
 data BranchInfo = BranchOK Branch |
                   BranchClash Branch Prefix DependencySet Formula
 
-type BoxConstraints     = DMap {- Prefix Rel -} [(Formula,DependencySet)]
+type BoxConstraints     = DMap {- Prefix Rel -} [(Formula,Depth,DependencySet)]
 type BranchingWitnesses = DMap {- Prefix Literal -} [PrFormula]
 type EquivClasses = DS.DisjSet DS.Pointer
 
@@ -52,7 +52,7 @@ data Branch =
                         accStr :: OutRels,
                  -- local and global constraints
                         boxFwd :: BoxConstraints,
-                      univCons :: [(DependencySet,Formula)],
+                      univCons :: [(DependencySet,Formula,Depth)],
                  -- pending formulas / todo lists
                       todoList :: TodoList,
                  -- saturation of rules
@@ -75,7 +75,8 @@ data Branch =
                  inputLanguage :: LanguageInfo,
                    blockedDias :: IntMap {- Prefix -} [PrFormula],
                        relInfo :: RelInfo,
-                      encoding :: Encoding}
+                      encoding :: Encoding,
+                    generators :: [Generator]}
 
 --
 
@@ -97,7 +98,8 @@ instance Show Branch where
      "\nPrefix to dependency set: ", showIMap  dsShow "\n " (prToDepSet br),
      "\nPrefix-Nominal classes : ", showMap ", " (nomPrefClasses br),
      "\nlastPref : ", show (lastPref br),
-     " nextnom : ", showLit (nextNom br)
+     " nextnom : ", showLit (nextNom br),
+     "\ngenerators :", show (generators br)
   ]
    where
     showIMap :: (a -> String) -> String -> IntMap a -> String
@@ -145,16 +147,16 @@ addFormula p br pf
    $ bookKeepFormula p pf br
 
 bookKeepFormula :: Params -> PrFormula -> Branch -> Branch
-bookKeepFormula p pf_@(PrFormula pr ds f) br
+bookKeepFormula p pf_@(PrFormula pr ds md f) br
  =   rescheduleLazyBranching  p pf
    $ rescheduleBlockedDias    ur br
   where
    (ur,ds2,_) = getUrfatherAndDeps br (DS.Prefix pr)
    pf = if ur == pr then pf_
-         else PrFormula ur (dsUnion ds ds2) f
+         else PrFormula ur (dsUnion ds ds2) md f
 
 rescheduleLazyBranching :: Params -> PrFormula -> Branch -> Branch
-rescheduleLazyBranching p (PrFormula pr ds (Lit l)) br   -- pr already urfather
+rescheduleLazyBranching p (PrFormula pr ds _ (Lit l)) br   -- pr already urfather
  | lazyBranching p && isProp l
    =
      let (Just innerMap) = D.lookup1 pr (brWitnesses br)
@@ -182,13 +184,13 @@ rescheduleLazyBranching _ _ br = br
 
 
 putAwayFormula :: Params -> PrFormula -> Branch -> BranchInfo
-putAwayFormula p pf@(PrFormula pr ds f2) br =
+putAwayFormula p pf@(PrFormula pr ds md f2) br =
  case f2 of
-   Con fs     -> addFormulas p (prefix pr ds fs) br
+   Con fs     -> addFormulas p (prefix pr ds md fs) br
    Dis _      -> putAwayDisjunction p pf br
    Dia _ _    -> BranchOK $ addToTodo pf br
-   Box r f    -> addBoxConstraint      pr r f ds p br
-   A f        -> addUnivConstraint          f ds p br
+   Box r f    -> addBoxConstraint      pr r md f ds p br
+   A f        -> addUnivConstraint          md f ds p br
    E _        -> BranchOK $ addToTodo pf br
    At _ _     -> BranchOK $ addToTodo pf br
    Down _ _   -> BranchOK $ addToTodo pf br
@@ -196,13 +198,13 @@ putAwayFormula p pf@(PrFormula pr ds f2) br =
    Lit l                   -> addToLiterals pr ds l br
 
 putAwayDisjunction :: Params -> PrFormula -> Branch -> BranchInfo
-putAwayDisjunction p pf@(PrFormula pr ds f@(Dis fs)) br
+putAwayDisjunction p pf@(PrFormula pr ds md f@(Dis fs)) br
  | lazyBranching p
   = case reduceDisjunctionProposeLazy br pr fs of
      Contradiction dsClash -> BranchClash br pr (dsUnion ds dsClash) f
      Triviality -> BranchOK br
      Reduced new_ds disjuncts mProposed
-      -> let fNew = PrFormula pr (dsUnion ds new_ds) (Dis disjuncts)
+      -> let fNew = PrFormula pr (dsUnion ds new_ds) md (Dis disjuncts)
               -- TODO if there was no reduction, leave ds
          in
           case mProposed of
@@ -240,7 +242,7 @@ doLazyBranching pr lit pfs br
 {- todo list functions -}
 
 addToTodo :: PrFormula -> Branch -> Branch
-addToTodo pf@(PrFormula p ds f2) br =
+addToTodo pf@(PrFormula p ds _ f2) br =
   if alreadyDone
    then br
    else brWithSaturation{todoList = newTodoList}
@@ -280,7 +282,7 @@ rescheduleBlockedDias  pr br
         br2 = br{blockedDias = I.delete pr $ blockedDias br}
 
 addToBlockedDias :: PrFormula -> Branch -> BranchInfo
-addToBlockedDias f@(PrFormula pr _ _) br
+addToBlockedDias f@(PrFormula pr _ _ _) br
  = BranchOK br{blockedDias = I.insertWith (++) ur [f] (blockedDias br)}
    where ur = getUrfather br (DS.Prefix pr)
 
@@ -318,7 +320,7 @@ merge p pr fDs n br
               newLiterals = I.delete oldUr $ I.insert newUr slot $ literals br
 
               -- structures that merge
-              newBoxFwd = D.moveInnerDataDMapPlusDeps fDs (boxFwd br) oldUr newUr
+              newBoxFwd       = D.moveInnerPlusDeps3 fDs (boxFwd br) oldUr newUr
               newAccStr       = mergePrefixes (accStr br) oldUr newUr fDs
               newDiaRlCh      = moveInMap (diaRlCh br)  oldUr newUr Set.union
               newBlockedDias  = moveInMap (blockedDias br) oldUr newUr (++)
@@ -382,13 +384,13 @@ nubAndMergeDeps :: [PrFormula] -> [PrFormula]
 -- to a branch as several prefixed formulas with different branching dependencies.
 -- This functions takes a list of prefixed formulas, looks which inner formulas
 -- are the same and merge their branching dependencies.
-nubAndMergeDeps prfs =  namd prfs (Map.empty::Map (Prefix,Formula) DependencySet)
+nubAndMergeDeps prfs =  namd prfs (Map.empty::Map (Prefix,Formula,Depth) DependencySet)
 
-namd :: [PrFormula] -> Map (Prefix,Formula) DependencySet -> [PrFormula]
-namd ((PrFormula p ds f):prfs) theMap =
-  namd prfs (Map.insertWith dsUnion (p,f) ds theMap)
+namd :: [PrFormula] -> Map (Prefix,Formula,Depth) DependencySet -> [PrFormula]
+namd ((PrFormula p ds md f):prfs) theMap =
+  namd prfs (Map.insertWith dsUnion (p,f,md) ds theMap)
 
-namd [] theMap = map (\((p,f),ds) -> PrFormula p ds f) (Map.assocs theMap)
+namd [] theMap = map (\((p,f,md),ds) -> PrFormula p ds md f) (Map.assocs theMap)
 
 {-     handling nominal urfathers, equivalence classes and dependencies     -}
 
@@ -431,30 +433,30 @@ inSameClass br p n
 {-     box-related constraints     -}
 
 boxRule :: DependencySet
-            -> (IntMap {- Rel -} [(Formula,DependencySet)],
+            -> (IntMap {- Rel -} [(Formula,Depth,DependencySet)],
                 IntMap {- Rel -} [(Prefix,DependencySet)] )
             -> [PrFormula]
 boxRule deps (mapBox, mapAcc)
- = [PrFormula p (dsUnions [deps,ds1,ds2]) f |
+ = [PrFormula p (dsUnions [deps,ds1,ds2]) md f |
                       r1 <- I.keys mapBox,
                       r2 <- I.keys mapAcc,
                       r1 == r2,
-                      (f,ds1) <- (I.!) mapBox r1,
+                      (f,md,ds1) <- (I.!) mapBox r1,
                       (p,ds2) <- (I.!) mapAcc r2     ]
 
-addBoxConstraint :: Prefix -> Rel -> Formula -> DependencySet -> Params -> Branch
+addBoxConstraint :: Prefix -> Rel -> Depth -> Formula -> DependencySet -> Params -> Branch
                      -> BranchInfo
-addBoxConstraint pr_ r f ds p br
+addBoxConstraint pr_ r md f ds p br
  | boxAlreadyDone br pr (r,f) = BranchOK br
  | isForward r
-    = let newBr = br{boxFwd = updateBoxConstr pr r f ds (boxFwd br)}
+    = let newBr = br{boxFwd = updateBoxConstr pr r (md-1) f ds (boxFwd br)}
           succs  = get [] r $ successors (accStr br) pr
           toAdd = fromTrans ++ fromBox
           fromTrans
            = if isTransitive (relInfo br) r
-              then map (\(pr2,ds2) -> PrFormula pr2 (dsUnion ds ds2) (Box r f)) succs
+              then map (\(pr2,ds2) -> PrFormula pr2 (dsUnion ds ds2) md (Box r f)) succs
               else []
-          fromBox = map (\(pr2,ds2) -> PrFormula pr2 (dsUnion ds ds2) f) succs
+          fromBox = map (\(pr2,ds2) -> PrFormula pr2 (dsUnion ds ds2) (md-1) f) succs
     -- todo check again with new pattern, create successor if new pattern not realized
       in
          addFormulas p toAdd newBr
@@ -462,22 +464,22 @@ addBoxConstraint pr_ r f ds p br
  | otherwise = error "backwards relation"
  where pr = getUrfather br (DS.Prefix pr_)
 
-updateBoxConstr :: Prefix -> Rel -> Formula -> DependencySet -> BoxConstraints
+updateBoxConstr :: Prefix -> Rel -> Depth -> Formula -> DependencySet -> BoxConstraints
                     -> BoxConstraints
-updateBoxConstr p1_ r_ f_ ds_ boxConstr_ =
+updateBoxConstr p1_ r_ md_ f_ ds_ boxConstr_ =
   case I.lookup p1_ boxConstr_ of
-    Nothing       -> I.insert p1_ (I.singleton r_ [(f_,ds_)]) boxConstr_
+    Nothing       -> I.insert p1_ (I.singleton r_ [(f_,md_,ds_)]) boxConstr_
     Just innerMap ->
        case I.lookup r_ innerMap of
         Nothing
-         -> I.insert p1_ (I.insert r_ [(f_,ds_)] innerMap)                boxConstr_
+         -> I.insert p1_ (I.insert r_ [(f_,md_,ds_)] innerMap)                boxConstr_
         Just innerInnerList
-         -> I.insert p1_ (I.insert r_ ((f_,ds_):innerInnerList) innerMap) boxConstr_
+         -> I.insert p1_ (I.insert r_ ((f_,md_,ds_):innerInnerList) innerMap) boxConstr_
 
 boxAlreadyDone :: Branch -> Prefix -> (Rel,Formula) -> Bool
 boxAlreadyDone br ur (r,f)
  | isForward r  = case ( do inner <- I.lookup ur (boxFwd br)
-                            boxes <- map fst <$> I.lookup r inner
+                            boxes <- map (\(e,_,_) -> e) <$> I.lookup r inner
                             return (f `elem` boxes) ) of
                     Just True -> True
                     _         -> False
@@ -494,9 +496,9 @@ addAccFormula p (ds, r, p1_, p2_) br
       toAdd = transApplications ++ boxApplications
       transApplications =
        if isTransitive (relInfo br) r
-        then map (\(f,ds2) -> PrFormula p2 (dsUnion ds ds2) (Box r f)) toSendFwd
+        then map (\(f,md,ds2) -> PrFormula p2 (dsUnion ds ds2) (md+1) (Box r f)) toSendFwd
         else []
-      boxApplications = map (\(f,ds2) -> PrFormula p2 (dsUnion ds ds2) f) toSendFwd
+      boxApplications = map (\(f,md,ds2) -> PrFormula p2 (dsUnion ds ds2) md f) toSendFwd
       p1 = getUrfather br (DS.Prefix p1_)
       p2 = getUrfather br (DS.Prefix p2_)
       toSendFwd = get [] r $ get I.empty p1 (boxFwd br)
@@ -542,7 +544,7 @@ patternBlocked br f = not $ I.null $ I.filter lookForSuperset (patterns br)
 -- { f } U { f' | p:[r]f' in branch }
 -- r has to be forward
 patternOf :: Branch -> PrFormula -> Set Formula
-patternOf br (PrFormula pr _ (Dia r f))
+patternOf br (PrFormula pr _ _ (Dia r f))
  = Set.insert f boxes
     where ur = getUrfather br (DS.Prefix pr)
           boxes = if isTransitive (relInfo br) r
@@ -554,7 +556,7 @@ patternOf _ _ = error "patternOf called with a non diamond formula"
 
 boxesOf :: Branch -> Prefix -> Rel -> Set Formula
 boxesOf br p r
- = set $ map fst $ get [] r $ get I.empty p (boxFwd br)
+ = set $ map (\(e,_,_) -> e) $ get [] r $ get I.empty p (boxFwd br)
 
 findByPattern :: Branch -> Set Formula -> Prefix
 findByPattern br pattern =
@@ -566,13 +568,13 @@ findByPattern br pattern =
 addDiaRuleCheck :: Prefix -> (Rel,Formula) -> Prefix -> Branch -> BranchInfo
 addDiaRuleCheck pr (r,f) newPr br =
   BranchOK br2
-   where pattern = patternOf br (PrFormula ur dsEmpty (Dia r f))
+   where pattern = patternOf br (PrFormula ur dsEmpty 0 (Dia r f))
          br1 = br{patterns = I.insert newPr pattern (patterns br)}
          br2 = br1{diaRlCh=I.insertWith Set.union ur (Set.singleton (r,f)) (diaRlCh br1)}
          ur = getUrfather br (DS.Prefix pr)
 
 diaAlreadyDone :: Branch -> PrFormula -> Bool
-diaAlreadyDone b (PrFormula p _ (Dia r f)) =
+diaAlreadyDone b (PrFormula p _ _ (Dia r f)) =
   case I.lookup ur (diaRlCh b) of
      Nothing  -> False
      Just fset -> Set.member (r,f) fset
@@ -586,7 +588,7 @@ addDownRuleCheck pr f br =
    where ur = getUrfather br (DS.Prefix pr)
 
 downAlreadyDone :: Branch -> PrFormula -> Bool
-downAlreadyDone b (PrFormula p _ f@(Down _ _)) =
+downAlreadyDone b (PrFormula p _ _ f@(Down _ _)) =
   case I.lookup ur (downRlCh b) of
      Nothing  -> False
      Just fset -> Set.member f fset
@@ -594,17 +596,17 @@ downAlreadyDone b (PrFormula p _ f@(Down _ _)) =
 
 downAlreadyDone _ _ = error "down already done : wrong formula kind"
 
-addUnivConstraint :: Formula -> DependencySet -> Params -> Branch -> BranchInfo
-addUnivConstraint f ds p br
- = addFormulas p [PrFormula pr ds f | pr <- urfathers] newBr
-   where newBr = br{univCons = (ds,f):(univCons br)}
+addUnivConstraint :: Depth -> Formula -> DependencySet -> Params -> Branch -> BranchInfo
+addUnivConstraint md f ds p br
+ = addFormulas p [PrFormula pr ds (md-1) f | pr <- urfathers] newBr
+   where newBr = br{univCons = (ds,f,md-1):(univCons br)}
          prefs = [0..(lastPref br)]
          urfathers = filter (isNominalUrfather br) prefs
 
 createNewNode :: Params -> Branch -> BranchInfo
 createNewNode p br
  = addFormulas p
-               ( map (\(ds,f) -> PrFormula newPr ds f) univConstraints )
+               ( map (\(ds,f,md) -> PrFormula newPr ds md f) univConstraints )
                newBrWithRefl
    where newPr = lastPref br + 1
          newBr = br{lastPref = newPr}
@@ -625,9 +627,9 @@ createNewNom br
 --  - add a nominal formula at a fresh prefix for each nominal of the input language
 --    (even if the nominal was filtered out during lexical normalisation)
 --  - add reflexive links for prefixes 0 and nominal witnesses
-initialBranch :: Params -> LanguageInfo -> RelInfo -> Encoding -> Formula
+initialBranch :: Params -> LanguageInfo -> RelInfo -> Encoding -> [Generator] -> Formula
                   -> BranchInfo
-initialBranch p fLang relInfo_ encoding_ f
+initialBranch p fLang relInfo_ encoding_ gs f
  = addFormulas p [pf] br
     where
           pf = firstPrefixedFormula f
@@ -660,7 +662,8 @@ initialBranch p fLang relInfo_ encoding_ f
                    inputLanguage     = fLang,
                    blockedDias       = I.empty,
                    relInfo           = relInfo_,
-                   encoding          = encoding_
+                   encoding          = encoding_,
+                   generators        = gs
                  }
 
 addToLiterals :: Prefix -> DependencySet -> Literal -> Branch -> BranchInfo

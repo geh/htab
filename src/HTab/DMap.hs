@@ -2,7 +2,7 @@ module HTab.DMap
 (DMap, empty, flatten,
  delete, insert, insertWith, (!),
  insert1, lookup, lookup1, lookupInter,
- moveInnerDataDMapPlusDeps )
+ moveInnerPlusDeps, moveInnerPlusDeps3 )
 
 where
 
@@ -66,14 +66,30 @@ lookupInter k1 m = case I.lookup k1 m of
 -- both keys using the merge function when needed for inner values
 -- delete the first inner map
 -- and add the given dependencies
-moveInnerDataDMapPlusDeps :: DependencySet -> DMap [(c,DependencySet)] -> Int -> Int -> DMap [(c,DependencySet)]
-moveInnerDataDMapPlusDeps newDeps m origKey destKey
+moveInnerPlusDeps :: DependencySet -> DMap [(c,DependencySet)] -> Int -> Int
+                        -> DMap [(c,DependencySet)]
+moveInnerPlusDeps newDeps m origKey destKey
  = case I.lookup origKey m of
      Nothing  -> m
      Just origInnerMap
         -> let origInnerMapPlusDeps = I.map (addDeps newDeps) origInnerMap
                prunedM = I.delete origKey m
                addDeps newBps = map (\(el,oldBps) -> (el,dsUnion newBps oldBps))
+           in case I.lookup destKey m of
+                Nothing -> I.insert destKey origInnerMapPlusDeps prunedM
+                Just destInnerMap
+                   -> let mergedInnerMap = I.unionWith (++) origInnerMapPlusDeps destInnerMap
+                      in  I.insert destKey mergedInnerMap prunedM
+
+moveInnerPlusDeps3 :: DependencySet -> DMap [(c1,c2,DependencySet)] -> Int -> Int
+                        -> DMap [(c1,c2,DependencySet)]
+moveInnerPlusDeps3 newDeps m origKey destKey
+ = case I.lookup origKey m of
+     Nothing  -> m
+     Just origInnerMap
+        -> let origInnerMapPlusDeps = I.map (addDeps newDeps) origInnerMap
+               prunedM = I.delete origKey m
+               addDeps newBps = map (\(el1,el2,oldBps) -> (el1,el2,dsUnion newBps oldBps))
            in case I.lookup destKey m of
                 Nothing -> I.insert destKey origInnerMapPlusDeps prunedM
                 Just destInnerMap

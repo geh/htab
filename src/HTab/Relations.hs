@@ -49,7 +49,7 @@ insertRelation rels p1 r p2 ds =
 
 mergePrefixes :: OutRels -> Prefix -> Prefix -> DependencySet -> OutRels
 mergePrefixes r pr ur _ | pr == ur = r
-mergePrefixes r pr ur ds = D.moveInnerDataDMapPlusDeps ds r pr ur
+mergePrefixes r pr ur ds = D.moveInnerPlusDeps ds r pr ur
 
 showRels :: OutRels -> String
 showRels r = "\nRelations: " ++

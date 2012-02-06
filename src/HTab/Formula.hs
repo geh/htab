@@ -2,7 +2,7 @@ module HTab.Formula
 
 (Atom, Prop, Nom, Literal,
 Rel, Prefix, Formula(..),
-DependencySet, Dependency,
+DependencySet, Dependency, Depth,
 dsUnion, dsUnions, dsInsert, dsMember,
 dsEmpty, dsMin, dsShow, addDeps,
 PrFormula(..),showLess,
@@ -19,6 +19,7 @@ toPropSymbol, toNomSymbol, toRelSymbol,
 isTop, isBottom, isPositiveNom, isPositiveProp, isPositive, isNegative,
 isNominal, isProp, atom,
 invRel, int
+,parseGenerators,Generator,applyGenerators
 )
 
  where
@@ -29,7 +30,7 @@ import Data.Set ( Set, unions )
 import qualified Data.Map as Map
 import Data.Map ( Map )
 import qualified Data.IntSet as IntSet
-import Data.List ( delete, nub, sort )
+import Data.List ( delete, nub, sort, intercalate, isPrefixOf )
 
 import qualified HyLo.Signature.String as S
 
@@ -243,9 +244,10 @@ convertToOurType prelI e = foldr insertRelProp Map.empty (concatMap convertOne p
        c _ P.Injective       = error "Injective not handled"
        c _ P.Difference      = error "Difference not handled"
 
-simpleParse :: Params -> String -> (Theory,RelInfo,Encoding,[Task])
+simpleParse :: Params -> String -> (Theory,RelInfo,Encoding)
 simpleParse p s =
- parse p $ "signature { automatic } theory { " ++ removeBeginEnd s ++ "}"
+ let (t,r,e,_) = parse p $ "signature { automatic } theory { " ++ removeBeginEnd s ++ "}"
+ in (t,r,e)
  where removeBeginEnd = unwords . delete "begin" . delete "end" . words
 
 convert :: RelInfo -> Encoding -> [F.Formula S.NomSymbol S.PropSymbol S.RelSymbol]
@@ -402,23 +404,25 @@ neg (Lit n)          = Lit $ negLit n
 
 -- prefixed formula
 
-data PrFormula = PrFormula Prefix DependencySet Formula
+type Depth = Int -- modal depth of current formula wrt input formula
+
+data PrFormula = PrFormula Prefix DependencySet Depth Formula
  deriving Eq
 
 instance Show PrFormula where
- show (PrFormula pr ds f) = show pr ++ ":" ++ dsShow ds ++ ":" ++ show f
+ show (PrFormula pr ds md f) = intercalate ":" [show pr, show ds, show md, show f]
 
 showLess :: PrFormula -> String
-showLess (PrFormula pr _ f) = show pr ++ ":" ++ show f
+showLess (PrFormula pr _ _ f) = show pr ++ ":" ++ show f
 
-prefix :: Prefix -> DependencySet -> Set Formula -> [PrFormula]
-prefix p bps fs = [PrFormula p bps formula|formula <- list fs]
+prefix :: Prefix -> DependencySet -> Depth -> Set Formula -> [PrFormula]
+prefix p bps md fs = [PrFormula p bps md formula|formula <- list fs]
 
 firstPrefixedFormula :: Formula -> PrFormula
-firstPrefixedFormula = PrFormula 0 dsEmpty
+firstPrefixedFormula = PrFormula 0 dsEmpty 0
 
 negPr :: PrFormula -> PrFormula
-negPr (PrFormula p ds f) = PrFormula p ds (neg f)
+negPr (PrFormula p ds md f) = PrFormula p ds md (neg f)
 
 -- formula language
 
@@ -469,7 +473,7 @@ type Dependency = Int
 type DependencySet = IntSet.IntSet
 
 instance Ord PrFormula where
- compare (PrFormula pr1 ds1 f1) (PrFormula pr2 ds2 f2) =
+ compare (PrFormula pr1 ds1 _ f1) (PrFormula pr2 ds2 _ f2) =
   case dsMin ds1 `compare` dsMin ds2 of
    LT -> LT
    GT -> GT
@@ -497,10 +501,67 @@ dsShow :: DependencySet -> String
 dsShow = show . IntSet.toList
 
 addDeps :: DependencySet -> PrFormula -> PrFormula
-addDeps ds1 (PrFormula p ds2 f) = PrFormula p (dsUnion ds1 ds2) f
+addDeps ds1 (PrFormula p ds2 md f) = PrFormula p (dsUnion ds1 ds2) md f
 
 list :: Ord a => Set.Set a -> [a]
 list = Set.toList
 
 set :: Ord a => [a] -> Set.Set a
 set = Set.fromList
+
+
+-- symmetries
+-- substitution of literals inside of formulas
+
+type Generator = [(Depth,Atom,Atom)]
+
+applyGenerators :: [Generator] -> PrFormula -> [PrFormula]
+applyGenerators gens f = delete f $ nub $ map (\gen -> subst gen f) gens
+
+subst :: Generator -> PrFormula -> PrFormula
+subst gen (PrFormula pr ds md f) = PrFormula pr ds md $ substNorm (normGen gen md) f
+
+normGen :: Generator -> Depth -> Generator
+normGen g md = [(md1-md,a1,a2) | (md1,a1,a2) <- g, md1 - md >= 0]
+
+substNorm :: Generator -> Formula -> Formula
+-- act as if we were at modal depth 0 and generator has been adjusted
+substNorm gen (Lit a)     = Lit $ genOnAtom gen a
+substNorm gen (At n f)    = At n $ substNorm (normGen gen 1) f
+substNorm gen (Box r f)   = Box r $ substNorm (normGen gen 1) f
+substNorm gen (Dia r f)   = Dia r $ substNorm (normGen gen 1) f
+substNorm gen (Down n f)  = Down n $ substNorm (normGen gen 1) f
+substNorm gen (A f)       = A $ substNorm (normGen gen 1) f
+substNorm gen (E f)       = E $ substNorm (normGen gen 1) f
+substNorm gen f           = composeMap id (substNorm gen) f
+
+genOnAtom :: Generator -> Atom -> Atom
+genOnAtom [] a = a
+genOnAtom ((d,x,y):g) a
+ | d == 0 && x == a        = y
+ | d == 0 && x == negLit a = negLit y
+ | otherwise               = genOnAtom g a
+
+parseGenerators :: Encoding -> String -> [Generator]
+parseGenerators e genString
+ =  [lineToGen e l [] | l <- lines genString,
+                        not ("%" `isPrefixOf` l),
+                        not (null l)            ]
+
+-- turn such a line into a generator:
+-- 4 -2 5, 5 3 5, 0 -6 -3
+lineToGen :: Encoding -> String -> Generator -> Generator
+lineToGen _ "" g      = g
+lineToGen e (',':l) g = lineToGen e l g
+lineToGen e l g       = let triple = takeWhile (/= ',') l
+                            remainder = dropWhile (/= ',') l
+                            [md,l1,l2] = map read $ words triple
+                            -- we read X for PX or -Y for -PY,
+                            -- now we need to convert it in atom
+                            a1 = if l1 < 0
+                                  then negLit $ (Map.!) (propMap e) ("P" ++ show (negate l1))
+                                  else (Map.!) (propMap e) ("P" ++ show l1)
+                            a2 = if l2 < 0
+                                  then negLit $ (Map.!) (propMap e) ("P" ++ show (negate l2))
+                                  else (Map.!) (propMap e) ("P" ++ show l2)
+                        in lineToGen e remainder (g ++ [(md,a1,a2)])
