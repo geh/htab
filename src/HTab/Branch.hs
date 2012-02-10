@@ -27,7 +27,6 @@ import qualified Data.Set as Set
 import Data.IntMap ( IntMap)
 import qualified Data.IntMap as I
 
-import HTab.DMap ( DMap )
 import qualified HTab.DMap as D
 import qualified HTab.DisjSet as DS
 import HTab.CommandLine(Params(..))
@@ -41,8 +40,8 @@ import HTab.Literals ( UpdateResult(..), Literals,
 data BranchInfo = BranchOK Branch |
                   BranchClash Branch Prefix DependencySet Formula
 
-type BoxConstraints     = DMap {- Prefix Rel -} [(Formula,Depth,DependencySet)]
-type BranchingWitnesses = DMap {- Prefix Literal -} [PrFormula]
+type BoxConstraints     = IntMap {- Prefix -} (Map Rel [(Formula,Depth,DependencySet)])
+type BranchingWitnesses = IntMap {- Prefix -} (Map Literal [PrFormula])
 type EquivClasses = DS.DisjSet DS.Pointer
 
 data Branch =
@@ -68,14 +67,13 @@ data Branch =
                 nomPrefClasses :: EquivClasses,
                  -- book keeping
                       lastPref :: Prefix,
-                       nextNom :: Nom,
+                       nextNom :: Int,
                  -- lazy branching
                    brWitnesses :: BranchingWitnesses,
                  -- information about language of input formula and blocking mode
                  inputLanguage :: LanguageInfo,
                    blockedDias :: IntMap {- Prefix -} [PrFormula],
                        relInfo :: RelInfo,
-                      encoding :: Encoding,
                     generators :: [Generator]}
 
 --
@@ -98,18 +96,18 @@ instance Show Branch where
      "\nPrefix to dependency set: ", showIMap  dsShow "\n " (prToDepSet br),
      "\nPrefix-Nominal classes : ", showMap ", " (nomPrefClasses br),
      "\nlastPref : ", show (lastPref br),
-     " nextnom : ", showLit (nextNom br),
+     " nextnom : ", show (nextNom br),
      "\ngenerators :", show (generators br)
   ]
    where
     showIMap :: (a -> String) -> String -> IntMap a -> String
-    showIMap vShow sep
-     = I.foldWithKey (\k v -> (++ sep ++ show k ++ " -> " ++ vShow v )) ""
+    showIMap vShow sep im
+     = I.foldWithKey (\k v -> (++ sep ++ show k ++ " -> " ++ vShow v )) "" im
     showMap sep = Map.foldrWithKey (\k v -> (++ sep ++ show k ++ " -> " ++ show v )) ""
-    showMap_lits = I.foldWithKey (\l d -> (++ showLit l ++ " " ++ dsShow d  ++ ", ")) ""
-    showMap_lits2 = I.foldWithKey (\l fs -> (++ showLit l ++ " :" ++ show fs ++ ", ")) ""
+    showMap_lits ml = Map.foldrWithKey (\l d -> (++ show l ++ " " ++ dsShow d  ++ ", ")) "" ml
+    showMap_lits2 = Map.foldrWithKey (\l fs -> (++ show l ++ " :" ++ show fs ++ ", ")) ""
     showMap_rel
-     = I.foldWithKey (\r dxs -> (++ "-" ++ showRel r ++ "-> " ++ show dxs ++ ", ")) ""
+     = Map.foldrWithKey (\r dxs -> (++ "-" ++ r ++ "-> " ++ show dxs ++ ", ")) ""
 
 data TodoList= TodoList{disjTodo :: Set PrFormula,
                          diaTodo :: Set PrFormula,
@@ -159,22 +157,22 @@ rescheduleLazyBranching :: Params -> PrFormula -> Branch -> Branch
 rescheduleLazyBranching p (PrFormula pr ds _ (Lit l)) br   -- pr already urfather
  | lazyBranching p && isProp l
    =
-     let (Just innerMap) = D.lookup1 pr (brWitnesses br)
+     let (Just innerMap) = I.lookup pr (brWitnesses br)
      in
 
      case D.lookup pr l (brWitnesses br) of
       Just _
-        -> let innerMap2 = I.delete l innerMap
-               newBrW = D.insert1 pr innerMap2 (brWitnesses br)
-               newBr = br{brWitnesses = newBrW}
+        -> let innerMap2 = Map.delete l innerMap
+               newBrW    = I.insert pr innerMap2 (brWitnesses br)
+               newBr     = br{brWitnesses = newBrW}
            in
             newBr -- forget  the disjunctions, they are really satisfied
       Nothing
        -> case D.lookup pr (negLit l) (brWitnesses br) of
            Just fs
-             -> let innerMap2 = I.delete (negLit l) innerMap
-                    newBrW = D.insert1 pr innerMap2 (brWitnesses br)
-                    newBr = br{brWitnesses = newBrW}
+             -> let innerMap2 = Map.delete (negLit l) innerMap
+                    newBrW    = I.insert pr innerMap2 (brWitnesses br)
+                    newBr     = br{brWitnesses = newBrW}
                 in
                  foldr addToTodo newBr (map (addDeps ds) fs) --reschedule
            Nothing
@@ -220,18 +218,18 @@ putAwayDisjunction _ pf _ = error ("putAwayDisjunction " ++ show pf)
 -- assume the tests have been done beforehand, always returns BranchOK
 doLazyBranching :: Prefix -> Literal -> [PrFormula] -> Branch -> BranchInfo
 doLazyBranching pr lit pfs br
- = case D.lookup1 pr (brWitnesses br) of
+ = case I.lookup pr (brWitnesses br) of
     Nothing -> let newBrW = D.insert pr lit pfs (brWitnesses br)
                in BranchOK br{brWitnesses = newBrW}
     Just innerMap
-     -> case I.lookup lit innerMap of
+     -> case Map.lookup lit innerMap of
         -- assume this is the only place where l or (negLit l) occur
-         Nothing -> let newInner = I.insert lit pfs innerMap
-                        newBrW = D.insert1 pr newInner (brWitnesses br)
+         Nothing -> let newInner = Map.insert lit pfs innerMap
+                        newBrW = I.insert pr newInner (brWitnesses br)
                     in BranchOK br{brWitnesses = newBrW}
          Just fs -- assume the test was already done
-          -> let newInner = I.insert lit (pfs++fs) innerMap
-                 newBrW = D.insert1 pr newInner (brWitnesses br)
+          -> let newInner = Map.insert lit (pfs++fs) innerMap
+                 newBrW = I.insert pr newInner (brWitnesses br)
              in BranchOK br{brWitnesses = newBrW}
 
 
@@ -256,8 +254,9 @@ addToTodo pf@(PrFormula p ds _ f2) br =
          At _ _             -> utodo{   atTodo = Set.insert pf (   atTodo utodo)}
          Down _ _           -> utodo{ downTodo = Set.insert pf ( downTodo utodo)}
          Lit l
-          | isPositiveNom l -> utodo{mergeTodo = Set.insert (ds,p,l)
+          | isPositiveNom l -> utodo{mergeTodo = Set.insert (ds,p,s)
                                                             (mergeTodo utodo)}
+                                where (PosLit (N s)) = l
          _                  -> error $ "addToTodo: " ++ show f2
    alreadyDone =
     case f2 of
@@ -267,7 +266,8 @@ addToTodo pf@(PrFormula p ds _ f2) br =
      Dia  _ _           -> False -- test happens when the todo list is processed
      Dis _              -> False -- test happens when the todo list is processed
      Lit l
-      | isPositiveNom l -> inSameClass br p l
+      | isPositiveNom l -> inSameClass br p s
+                            where (PosLit (N s)) = l
      _                  -> error $ "alreadyDone: " ++ show f2
    brWithSaturation =
     case f2 of
@@ -278,7 +278,7 @@ addToTodo pf@(PrFormula p ds _ f2) br =
 rescheduleBlockedDias :: Prefix -> Branch -> Branch
 rescheduleBlockedDias  pr br
  = foldr addToTodo br2 toAdd
-  where toAdd = get [] pr (blockedDias br)
+  where toAdd = iget [] pr (blockedDias br)
         br2 = br{blockedDias = I.delete pr $ blockedDias br}
 
 addToBlockedDias :: PrFormula -> Branch -> BranchInfo
@@ -305,7 +305,7 @@ merge p pr fDs n br
           let
            oldUr           = max ur1 ur2
            newUr           = min ur1 ur2
-           literalSlots    = mapMaybe (\ur -> D.lookup1 ur (literals br)) [ur1,ur2]
+           literalSlots    = mapMaybe (\ur -> I.lookup ur (literals br)) [ur1,ur2]
            currentDeps     = dsUnions $ fDs:(map (findDeps br) [ur1,ur2])
            newPrToDepSet   = I.insert newUr currentDeps (prToDepSet br)
            newUrfatherSlot = lsAddDeps currentDeps $ lsUnions literalSlots
@@ -327,7 +327,7 @@ merge p pr fDs n br
               (newBrWit,unwitnessed) = mergeWitnesses oldUr newUr slot (brWitnesses br)
 
               -- structures that combine
-              mapBoxFwd = map (\idx -> get I.empty idx (boxFwd br) ) [ur1,ur2]
+              mapBoxFwd = map (\idx -> iget Map.empty idx (boxFwd br) ) [ur1,ur2]
               mapAccFwd = map (successors (accStr br)) [ur1,ur2]
               forms1    = concatMap (boxRule currentDeps) $ combine mapBoxFwd mapAccFwd
 
@@ -347,35 +347,35 @@ merge p pr fDs n br
 mergeWitnesses :: Prefix -> Prefix -> LiteralSlot -> BranchingWitnesses
                    -> (BranchingWitnesses, [PrFormula])
 mergeWitnesses oldUr newUr urfatherSlot brWits
- =( D.insert1 newUr newDest2 ( D.delete oldUr brWits ), toAdd1 ++ toAdd2 )
+ =( I.insert newUr newDest2 ( I.delete oldUr brWits ), toAdd1 ++ toAdd2 )
   where
-   srcInnerMap  = get I.empty oldUr brWits
-   destInnerMap = get I.empty newUr brWits
+   srcInnerMap  = iget Map.empty oldUr brWits
+   destInnerMap = iget Map.empty newUr brWits
    (newDest1,toAdd1) = mergeWitnessesWitnessesMap srcInnerMap destInnerMap
    (newDest2,toAdd2) = mergeWitnessesAgainstLiterals newDest1 urfatherSlot
 
-mergeWitnessesWitnessesMap :: IntMap [PrFormula] -> IntMap [PrFormula]
-                               -> (IntMap [PrFormula], [PrFormula])
+mergeWitnessesWitnessesMap :: Map Literal [PrFormula] -> Map Literal [PrFormula]
+                               -> (Map Literal [PrFormula], [PrFormula])
 mergeWitnessesWitnessesMap srcWitMap destWitMap
- = foldr go (destWitMap,[]) $ I.assocs srcWitMap
+ = foldr go (destWitMap,[]) $ Map.assocs srcWitMap
    where
       go (l,fs) (destMap,toAddAgain)
-         = case I.lookup l destMap of
-            Just fs2 -> (I.insert l (fs2++fs) destMap, toAddAgain)
+         = case Map.lookup l destMap of
+            Just fs2 -> (Map.insert l (fs2++fs) destMap, toAddAgain)
             Nothing
-             -> case I.lookup (negLit l) destMap of
+             -> case Map.lookup (negLit l) destMap of
        -- (negLit l) is just one bit away from l in the map, but we don't use it
-                  Just fs2 -> (I.delete (negLit l) destMap, fs++fs2++toAddAgain)
-                  Nothing ->  (I.insert l fs destMap, toAddAgain)
+                  Just fs2 -> (Map.delete (negLit l) destMap, fs++fs2++toAddAgain)
+                  Nothing ->  (Map.insert l fs destMap, toAddAgain)
 
-mergeWitnessesAgainstLiterals :: IntMap [PrFormula] -> LiteralSlot
-                                   -> (IntMap [PrFormula],[PrFormula])
+mergeWitnessesAgainstLiterals :: Map Literal [PrFormula] -> LiteralSlot
+                                   -> (Map Literal [PrFormula],[PrFormula])
 mergeWitnessesAgainstLiterals  witMap ls
- = foldr go (witMap,[]) $ I.assocs witMap
+ = foldr go (witMap,[]) $ Map.assocs witMap
    where
     go (lit,fs) (destMap,toAddAgain)
-      | lit `I.member` ls = (I.delete lit destMap,toAddAgain)
-      | negLit lit `I.member` ls = (I.delete lit destMap,fs++toAddAgain)
+      | lit `Map.member` ls = (Map.delete lit destMap,toAddAgain)
+      | negLit lit `Map.member` ls = (Map.delete lit destMap,fs++toAddAgain)
           -- same remark as above
       | otherwise = (destMap,toAddAgain)
 
@@ -419,78 +419,73 @@ getUrfatherAndDeps br p =
         deps = findDeps br ur
 
 findDeps :: Branch -> Prefix -> DependencySet
-findDeps br pr = get dsEmpty pr (prToDepSet br)
+findDeps br pr = iget dsEmpty pr (prToDepSet br)
 
 addClassDeps :: Prefix -> DependencySet -> Branch -> Branch
 addClassDeps pr ds br = br { prToDepSet = I.insertWith dsUnion pr ds (prToDepSet br) }
 
-inSameClass :: Branch -> Prefix -> Int -> Bool
+inSameClass :: Branch -> Prefix -> String -> Bool
 inSameClass br p n
- = case fst $ DS.find (DS.Nominal (atom n)) (nomPrefClasses br) of
+ = case fst $ DS.find (DS.Nominal n) (nomPrefClasses br) of
     DS.Nominal _ -> False
     DS.Prefix p2 -> getUrfather br (DS.Prefix p) == p2
 
 {-     box-related constraints     -}
 
 boxRule :: DependencySet
-            -> (IntMap {- Rel -} [(Formula,Depth,DependencySet)],
-                IntMap {- Rel -} [(Prefix,DependencySet)] )
+            -> (Map Rel [(Formula,Depth,DependencySet)],
+                Map Rel [(Prefix,DependencySet)] )
             -> [PrFormula]
 boxRule deps (mapBox, mapAcc)
  = [PrFormula p (dsUnions [deps,ds1,ds2]) md f |
-                      r1 <- I.keys mapBox,
-                      r2 <- I.keys mapAcc,
+                      r1 <- Map.keys mapBox,
+                      r2 <- Map.keys mapAcc,
                       r1 == r2,
-                      (f,md,ds1) <- (I.!) mapBox r1,
-                      (p,ds2) <- (I.!) mapAcc r2     ]
+                      (f,md,ds1) <- (Map.!) mapBox r1,
+                      (p,ds2) <- (Map.!) mapAcc r2     ]
 
 addBoxConstraint :: Prefix -> Rel -> Depth -> Formula -> DependencySet -> Params -> Branch
                      -> BranchInfo
 addBoxConstraint pr_ r md f ds p br
  | boxAlreadyDone br pr (r,f) = BranchOK br
- | isForward r
-    = let newBr = br{boxFwd = updateBoxConstr pr r (md-1) f ds (boxFwd br)}
+ | otherwise
+    = let newBr = br{boxFwd = updateBoxConstr pr r (md+1) f ds (boxFwd br)}
           succs  = get [] r $ successors (accStr br) pr
           toAdd = fromTrans ++ fromBox
           fromTrans
            = if isTransitive (relInfo br) r
               then map (\(pr2,ds2) -> PrFormula pr2 (dsUnion ds ds2) md (Box r f)) succs
               else []
-          fromBox = map (\(pr2,ds2) -> PrFormula pr2 (dsUnion ds ds2) (md-1) f) succs
+          fromBox = map (\(pr2,ds2) -> PrFormula pr2 (dsUnion ds ds2) (md+1) f) succs
     -- todo check again with new pattern, create successor if new pattern not realized
       in
          addFormulas p toAdd newBr
-
- | otherwise = error "backwards relation"
  where pr = getUrfather br (DS.Prefix pr_)
 
 updateBoxConstr :: Prefix -> Rel -> Depth -> Formula -> DependencySet -> BoxConstraints
                     -> BoxConstraints
 updateBoxConstr p1_ r_ md_ f_ ds_ boxConstr_ =
   case I.lookup p1_ boxConstr_ of
-    Nothing       -> I.insert p1_ (I.singleton r_ [(f_,md_,ds_)]) boxConstr_
+    Nothing       -> I.insert p1_ (Map.singleton r_ [(f_,md_,ds_)]) boxConstr_
     Just innerMap ->
-       case I.lookup r_ innerMap of
+       case Map.lookup r_ innerMap of
         Nothing
-         -> I.insert p1_ (I.insert r_ [(f_,md_,ds_)] innerMap)                boxConstr_
+         -> I.insert p1_ (Map.insert r_ [(f_,md_,ds_)] innerMap)                boxConstr_
         Just innerInnerList
-         -> I.insert p1_ (I.insert r_ ((f_,md_,ds_):innerInnerList) innerMap) boxConstr_
+         -> I.insert p1_ (Map.insert r_ ((f_,md_,ds_):innerInnerList) innerMap) boxConstr_
 
 boxAlreadyDone :: Branch -> Prefix -> (Rel,Formula) -> Bool
 boxAlreadyDone br ur (r,f)
- | isForward r  = case ( do inner <- I.lookup ur (boxFwd br)
-                            boxes <- map (\(e,_,_) -> e) <$> I.lookup r inner
-                            return (f `elem` boxes) ) of
-                    Just True -> True
-                    _         -> False
- | otherwise    = error "backwards relation"
+ = case ( do inner <- I.lookup ur (boxFwd br)
+             boxes <- map (\(e,_,_) -> e) <$> Map.lookup r inner
+             return (f `elem` boxes) ) of
+     Just True -> True
+     _         -> False
 
 -- accessibility Formulas
 
 addAccFormula :: Params -> (DependencySet,Rel,Prefix,Prefix) -> Branch -> BranchInfo
 addAccFormula p (ds, r, p1_, p2_) br
- | isBackwards r = error "backwards relation"
- | otherwise -- forward
    = addFormulas p toAdd newBr
      where
       toAdd = transApplications ++ boxApplications
@@ -501,7 +496,7 @@ addAccFormula p (ds, r, p1_, p2_) br
       boxApplications = map (\(f,md,ds2) -> PrFormula p2 (dsUnion ds ds2) md f) toSendFwd
       p1 = getUrfather br (DS.Prefix p1_)
       p2 = getUrfather br (DS.Prefix p2_)
-      toSendFwd = get [] r $ get I.empty p1 (boxFwd br)
+      toSendFwd = get [] r $ iget Map.empty p1 (boxFwd br)
       newBr = scheduleInclusionRule p1 p2 r ds $ insertRelationBranch br p1 r p2 ds
 
 
@@ -556,7 +551,7 @@ patternOf _ _ = error "patternOf called with a non diamond formula"
 
 boxesOf :: Branch -> Prefix -> Rel -> Set Formula
 boxesOf br p r
- = set $ map (\(e,_,_) -> e) $ get [] r $ get I.empty p (boxFwd br)
+ = set $ map (\(e,_,_) -> e) $ get [] r $ iget Map.empty p (boxFwd br)
 
 findByPattern :: Branch -> Set Formula -> Prefix
 findByPattern br pattern =
@@ -598,8 +593,8 @@ downAlreadyDone _ _ = error "down already done : wrong formula kind"
 
 addUnivConstraint :: Depth -> Formula -> DependencySet -> Params -> Branch -> BranchInfo
 addUnivConstraint md f ds p br
- = addFormulas p [PrFormula pr ds (md-1) f | pr <- urfathers] newBr
-   where newBr = br{univCons = (ds,f,md-1):(univCons br)}
+ = addFormulas p [PrFormula pr ds (md+1) f | pr <- urfathers] newBr
+   where newBr = br{univCons = (ds,f,md+1):(univCons br)}
          prefs = [0..(lastPref br)]
          urfathers = filter (isNominalUrfather br) prefs
 
@@ -620,16 +615,16 @@ addReflexiveLinks pr br
 
 createNewNom :: Branch -> BranchInfo
 createNewNom br
- = BranchOK br{nextNom = nextNom br + 4}
+ = BranchOK br{nextNom = nextNom br + 1}
 
 -- preparation of the branch at the beginning of the calculus:
 --  - add the input formula at prefix 0
 --  - add a nominal formula at a fresh prefix for each nominal of the input language
 --    (even if the nominal was filtered out during lexical normalisation)
 --  - add reflexive links for prefixes 0 and nominal witnesses
-initialBranch :: Params -> LanguageInfo -> RelInfo -> Encoding -> [Generator] -> Formula
+initialBranch :: Params -> LanguageInfo -> RelInfo -> [Generator] -> Formula
                   -> BranchInfo
-initialBranch p fLang relInfo_ encoding_ gs f
+initialBranch p fLang relInfo_ gs f
  = addFormulas p [pf] br
     where
           pf = firstPrefixedFormula f
@@ -640,8 +635,8 @@ initialBranch p fLang relInfo_ encoding_ gs f
           initClasses = foldr (\(pr,n) -> DS.union (DS.Prefix pr) (DS.Nominal n))
                               DS.mkDSet
                               (zip [1..] ns)
-          initLiterals = foldr (\(pr,n) -> D.insert pr n dsEmpty)
-                               D.empty
+          initLiterals = foldr (\(pr,n) -> D.insert pr (PosLit (N n)) dsEmpty)
+                               I.empty
                                (zip [1..] ns)
           emptyBr =
            Branch{ literals          = initLiterals,
@@ -655,14 +650,13 @@ initialBranch p fLang relInfo_ encoding_ gs f
                    patterns          = I.empty,
                    univCons          = [],
                    lastPref          = nbNs,
-                   nextNom           = maxNom encoding_ + 4,
+                   nextNom           = 0,
                    prToDepSet        = I.empty,
-                   brWitnesses       = D.empty,
+                   brWitnesses       = I.empty,
                    nomPrefClasses    = initClasses,
                    inputLanguage     = fLang,
                    blockedDias       = I.empty,
                    relInfo           = relInfo_,
-                   encoding          = encoding_,
                    generators        = gs
                  }
 
@@ -679,7 +673,8 @@ addToLiterals pr_ ds1 l br
 data ReducedDisjunct
  =   Triviality
    | Contradiction DependencySet
-   | Reduced DependencySet (Set Formula) (Maybe Prop) -- proposable witness for lazy branching
+   | Reduced DependencySet (Set Formula) (Maybe Literal)
+               -- proposable witness for lazy branching
  deriving Show
 
 reduceDisjunctionProposeLazy :: Branch -> Prefix -> Set Formula -> ReducedDisjunct
@@ -745,5 +740,10 @@ list = Set.toList
 set :: Ord a => [a] -> Set.Set a
 set = Set.fromList
 
-get :: a -> Int -> IntMap a -> a
-get = I.findWithDefault
+iget :: a -> Int -> IntMap a -> a
+iget = I.findWithDefault
+
+get :: (Ord k) => a -> k -> Map k a -> a
+get = Map.findWithDefault
+
+

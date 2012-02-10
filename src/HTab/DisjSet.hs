@@ -3,7 +3,7 @@ module HTab.DisjSet
 where
 
 import qualified Data.Map as Map
-import HTab.Formula ( showLit, Nom )
+import HTab.Formula ( Nom )
 
 -- a disjoint-set forest
 type DisjSet x = Map.Map x x
@@ -53,8 +53,8 @@ data Pointer = Prefix Int | Nominal Nom
  deriving (Eq)
 
 instance Show Pointer where
- show (Prefix p)  = 'P' : show p
- show (Nominal n) = showLit n
+ show (Prefix p)  = '#' : show p
+ show (Nominal n) = n
 
 instance Ord Pointer where
  compare (Prefix i1)  (Prefix i2)  = compare i1 i2

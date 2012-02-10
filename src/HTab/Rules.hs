@@ -10,8 +10,8 @@ import Data.Maybe ( mapMaybe )
 import HTab.Formula( Formula(..), PrFormula(..), showLess,
                      Dependency, DependencySet, dsUnion, dsInsert,
                      prefix, Rel, negPr,
-                     Prefix, Nom, showLit,
-                     replaceVar, Literal,
+                     Prefix, Nom, Atom(..),
+                     replaceVar, Literal(..),
                      applyGenerators )
 import HTab.Branch( Branch(..), BranchInfo(..), TodoList(..),
                     -- for rules
@@ -53,7 +53,7 @@ data Rule =  DiaRule    PrFormula                 -- creates a prefix
 
 
 instance Show Rule where
-   show (MergeRule pr n _)                = "merge:              " ++ show (pr, showLit n)
+   show (MergeRule pr n _)                = "merge:              " ++ show (pr, show n)
    show (DiaRule   todelete)              = "diamond:            " ++ showLess todelete
    show (DisjRule  todelete _ )           = "disjunction:        " ++ showLess todelete
    show (SemBrRule todelete _ )           = "semantic branching: " ++ showLess todelete
@@ -177,7 +177,7 @@ applyRule p rule br
  = case rule of
     DiaRule (PrFormula pr ds md (Dia r f))
      -> [ addAccFormula p (dsUnion ds ds2, r, ur, newPr) br >>?
-          addFormulas p [PrFormula newPr ds (md-1) f] >>?
+          addFormulas p [PrFormula newPr ds (md+1) f] >>?
           addDiaRuleCheck pr (r,f) newPr >>?
           createNewNode p ]
           where newPr      = lastPref br + 1
@@ -196,17 +196,17 @@ applyRule p rule br
     AtRule  (PrFormula _ ds md (At n f)) ->
             [ addFormulas p [toadd] br{ nomPrefClasses = equiv }]
             where (ur,ds2,equiv) = getUrfatherAndDeps br (DS.Nominal n)
-                  toadd = PrFormula ur (dsUnion ds ds2) (md-1) f
+                  toadd = PrFormula ur (dsUnion ds ds2) (md+1) f
     DownRule (PrFormula pr ds md f@(Down v f2)) ->
                  [ createNewNom br >>?
                    addFormulas p [toadd1, toadd2] >>?
                    addDownRuleCheck pr f ]
-                  where toadd1 = PrFormula pr ds (md-1) (replaceVar v newNom f2)
-                        toadd2 = PrFormula pr ds (md-1) $ Lit newNom
-                        newNom = nextNom br
+                  where toadd1 = PrFormula pr ds (md+1) (replaceVar v newNom f2)
+                        toadd2 = PrFormula pr ds (md+1) $ Lit $ PosLit $ N newNom
+                        newNom = '_':(show $ nextNom br)
     ExistRule (PrFormula _ ds md (E f2)) ->
        [addFormulas p [toadd] br >>? createNewNode p]
-       where toadd = PrFormula newPr ds (md-1) f2
+       where toadd = PrFormula newPr ds (md+1) f2
              newPr = lastPref br + 1
     DiscardDownRule _         -> [BranchOK br]
     DiscardDiaDoneRule _      -> [BranchOK br]
@@ -231,4 +231,3 @@ disjRule p df@(PrFormula pr ds md (Dis fs)) br d
     where rule = if semBranch p then SemBrRule else DisjRule
 -- todo: if only one conjunct remaining, do not add d , but still create a DisjRule
 disjRule _ _ _ _ = error "disjRule"
-

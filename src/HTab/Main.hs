@@ -21,10 +21,11 @@ import HTab.CommandLine( filename, symfile,
 import HTab.Branch( BranchInfo(..), initialBranch)
 import HTab.Statistics( Statistics, initialStatisticsStateFor, printOutMetricsFinal )
 import HTab.Tableau( OpenFlag(..), tableauStart )
-import HTab.Formula( formulaLanguageInfo, Theory, RelInfo, Encoding, Task,
+import HTab.Formula( Theory, RelInfo, LanguageInfo, Task,
                      Formula, encodeValidityTest, encodeSatTest, encodeRetrieveTask,
-                     toNomSymbol, showRelInfo, parseGenerators )
+                     showRelInfo, parseGenerators )
 import qualified HTab.Formula as F
+import qualified HyLo.Signature.String as S
 import HTab.ModelGen ( Model, toDot )
 
 data TaskRunFlag = SUCCESS | FAILURE
@@ -35,7 +36,7 @@ runWithParams p =
   i <- readFile (filename p)
   if head (words i) == "begin"
    then do
-    let (f,relInfo,encoding) = F.simpleParse p i
+    let (f,relInfo,fLang) = F.simpleParse p i
     when (showFormula p) $
      myPutStrLn $
       unlines ["Input for SAT test:",
@@ -43,13 +44,11 @@ runWithParams p =
                "End of input",
                "Relations properties :" ++ showRelInfo relInfo ]
     --
-    let fLang = formulaLanguageInfo encoding
-    --
-    gs <- parseGenerators encoding <$> maybe (return "") readFile (symfile p) -- read symmetries
+    gs <- parseGenerators <$> maybe (return "") readFile (symfile p) -- read symmetries
     --
     tResult <- inTimeout (timeout p) $
                 do (result,s) <- tableauInit p $
-                                  initialBranch p fLang relInfo encoding gs f
+                                  initialBranch p fLang relInfo gs f
                    whenNormal $ printOutMetricsFinal s
                    return result
     --
@@ -77,12 +76,12 @@ inTimeout t action = T.timeout (t * (10::Int)^(6::Int)) action
 
 --
 
-runTasks :: (Theory,RelInfo,Encoding,[Task]) -> Params -> IO TaskRunFlag
-runTasks allTasks@(theory,relInfo,encoding,tasks) p =
+runTasks :: (Theory,RelInfo,LanguageInfo,[Task]) -> Params -> IO TaskRunFlag
+runTasks allTasks@(theory,relInfo,fLang,tasks) p =
  do
     myPutStrLn "== Checking theory satisfiability =="
     res <- time "Task time:" $
-            runTask (Satisfiable, genModel p,[]) relInfo encoding theory p
+            runTask (Satisfiable, genModel p, []) relInfo fLang theory p
     case res of
      SUCCESS | null tasks -> return SUCCESS
              | otherwise  -> do myPutStrLn "\n==         Starting tasks         =="
@@ -93,37 +92,36 @@ runTasks allTasks@(theory,relInfo,encoding,tasks) p =
 
 --
 
-runTasks2 :: (Theory,RelInfo,Encoding,[Task]) -> Params -> IO TaskRunFlag
+runTasks2 :: (Theory,RelInfo,LanguageInfo,[Task]) -> Params -> IO TaskRunFlag
 runTasks2 (_,_,_,[]) _                  = error "runTasks2 empty list error"
-runTasks2 (theory,relInfo,encoding,(hd:tl)) p =
- do res <- time "Task time:" $ runTask hd relInfo encoding theory p
+runTasks2 (theory,relInfo,fLang,(hd:tl)) p =
+ do res <- time "Task time:" $ runTask hd relInfo fLang theory p
     case res of
       SUCCESS | null tl   -> return SUCCESS
-              | otherwise -> runTasks2 (theory,relInfo,encoding,tl) p
-      FAILURE             -> do _ <- runTasks2 (theory,relInfo,encoding,tl) p
+              | otherwise -> runTasks2 (theory,relInfo,fLang,tl) p
+      FAILURE             -> do _ <- runTasks2 (theory,relInfo,fLang,tl) p
                                 return FAILURE
 
 --
 
-runTask :: Task -> RelInfo -> Encoding -> Formula -> Params -> IO TaskRunFlag
-runTask (Retrieve,mOutFile,fs) relInfo encoding theory p =
+runTask :: Task -> RelInfo -> LanguageInfo -> Formula -> Params -> IO TaskRunFlag
+runTask (Retrieve,mOutFile,fs) relInfo fLang theory p =
  do myPutStrLn "\n* Instance retrieval task"
-    let fLang = formulaLanguageInfo encoding
-    let (noms,encfs) = encodeRetrieveTask relInfo encoding fLang theory fs
+    let (noms,encfs) = encodeRetrieveTask relInfo fLang theory fs
     --
     myPutStrLn $ "Instances making true: " ++ show fs
     --
-    results <- mapM (tableauInit p . initialBranch p fLang relInfo encoding []) encfs
-    let goods = [ toNomSymbol encoding n | (n,(CLOSED _ ,_)) <- zip noms results]
+    results <- mapM (tableauInit p . initialBranch p fLang relInfo []) encfs
+    let goods = [ S.NomSymbol n | (n,(CLOSED _ ,_)) <- zip noms results]
     myPutStrLn $ show goods
     let doWrite f = do writeFile f (show goods ++ "\n")
                        myPutStrLn ("Nominals saved as " ++ f)
     maybe (return ()) doWrite mOutFile
     return SUCCESS
 
-runTask (Satisfiable,mOutFile,fs) relInfo encoding theory p =
+runTask (Satisfiable,mOutFile,fs) relInfo fLang theory p =
  do myPutStrLn "\n* Satisfiability task"
-    let f = encodeSatTest relInfo encoding theory fs
+    let f = encodeSatTest relInfo theory fs
     --
     when (showFormula p) $
      myPutStrLn $ unlines ["Input for SAT test:",
@@ -131,9 +129,7 @@ runTask (Satisfiable,mOutFile,fs) relInfo encoding theory p =
                            "End of input",
                            "Relations properties :" ++ showRelInfo relInfo ]
     --
-    let fLang         = formulaLanguageInfo encoding
-    --
-    (result,stats) <- tableauInit p $ initialBranch p fLang relInfo encoding [] f
+    (result,stats) <- tableauInit p $ initialBranch p fLang relInfo [] f
     --
     whenNormal $ printOutMetricsFinal stats
     --
@@ -144,9 +140,9 @@ runTask (Satisfiable,mOutFile,fs) relInfo encoding theory p =
        CLOSED _ -> do myPutStrLn "The formula is unsatisfiable."
                       return FAILURE
 
-runTask (Valid,mOutFile,fs) relInfo encoding theory p =
+runTask (Valid,mOutFile,fs) relInfo fLang theory p =
  do myPutStrLn "\n* Validity task"
-    let f = encodeValidityTest relInfo encoding theory fs
+    let f = encodeValidityTest relInfo theory fs
     --
     when (showFormula p) $
      myPutStrLn $ unlines ["Input for SAT test:",
@@ -154,9 +150,7 @@ runTask (Valid,mOutFile,fs) relInfo encoding theory p =
                            "End of input",
                            "Relations properties :" ++ showRelInfo relInfo ]
     --
-    let fLang         = formulaLanguageInfo encoding
-    --
-    (result,stats) <- tableauInit p $ initialBranch p fLang relInfo encoding [] f
+    (result,stats) <- tableauInit p $ initialBranch p fLang relInfo [] f
     --
     whenNormal $ printOutMetricsFinal stats
     --

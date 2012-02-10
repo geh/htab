@@ -8,6 +8,8 @@ where
 
 import Data.IntMap ( IntMap )
 import qualified Data.IntMap as I
+import Data.Map ( Map )
+import qualified Data.Map as M
 
 import HTab.Formula(DependencySet, dsUnion)
 
@@ -15,52 +17,52 @@ import Prelude hiding ( lookup )
 
 {- a DMap , or double map, is a nesting of two Maps -}
 
-type DMap c = IntMap (IntMap c)
+type DMap c = IntMap (Map String c)
 
 empty :: DMap c
 empty = I.empty
 
-insert1 :: Int -> IntMap c -> DMap c -> DMap c
+insert1 :: Int -> Map String c -> DMap c -> DMap c
 insert1 k1 v m = I.insert k1 v m
 
-insert :: Int -> Int -> c -> DMap c -> DMap c
+insert :: (Ord k) => Int -> k -> c -> IntMap (Map k c) -> IntMap (Map k c)
 insert k1 k2 v m
  = case I.lookup k1 m of
-    Nothing     -> I.insert k1 (I.singleton k2 v) m
-    Just innerM -> I.insert k1 (I.insert k2 v innerM) m
+    Nothing     -> I.insert k1 (M.singleton k2 v) m
+    Just innerM -> I.insert k1 (M.insert k2 v innerM) m
 
 
-insertWith :: (c -> c -> c) -> Int -> Int -> c -> DMap c -> DMap c
+insertWith :: (c -> c -> c) -> Int -> String -> c -> DMap c -> DMap c
 insertWith f k1 k2 v m
  = case I.lookup k1 m of
-    Nothing     -> I.insert k1 (I.singleton k2 v) m
-    Just innerM -> I.insert k1 (I.insertWith f k2 v innerM) m
+    Nothing     -> I.insert k1 (M.singleton k2 v) m
+    Just innerM -> I.insert k1 (M.insertWith f k2 v innerM) m
 
-flatten :: DMap c -> [((Int,Int),c)]
+flatten :: IntMap (Map b c) -> [(Int,b,c)]
 flatten m
  = let ambcs = I.assocs m  in --  [(a,IntMap c)]
-    concatMap (\(a_,innerM_) ->  map  (\(b_,c_) -> ((a_,b_),c_))  (I.assocs innerM_ )) ambcs
+    concatMap (\(a_,innerM_) ->  map  (\(b_,c_) -> (a_,b_,c_))  (M.assocs innerM_ )) ambcs
 
 infixl 9 !
 
-(!) :: DMap c -> Int -> Int -> c
-(!) m k1 k2 = (I.!) ( (I.!) m k1 ) k2
+(!) :: DMap c -> Int -> String -> c
+(!) m k1 k2 = (M.!) ( (I.!) m k1 ) k2
 
 
-lookup :: Int -> Int -> DMap c -> Maybe c
+lookup :: (Ord k) => Int -> k -> IntMap (Map k c) -> Maybe c
 lookup k1 k2 m = do innerMap <- I.lookup k1 m
-                    I.lookup k2 innerMap
+                    M.lookup k2 innerMap
 
-lookup1 :: Int -> DMap c -> Maybe (IntMap c)
+lookup1 :: Int -> DMap c -> Maybe (Map String c)
 lookup1 k1 m = I.lookup k1 m
 
 delete ::  Int -> DMap c -> DMap c
 delete k1 m = I.delete k1 m
 
-lookupInter :: Int -> DMap c -> [Int]
+lookupInter :: Int -> DMap c -> [String]
 lookupInter k1 m = case I.lookup k1 m of
                     Nothing -> []
-                    Just innerMap -> I.keys innerMap
+                    Just innerMap -> M.keys innerMap
 
 -- provided two keys of the DMap and a merge function, merge the inner maps of
 -- both keys using the merge function when needed for inner values
@@ -72,13 +74,13 @@ moveInnerPlusDeps newDeps m origKey destKey
  = case I.lookup origKey m of
      Nothing  -> m
      Just origInnerMap
-        -> let origInnerMapPlusDeps = I.map (addDeps newDeps) origInnerMap
+        -> let origInnerMapPlusDeps = M.map (addDeps newDeps) origInnerMap
                prunedM = I.delete origKey m
                addDeps newBps = map (\(el,oldBps) -> (el,dsUnion newBps oldBps))
            in case I.lookup destKey m of
                 Nothing -> I.insert destKey origInnerMapPlusDeps prunedM
                 Just destInnerMap
-                   -> let mergedInnerMap = I.unionWith (++) origInnerMapPlusDeps destInnerMap
+                   -> let mergedInnerMap = M.unionWith (++) origInnerMapPlusDeps destInnerMap
                       in  I.insert destKey mergedInnerMap prunedM
 
 moveInnerPlusDeps3 :: DependencySet -> DMap [(c1,c2,DependencySet)] -> Int -> Int
@@ -87,12 +89,12 @@ moveInnerPlusDeps3 newDeps m origKey destKey
  = case I.lookup origKey m of
      Nothing  -> m
      Just origInnerMap
-        -> let origInnerMapPlusDeps = I.map (addDeps newDeps) origInnerMap
+        -> let origInnerMapPlusDeps = M.map (addDeps newDeps) origInnerMap
                prunedM = I.delete origKey m
                addDeps newBps = map (\(el1,el2,oldBps) -> (el1,el2,dsUnion newBps oldBps))
            in case I.lookup destKey m of
                 Nothing -> I.insert destKey origInnerMapPlusDeps prunedM
                 Just destInnerMap
-                   -> let mergedInnerMap = I.unionWith (++) origInnerMapPlusDeps destInnerMap
+                   -> let mergedInnerMap = M.unionWith (++) origInnerMapPlusDeps destInnerMap
                       in  I.insert destKey mergedInnerMap prunedM
 
