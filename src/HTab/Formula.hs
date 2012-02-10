@@ -315,7 +315,7 @@ data PrFormula = PrFormula Prefix DependencySet Depth Formula
  deriving Eq
 
 instance Show PrFormula where
- show (PrFormula pr ds md f) = intercalate ":" [show pr, show ds, show md, show f]
+ show (PrFormula pr ds md f) = show pr ++ ":" ++ dsShow ds ++ ":" ++ show md ++ ":" ++ show f
 
 showLess :: PrFormula -> String
 showLess (PrFormula pr _ md f) = show pr ++ ":" ++ show (md,f)
