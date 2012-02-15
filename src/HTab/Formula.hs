@@ -447,7 +447,7 @@ genOnLit ((d,x,y):g) l
  | d == 0 && x == l        = y
  | d == 0 && x == negLit l = negLit y
  | d == 0 && y == l        = x
- | d == 0 && y == negLit l = negLit y
+ | d == 0 && y == negLit l = negLit x
  | otherwise               = genOnLit g l
 
 parseGenerators :: String -> [Generator]
