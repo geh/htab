@@ -11,8 +11,7 @@ import HTab.Formula( Formula(..), PrFormula(..), showLess,
                      Dependency, DependencySet, dsUnion, dsInsert,
                      prefix, Rel, negPr,
                      Prefix, Nom, Atom(..),
-                     replaceVar, Literal(..),
-                     applyGenerators )
+                     replaceVar, Literal(..))
 import HTab.Branch( Branch(..), BranchInfo(..), TodoList(..),
                     -- for rules
                     createNewNode, createNewNom,
@@ -29,7 +28,7 @@ import HTab.Branch( Branch(..), BranchInfo(..), TodoList(..),
                     ReducedDisjunct(..)
                     )
 import HTab.CommandLine(Params, UnitProp(..),
-                        lazyBranching, semBranch, unitProp, symOpt,
+                        lazyBranching, semBranch, unitProp,
                         strategy)
 import HTab.RuleId(RuleId(..))
 import qualified HTab.DisjSet as DS
@@ -187,10 +186,8 @@ applyRule p rule br
     SemBrRule _ prFormulas ->
             [ addFormulas p toadds br |  toadds <- go prFormulas [] ]
              where
-              go (hd:tl) negs = (hd:more negs):(go tl (negPr hd:negs))
+              go (hd:tl) negs = (hd:negs):(go tl (negPr hd:negs))
               go [] _ = []
-              more negs | symOpt p = negs ++ concatMap (applyGenerators (generators br)) negs
-              more negs = negs
     LazyBrRule _ pr lit prFormulas ->
             [ doLazyBranching pr lit prFormulas br ]
     AtRule  (PrFormula _ ds md (At n f)) ->
