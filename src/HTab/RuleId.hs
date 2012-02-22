@@ -47,6 +47,7 @@ data RuleId = R_Dia     -- Diamond <r>
             | R_DiscardDown
             | R_DiscardDiaDone
             | R_DiscardDiaBlocked
+            | R_DiscardDiaSymBlocked
             | R_DiscardDiaX
             | R_DiscardDisjTrivial
             | R_ClashDisj -- Branch clash

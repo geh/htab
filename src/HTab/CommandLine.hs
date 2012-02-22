@@ -23,7 +23,8 @@ data Params = Params {
            symOpt          :: Bool,
            showFormula     :: Bool,
            allTransitive   :: Bool,
-           allReflexive    :: Bool
+           allReflexive    :: Bool,
+           symBlock        :: Bool
          } deriving (Show, Data, Typeable)
 
 data UnitProp = Eager | UPYes | UPNo deriving (Data, Typeable, Eq, Show)
@@ -47,7 +48,8 @@ defaultParams
        symOpt         := True    += help "enable symmetry optimization (default)",
        showFormula    := False   += help "display formula",
        allTransitive  := False   += help "make all relations transitive",
-       allReflexive   := False   += help "make all relations reflexive"
+       allReflexive   := False   += help "make all relations reflexive",
+       symBlock       := True    += help "block symmetric diamond subformulas"
       ] += verbosity
 
 strategyVal :: String

@@ -11,6 +11,7 @@ merge,
 getUrfather, getUrfatherAndDeps,
 getModelRepresentative, patternBlocked,
 diaAlreadyDone, downAlreadyDone,
+diaSymAlreadyDone,
 ReducedDisjunct(..),
 patternOf, findByPattern,
 prefixes, isInTheModel,
@@ -560,6 +561,9 @@ findByPattern br pattern =
 
 {-     modifications done by rule application     -}
 
+-- add checks for
+--  1. pattern blocking
+--  2. prefix-level diamond rule saturation
 addDiaRuleCheck :: Prefix -> (Rel,Formula) -> Prefix -> Branch -> BranchInfo
 addDiaRuleCheck pr (r,f) newPr br =
   BranchOK br2
@@ -569,13 +573,28 @@ addDiaRuleCheck pr (r,f) newPr br =
          ur = getUrfather br (DS.Prefix pr)
 
 diaAlreadyDone :: Branch -> PrFormula -> Bool
-diaAlreadyDone b (PrFormula p _ _ (Dia r f)) =
-  case I.lookup ur (diaRlCh b) of
-     Nothing  -> False
-     Just fset -> Set.member (r,f) fset
+diaAlreadyDone b pf@(PrFormula p _ _ (Dia r f)) =
+    case I.lookup ur (diaRlCh b) of
+      Nothing  -> False
+      Just fset -> Set.member (r,f) fset
  where ur = getUrfather b (DS.Prefix p)
 
 diaAlreadyDone _ _ = error "dia already done : wrong formula kind"
+
+
+diaSymAlreadyDone :: Branch -> PrFormula -> Bool
+diaSymAlreadyDone b pf@(PrFormula p _ _ (Dia r f)) =
+   any test more
+ where ur = getUrfather b (DS.Prefix p)
+       more = applyGenerators (generators b) pf
+       test (PrFormula _ _ _ (Dia _ f_))
+                = case I.lookup ur (diaRlCh b) of
+                    Nothing  -> False
+                    Just fset -> Set.member (r,f_) fset
+
+diaSymAlreadyDone _ _ = error "dia already done : wrong formula kind"
+
+
 
 addDownRuleCheck :: Prefix -> Formula -> Branch -> BranchInfo
 addDownRuleCheck pr f br =
