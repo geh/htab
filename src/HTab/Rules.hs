@@ -17,7 +17,7 @@ import HTab.Branch( Branch(..), BranchInfo(..), TodoList(..),
                     createNewNode, createNewNom,
                     addFormulas, addAccFormula,
                     addDiaRuleCheck, addToBlockedDias,
-                    addDownRuleCheck,
+                    addDownRuleCheck, addToSymDias,
                     doLazyBranching,
                     getUrfatherAndDeps, merge,
                     -- for choosing rule in todo list
@@ -216,7 +216,7 @@ applyRule p rule br
              newPr = lastPref br + 1
     DiscardDownRule _         -> [BranchOK br]
     DiscardDiaDoneRule _      -> [BranchOK br]
-    DiscardDiaSymBlockedRule _ -> [BranchOK br]
+    DiscardDiaSymBlockedRule f -> [addToSymDias f br]
     DiscardDisjTrivialRule _  -> [BranchOK br]
     DiscardDiaBlockedRule f   -> [addToBlockedDias f br]
 

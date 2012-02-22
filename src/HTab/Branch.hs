@@ -3,7 +3,7 @@ module HTab.Branch
 Branch(..), BranchInfo(..), TodoList(..),
 createNewNode, createNewNom,
 addFormulas, addAccFormula,
-addToBlockedDias,
+addToBlockedDias, addToSymDias,
 addDiaRuleCheck, addDownRuleCheck,
 initialBranch,
 reduceDisjunctionProposeLazy, doLazyBranching,
@@ -75,7 +75,8 @@ data Branch =
                  inputLanguage :: LanguageInfo,
                    blockedDias :: IntMap {- Prefix -} [PrFormula],
                        relInfo :: RelInfo,
-                    generators :: [Generator]}
+                    generators :: [Generator],
+                       symDias :: Set PrFormula}
 
 --
 
@@ -98,7 +99,8 @@ instance Show Branch where
      "\nPrefix-Nominal classes : ", showMap ", " (nomPrefClasses br),
      "\nlastPref : ", show (lastPref br),
      " nextnom : ", show (nextNom br),
-     "\ngenerators :", show (generators br)
+     "\ngenerators :", show (generators br),
+     "\nSym-blocked diamonds:", show (symDias br)
   ]
    where
     showIMap :: (a -> String) -> String -> IntMap a -> String
@@ -286,6 +288,10 @@ addToBlockedDias :: PrFormula -> Branch -> BranchInfo
 addToBlockedDias f@(PrFormula pr _ _ _) br
  = BranchOK br{blockedDias = I.insertWith (++) ur [f] (blockedDias br)}
    where ur = getUrfather br (DS.Prefix pr)
+
+addToSymDias :: PrFormula -> Branch -> BranchInfo
+addToSymDias f br
+ = BranchOK br{symDias = Set.insert f (symDias br)} 
 
 {-    helper functions for equivalence class merge     -}
 
@@ -676,7 +682,8 @@ initialBranch p fLang relInfo_ gs f
                    inputLanguage     = fLang,
                    blockedDias       = I.empty,
                    relInfo           = relInfo_,
-                   generators        = gs
+                   generators        = gs,
+                   symDias           = Set.empty
                  }
 
 addToLiterals :: Prefix -> DependencySet -> Literal -> Branch -> BranchInfo
