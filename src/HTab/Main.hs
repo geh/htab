@@ -142,6 +142,10 @@ runTask (Valid,mOutFile,fs) relInfo encoding theory p =
        CLOSED _ -> do myPutStrLn "The formula is valid."
                       return SUCCESS
 
+runTask (Counting,_,_) _ _ _ _ =
+ do myPutStrLn "\n* Counting task is NOT supported"
+    return FAILURE
+
 --
 
 saveGenModel :: Maybe FilePath -> Params -> Model -> IO ()

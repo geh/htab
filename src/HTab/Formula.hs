@@ -240,6 +240,7 @@ convertToOurType prelI e = foldr insertRelProp Map.empty (concatMap convertOne p
        c _ (P.TClosureOf _)  = error "TClosureOf not handled"
        c _ (P.TRClosureOf _) = error "TRClosureOf not handled"
        c _ P.Functional      = error "Functional not handled"
+       c _ P.Injective       = error "Injective not handled"
        c _ P.Difference      = error "Difference not handled"
 
 simpleParse :: Params -> String -> (Theory,RelInfo,Encoding,[Task])
