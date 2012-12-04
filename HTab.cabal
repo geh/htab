@@ -44,7 +44,7 @@ Executable          htab
                        containers < 0.4.2,
                        deepseq < 1.2,
                        strict < 1,
-                       cmdargs >= 0.9, cmdargs < 1.0,
+                       cmdargs >= 0.10.1,
                        hylolib == 1.4.*
   Extensions:          GADTs
                        DeriveDataTypeable
