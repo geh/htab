@@ -54,8 +54,7 @@ mergePrefixes r pr ur _ | pr == ur = r
 mergePrefixes r pr ur ds = D.moveInnerPlusDeps ds r pr ur
 
 showRels :: OutRels -> String
-showRels r = "\nRelations: " ++
-              prettyShowMap_ r (\v -> "(" ++ prettyShowMap_rel_bps_x v ++ ")") "\n "
+showRels r = prettyShowMap_ r (\v -> "(" ++ prettyShowMap_rel_bps_x v ++ ")") "\n "
 
 prettyShowMap_ :: (Show y) => IntMap y -> (y -> String) -> String -> String
 prettyShowMap_ m valueShow separator

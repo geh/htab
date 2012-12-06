@@ -100,7 +100,8 @@ instance Show Branch where
      "\nlastPref : ", show (lastPref br),
      " nextnom : ", show (nextNom br),
      "\ngenerators :", show (generators br),
-     "\nSym-blocked diamonds:", show (symDias br)
+     "\nSym-blocked diamonds:", show (symDias br),
+     "\nRel info:", show (relInfo br), "\n"
   ]
    where
     showIMap :: (a -> String) -> String -> IntMap a -> String

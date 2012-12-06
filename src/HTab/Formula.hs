@@ -137,14 +137,14 @@ convertToOurType :: PRelInfo -> RelInfo
 convertToOurType prelI = foldr insertRelProp Map.empty (concatMap convertOne prelI)
  where insertRelProp (rs,pr) = Map.insertWith (++) rs [pr]
        convertOne (r,props)  = concatMap (c r) props
-       c r P.Reflexive       = [(r,Reflexive    )]
+       c r P.Reflexive       = [(up r,Reflexive    )]
        c _ P.Symmetric       = error "Symmetric not handled"
-       c r P.Transitive      = [(r,Transitive   )]
-       c r P.Universal       = [(r,Universal    )]
+       c r P.Transitive      = [(up r,Transitive   )]
+       c r P.Universal       = [(up r,Universal    )]
        c _ (P.InverseOf _)   = error "InverseOf not handled" 
-       c r (P.SubsetOf ss)   = [(r,SubsetOf [ s | s <- ss])]
-       c r (P.Equals ss)     = [(r,SubsetOf [ s | s <- ss])]
-                               ++ [(s,SubsetOf [r]) | s <- ss]
+       c r (P.SubsetOf ss)   = [(up r,SubsetOf [ up s | s <- ss])]
+       c r (P.Equals ss)     = [(up r,SubsetOf [ up s | s <- ss])]
+                               ++ [(up s,SubsetOf [up r]) | s <- ss]
        c _ (P.TClosureOf _)  = error "TClosureOf not handled"
        c _ (P.TRClosureOf _) = error "TRClosureOf not handled"
        c _ P.Functional      = error "Functional not handled"
