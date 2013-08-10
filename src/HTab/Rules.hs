@@ -17,20 +17,18 @@ import HTab.Branch( Branch(..), BranchInfo(..), TodoList(..),
                     createNewNode, createNewNom,
                     addFormulas, addAccFormula,
                     addDiaRuleCheck, addToBlockedDias,
-                    addDownRuleCheck, addToSymDias,
+                    addDownRuleCheck,
                     doLazyBranching,
                     getUrfatherAndDeps, merge,
                     -- for choosing rule in todo list
                     patternBlocked,
                     diaAlreadyDone, downAlreadyDone,
-                    diaSymAlreadyDone,
                     -- for rules and choosing rule in todo list
                     reduceDisjunctionProposeLazy, getUrfather,
                     ReducedDisjunct(..)
                     )
 import HTab.CommandLine(Params, UnitProp(..),
                         lazyBranching, semBranch, unitProp,
-                        symBlock,
                         strategy)
 import HTab.RuleId(RuleId(..))
 import qualified HTab.DisjSet as DS
@@ -46,7 +44,6 @@ data Rule =  DiaRule    PrFormula                 -- creates a prefix
            | ExistRule  PrFormula                 -- creates a prefix
            | DiscardDownRule PrFormula
            | DiscardDiaDoneRule PrFormula
-           | DiscardDiaSymBlockedRule PrFormula
            | DiscardDiaBlockedRule PrFormula
            | DiscardDisjTrivialRule PrFormula
            | ClashDisjRule DependencySet PrFormula
@@ -65,7 +62,6 @@ instance Show Rule where
 
    show (DiscardDownRule todelete)        = "Discard:            " ++ showLess todelete
    show (DiscardDiaDoneRule todelete)     = "Discard done:       " ++ showLess todelete
-   show (DiscardDiaSymBlockedRule todelete)  = "Discard sym-blocked:    " ++ showLess todelete
    show (DiscardDiaBlockedRule todelete)  = "Discard blocked:    " ++ showLess todelete
    show (DiscardDisjTrivialRule todelete) = "Discard trivial:    " ++ showLess todelete
 
@@ -85,7 +81,6 @@ ruleToId r = case r of
               (ExistRule _)      -> R_Exist
               (DiscardDownRule _)        -> R_DiscardDown
               (DiscardDiaDoneRule _)     -> R_DiscardDiaDone
-              (DiscardDiaSymBlockedRule _)  -> R_DiscardDiaSymBlocked
               (DiscardDiaBlockedRule _)  -> R_DiscardDiaBlocked
               (DiscardDisjTrivialRule _) -> R_DiscardDisjTrivial
               (ClashDisjRule _ _)      -> R_ClashDisj
@@ -119,12 +114,9 @@ ruleByChar br p d char =
         if diaAlreadyDone br f
           then       return ( DiscardDiaDoneRule f,    todos{diaTodo = new})
           else
-           if symBlock p && diaSymAlreadyDone br f
-            then return (DiscardDiaSymBlockedRule f, todos{diaTodo = new})
-            else
-               if patternBlocked br f
-                then return ( DiscardDiaBlockedRule f, todos{diaTodo = new})
-                else return ( DiaRule f,               todos{diaTodo = new})
+           if patternBlocked br f
+             then return ( DiscardDiaBlockedRule f, todos{diaTodo = new})
+             else return ( DiaRule f,               todos{diaTodo = new})
   applicableAtRule    = do (f,new) <- Set.minView $ atTodo todos
                            return (AtRule f, todos{atTodo = new})
   applicableDownRule  = do (f,new) <- Set.minView $ downTodo todos
@@ -216,7 +208,6 @@ applyRule p rule br
              newPr = lastPref br + 1
     DiscardDownRule _         -> [BranchOK br]
     DiscardDiaDoneRule _      -> [BranchOK br]
-    DiscardDiaSymBlockedRule f -> [addToSymDias f br]
     DiscardDisjTrivialRule _  -> [BranchOK br]
     DiscardDiaBlockedRule f   -> [addToBlockedDias f br]
 

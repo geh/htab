@@ -3,7 +3,7 @@ module HTab.Branch
 Branch(..), BranchInfo(..), TodoList(..),
 createNewNode, createNewNom,
 addFormulas, addAccFormula,
-addToBlockedDias, addToSymDias,
+addToBlockedDias,
 addDiaRuleCheck, addDownRuleCheck,
 initialBranch,
 reduceDisjunctionProposeLazy, doLazyBranching,
@@ -11,7 +11,6 @@ merge,
 getUrfather, getUrfatherAndDeps,
 getModelRepresentative, patternBlocked,
 diaAlreadyDone, downAlreadyDone,
-diaSymAlreadyDone,
 ReducedDisjunct(..),
 patternOf, findByPattern,
 prefixes, isInTheModel,
@@ -75,8 +74,7 @@ data Branch =
                  inputLanguage :: LanguageInfo,
                    blockedDias :: IntMap {- Prefix -} [PrFormula],
                        relInfo :: RelInfo,
-                    generators :: [Generator],
-                       symDias :: Set PrFormula}
+                    generators :: [Generator]}
 
 --
 
@@ -100,7 +98,6 @@ instance Show Branch where
      "\nlastPref : ", show (lastPref br),
      " nextnom : ", show (nextNom br),
      "\ngenerators :", show (generators br),
-     "\nSym-blocked diamonds:", show (symDias br),
      "\nRel info:", show (relInfo br), "\n"
   ]
    where
@@ -289,10 +286,6 @@ addToBlockedDias :: PrFormula -> Branch -> BranchInfo
 addToBlockedDias f@(PrFormula pr _ _ _) br
  = BranchOK br{blockedDias = I.insertWith (++) ur [f] (blockedDias br)}
    where ur = getUrfather br (DS.Prefix pr)
-
-addToSymDias :: PrFormula -> Branch -> BranchInfo
-addToSymDias f br
- = BranchOK br{symDias = Set.insert f (symDias br)} 
 
 {-    helper functions for equivalence class merge     -}
 
@@ -580,27 +573,13 @@ addDiaRuleCheck pr (r,f) newPr br =
          ur = getUrfather br (DS.Prefix pr)
 
 diaAlreadyDone :: Branch -> PrFormula -> Bool
-diaAlreadyDone b pf@(PrFormula p _ _ (Dia r f)) =
+diaAlreadyDone b (PrFormula p _ _ (Dia r f)) =
     case I.lookup ur (diaRlCh b) of
       Nothing  -> False
       Just fset -> Set.member (r,f) fset
  where ur = getUrfather b (DS.Prefix p)
 
 diaAlreadyDone _ _ = error "dia already done : wrong formula kind"
-
-
-diaSymAlreadyDone :: Branch -> PrFormula -> Bool
-diaSymAlreadyDone b pf@(PrFormula p _ _ (Dia r f)) =
-   any test more
- where ur = getUrfather b (DS.Prefix p)
-       more = applyGenerators (generators b) pf
-       test (PrFormula _ _ _ (Dia _ f_))
-                = case I.lookup ur (diaRlCh b) of
-                    Nothing  -> False
-                    Just fset -> Set.member (r,f_) fset
-
-diaSymAlreadyDone _ _ = error "dia already done : wrong formula kind"
-
 
 
 addDownRuleCheck :: Prefix -> Formula -> Branch -> BranchInfo
@@ -683,8 +662,7 @@ initialBranch p fLang relInfo_ gs f
                    inputLanguage     = fLang,
                    blockedDias       = I.empty,
                    relInfo           = relInfo_,
-                   generators        = gs,
-                   symDias           = Set.empty
+                   generators        = gs
                  }
 
 addToLiterals :: Prefix -> DependencySet -> Literal -> Branch -> BranchInfo

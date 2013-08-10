@@ -42,9 +42,9 @@ Executable          htab
                        HTab.Tableau
   Build-Depends:       base >= 4, base < 5,
                        mtl >= 2, mtl < 3,
-                       containers < 0.4.2,
-                       deepseq < 1.2,
-                       strict < 1,
+                       containers,
+                       deepseq,
+                       strict,
                        cmdargs >= 0.10.1,
                        hylolib == 1.4.*
   Extensions:          GADTs

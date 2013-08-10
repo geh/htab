@@ -10,7 +10,6 @@ import System.Console.CmdArgs
 import System.IO           ( hPrint, stderr ) 
 import System.Exit         ( exitWith, ExitCode(ExitFailure) )
 
-import Prelude hiding ( catch )
 import Control.Exception   ( catch, SomeException )
 
 import HTab.Main ( runWithParams, TaskRunFlag(..) )

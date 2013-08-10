@@ -20,11 +20,9 @@ data Params = Params {
            backjumping     :: Bool,
            lazyBranching   :: Bool,
            unitProp        :: UnitProp,
-           symOpt          :: Bool,
            showFormula     :: Bool,
            allTransitive   :: Bool,
-           allReflexive    :: Bool,
-           symBlock        :: Bool
+           allReflexive    :: Bool
          } deriving (Show, Data, Typeable)
 
 data UnitProp = Eager | UPYes | UPNo deriving (Data, Typeable, Eq, Show)
@@ -33,7 +31,7 @@ defaultParams :: Annotate Ann
 defaultParams
  = record Params{}
      [ filename       := "" += name "f" += typFile += help "input file",
-       symfile        := Nothing += name "s" += typFile += help "input symmetries file",
+       symfile        := Nothing += name "s" += typFile += help "input symmetries file (not used yet)",
        genModel       := Nothing += name "m" += typFile += help "output model file",
        dotModel       := False   += help "output model in dot format (otherwise: hylolib format)",
        timeout        := 0       += name "t" += help "timeout (in seconds, default=none)",
@@ -45,11 +43,9 @@ defaultParams
        unitProp `enum_` [atom Eager += explicit += name "eager"        += help "unit propagation: eager (default)",
                          atom UPYes += explicit += name "unit-prop"    += help "unit propagation: enabled",
                          atom UPNo  += explicit += name "no-unit-prop" += help "unit propagation: disabled"] ,
-       symOpt         := True    += help "enable symmetry optimization (default)",
        showFormula    := False   += help "display formula",
        allTransitive  := False   += help "make all relations transitive",
-       allReflexive   := False   += help "make all relations reflexive",
-       symBlock       := True    += help "block symmetric diamond subformulas"
+       allReflexive   := False   += help "make all relations reflexive"
       ] += verbosity
 
 strategyVal :: String
