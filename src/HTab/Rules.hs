@@ -145,18 +145,18 @@ ruleByChar br p d char =
         return (disjRule p f br d, todos{disjTodo = new})
 
 makeInteresting :: Params -> Branch -> Dependency -> PrFormula ->  Maybe (Rule,PrFormula)
-makeInteresting p br d df@(PrFormula pr ds md (Dis fs))
+makeInteresting p br d df@(PrFormula pr ds (Dis fs))
  = case reduceDisjunctionProposeLazy br pr fs of
           Triviality               -> Just (DiscardDisjTrivialRule df,df)
           Contradiction ds_clash   -> Just (ClashDisjRule (dsUnion ds ds_clash) df,df)
           Reduced new_ds disjuncts mProposed
            | Set.size disjuncts == 1
-              -> Just (DisjRule df ( prefix ur newDeps md disjuncts ), df)
+              -> Just (DisjRule df ( prefix ur newDeps disjuncts ), df)
            | lazyBranching p
               -> case mProposed of
                   Nothing  -> Nothing
                   Just lit
-                   -> Just (LazyBrRule df ur lit [PrFormula ur newDeps md (Dis disjuncts)],
+                   -> Just (LazyBrRule df ur lit [PrFormula ur newDeps (Dis disjuncts)],
                             df)
            | otherwise  -> Nothing
              where newDeps = dsInsert d $ dsUnion ds new_ds
@@ -176,10 +176,10 @@ applyRule :: Params -> Rule -> Branch -> [BranchInfo]
 applyRule p rule br
  = case rule of
     DiaRule (PrFormula pr ds md (Dia r f))
-     -> [ createNewNode p br >>?
-          addAccFormula p (dsUnion ds ds2, r, ur, newPr) >>?
+     -> [ addAccFormula p (dsUnion ds ds2, r, ur, newPr) br >>?
           addFormulas p [PrFormula newPr ds (md+1) f] >>?
-          addDiaRuleCheck pr (r,f) newPr ]
+          addDiaRuleCheck pr (r,f) newPr >>?
+          createNewNode p ]
           where newPr      = lastPref br + 1
                 (ur,ds2,_) = getUrfatherAndDeps br (DS.Prefix pr)
     DisjRule _ prFormulas ->
@@ -191,19 +191,19 @@ applyRule p rule br
               go [] _ = []
     LazyBrRule _ pr lit prFormulas ->
             [ doLazyBranching pr lit prFormulas br ]
-    AtRule  (PrFormula _ ds md (At n f)) ->
+    AtRule  (PrFormula _ ds (At n f)) ->
             [ addFormulas p [toadd] br{ nomPrefClasses = equiv }]
             where (ur,ds2,equiv) = getUrfatherAndDeps br (DS.Nominal n)
-                  toadd = PrFormula ur (dsUnion ds ds2) (md+1) f
-    DownRule (PrFormula pr ds md f@(Down v f2)) ->
+                  toadd = PrFormula ur (dsUnion ds ds2) f
+    DownRule (PrFormula pr ds f@(Down v f2)) ->
                  [ createNewNom br >>?
                    addFormulas p [toadd1, toadd2] >>?
                    addDownRuleCheck pr f ]
-                  where toadd1 = PrFormula pr ds (md+1) (replaceVar v newNom f2)
-                        toadd2 = PrFormula pr ds (md+1) $ Lit $ PosLit $ N newNom
+                  where toadd1 = PrFormula pr ds (replaceVar v newNom f2)
+                        toadd2 = PrFormula pr ds $ Lit $ PosLit $ N newNom
                         newNom = '_':(show $ nextNom br)
     ExistRule (PrFormula _ ds md (E f2)) ->
-       [createNewNode p br >>? addFormulas p [toadd]]
+       [addFormulas p [toadd] br >>? createNewNode p]
        where toadd = PrFormula newPr ds (md+1) f2
              newPr = lastPref br + 1
     DiscardDownRule _         -> [BranchOK br]
@@ -211,21 +211,21 @@ applyRule p rule br
     DiscardDisjTrivialRule _  -> [BranchOK br]
     DiscardDiaBlockedRule f   -> [addToBlockedDias f br]
 
-    ClashDisjRule ds (PrFormula pr ds2 _ f) -> [BranchClash br pr (dsUnion ds ds2) f]
+    ClashDisjRule ds (PrFormula pr ds2 f) -> [BranchClash br pr (dsUnion ds ds2) f]
     MergeRule pr n ds -> [merge p pr ds n br]
     RoleIncRule p1 rs p2 ds ->
      [addAccFormula p (ds, r, p1, p2) br | r <- rs]
     _ -> error $ "applyRule with bad argument: " ++ show rule
 
 disjRule :: Params -> PrFormula -> Branch -> Dependency -> Rule
-disjRule p df@(PrFormula pr ds md (Dis fs)) br d
+disjRule p df@(PrFormula pr ds (Dis fs)) br d
   = if unitProp p == UPNo
-     then rule df $ prefix pr (dsInsert d ds) md fs
+     then rule df $ prefix pr (dsInsert d ds) fs
      else case reduceDisjunctionProposeLazy br pr fs of
              Triviality               -> DiscardDisjTrivialRule df
              Contradiction ds_clash   -> ClashDisjRule (dsUnion ds ds_clash) df
              Reduced new_ds disjuncts _
-               -> rule df (prefix pr (dsInsert d $ dsUnion ds new_ds) md disjuncts)
+               -> rule df (prefix pr (dsInsert d $ dsUnion ds new_ds) disjuncts)
     where rule = if semBranch p then SemBrRule else DisjRule
 -- todo: if only one conjunct remaining, do not add d , but still create a DisjRule
 disjRule _ _ _ _ = error "disjRule"
