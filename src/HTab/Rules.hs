@@ -176,10 +176,10 @@ applyRule :: Params -> Rule -> Branch -> [BranchInfo]
 applyRule p rule br
  = case rule of
     DiaRule (PrFormula pr ds md (Dia r f))
-     -> [ addAccFormula p (dsUnion ds ds2, r, ur, newPr) br >>?
+     -> [ createNewNode p br >>?
+          addAccFormula p (dsUnion ds ds2, r, ur, newPr) >>?
           addFormulas p [PrFormula newPr ds (md+1) f] >>?
-          addDiaRuleCheck pr (r,f) newPr >>?
-          createNewNode p ]
+          addDiaRuleCheck pr (r,f) newPr ]
           where newPr      = lastPref br + 1
                 (ur,ds2,_) = getUrfatherAndDeps br (DS.Prefix pr)
     DisjRule _ prFormulas ->
@@ -203,7 +203,7 @@ applyRule p rule br
                         toadd2 = PrFormula pr ds (md+1) $ Lit $ PosLit $ N newNom
                         newNom = '_':(show $ nextNom br)
     ExistRule (PrFormula _ ds md (E f2)) ->
-       [addFormulas p [toadd] br >>? createNewNode p]
+       [createNewNode p br >>? addFormulas p [toadd]]
        where toadd = PrFormula newPr ds (md+1) f2
              newPr = lastPref br + 1
     DiscardDownRule _         -> [BranchOK br]
