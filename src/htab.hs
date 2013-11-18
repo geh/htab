@@ -11,6 +11,7 @@ import System.IO           ( hPrint, stderr )
 import System.Exit         ( exitWith, ExitCode(ExitFailure) )
 
 import Control.Exception   ( catch, SomeException )
+import Prelude hiding ( catch )
 
 import HTab.Main ( runWithParams, TaskRunFlag(..) )
 import HTab.CommandLine( defaultParams, checkParams )

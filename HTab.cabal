@@ -58,3 +58,10 @@ Executable          htab
 
   if flag(static)
     ghc-options: -static -optl-static -optl-pthread
+
+  if impl(ghc>=7.6)
+     -- in ghc < 7.6 we need to import Prelude hiding (catch)
+     -- in ghc >= 7.6 catch isn't in Prelude
+     -- once the minimum version of ghc is >= 7.6 we can remove the hiding
+     -- clauses and this flag
+     ghc-options:     -fno-warn-dodgy-imports
