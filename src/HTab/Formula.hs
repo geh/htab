@@ -15,17 +15,15 @@ showRelInfo, negLit,
 encodeValidityTest, encodeSatTest, encodeRetrieveTask,
 HyLoFormula, RelProperty(..),
 isPositiveNom, isPositiveProp, isProp
-,parseGenerators,Generator,applyGenerators
 )
 
  where
-import Debug.Trace
 import qualified Data.Set as Set
 import Data.Set ( Set )
 import qualified Data.Map as Map
 import Data.Map ( Map )
 import qualified Data.IntSet as IntSet
-import Data.List ( delete, nub, intercalate, isPrefixOf )
+import Data.List ( delete, nub, intercalate )
 
 import Data.Char ( toUpper )
 
@@ -112,8 +110,12 @@ parse p s
   = (theory, relInfo, fLang, tasks)
     where parseOutput = InputFile.myparse s       -- direct parse from hylolib
           pRelInfo    = P.relations parseOutput
-          relInfo     = forceProperties p parseOutput $ convertToOurType pRelInfo
-          theory      = convert relInfo $ P.theory parseOutput
+          relInfo     = if translate p
+                         then monomodal $ convertToOurType pRelInfo
+                         else forceProperties p parseOutput $ convertToOurType pRelInfo
+          theory      = if translate p
+                          then doTranslate $ P.theory parseOutput
+                          else convert relInfo $ P.theory parseOutput
           tasks       = P.tasks parseOutput
           fLang       = langInfo parseOutput
 
@@ -131,6 +133,11 @@ forceProperties p po relI
                                  (allReflexive  p, Reflexive )]
          theory =  P.theory po
 
+-- assume input formula is relation-changing
+-- then it is monomodal, only relation is R
+monomodal :: RelInfo -> RelInfo
+monomodal _ = Map.fromList [("R", [])]
+ -- TODO check parameter and fail if relation other than R used in input file
 
 convertToOurType :: PRelInfo -> RelInfo
  -- and add for each relation in the formula, the relevant key
@@ -157,6 +164,7 @@ simpleParse p s =
  in (t,r,i)
  where removeBeginEnd = unwords . delete "begin" . delete "end" . words
 
+-- convert from hylolib format to htab's
 convert :: RelInfo -> [F.Formula S.NomSymbol S.PropSymbol S.RelSymbol]
              -> Formula
 convert relI = conv_ relI . foldr (F.:&:) F.Top
@@ -194,6 +202,71 @@ specialise r relI (relational, global)
  | Universal `elem` props  = global
  | otherwise = relational r
  where props = Map.findWithDefault [] r relI
+
+-- TODO TODO
+-- translation of relation-changing modal operators to hybrid
+-- TODO trans_ must take as parameter a set of couple of nominals
+-- TODO these new noms must be recognizable, but for now just generate them
+-- TODO
+
+type S = ( [(String, String)] , Int)    -- Int = next nominal number to use
+
+emptyset :: S -- directly nominal strings (uppercase)
+emptyset = ([],0)
+
+-- generate unused nominal and update S
+next :: S -> (String,S)
+next (ss,n) = ("N" ++ show n, (ss, n + 1))
+
+-- not exactly a union but we're mimicking the article
+union :: S -> (String, String) -> S
+union (ss,n) nm = (ss ++ [nm], n)
+
+-- macro for translation
+belongs :: String -> S -> Formula
+belongs n (ss,_) = Dis $ set [ (nom' y) `conj` At n (nom' x) | (x,y) <- ss ]
+ where nom' = Lit . PosLit . N
+
+doTranslate ::  [F.Formula S.NomSymbol S.PropSymbol S.RelSymbol] -> Formula
+doTranslate =  trans_ emptyset  . foldr (F.:&:) F.Top
+
+trans_ :: S -> F.Formula S.NomSymbol S.PropSymbol S.RelSymbol
+           -> Formula
+trans_ _ F.Top               = taut
+trans_ _ F.Bot               = neg taut
+trans_ _ (F.Prop p)          = prop p
+trans_ _ (F.Nom  n)          = nom n
+trans_ s (F.Neg  f)          = neg $ trans_ s f
+trans_ s (f1 F.:&:    f2)    = trans_ s f1 `conj` trans_ s f2
+trans_ s (f1 F.:|:    f2)    = trans_ s f1 `disj` trans_ s f2
+trans_ s (f1 F.:-->:  f2)    = trans_ s f1 `imp`  trans_ s f2
+trans_ s (f1 F.:<-->: f2)    = trans_ s f1 `dimp` trans_ s f2
+trans_ s (F.Diam (S.RelSymbol r) f)
+    | up r `elem` ["R","R1"] =
+        Down newNom1 ( Dia "R" ( (neg $ belongs newNom1 s1) `conj` (trans_ s1 f)))
+    | up r == "SB" =
+        Down newNom1 (Dia "R" ( (neg $ belongs newNom1 s2) `conj` (Down newNom2 (trans_ s2u12 f)))) 
+    | up r == "GSB"     =
+        Down newNom1 $ E $ Down newNom2
+          $ (Dia "R" ( (neg $ belongs newNom1 s2) `conj` (Down newNom2 $ At newNom1 (trans_ s4u23 f)))) 
+    | otherwise         = error ("relation should be r/r1 , sb or gsb, instead you gave me: " ++ r)
+    where (newNom1,s1) = next s
+          (newNom2,s2) = next s1
+          s2u12 = s2 `union` (newNom1,newNom2)
+          (newNom3,s3) = next s2
+          s4u23 = s3 `union` (newNom2,newNom3)
+
+trans_ s (F.Box  relSym f) = trans_ s (F.Neg (F.Diam relSym (F.Neg f)))
+trans_ s (F.At   n f)        = at        n (trans_ s f)
+trans_ s (F.Down v f)        = downArrow v (trans_ s f)
+trans_ s (F.A f)             = univMod     (trans_ s f)
+trans_ s (F.E f)             = existMod    (trans_ s f)
+trans_ _ f                 = error (show f ++ "not supported in translation")
+
+
+
+
+
 
 type HyLoFormula = F.Formula S.NomSymbol S.PropSymbol S.RelSymbol
 
@@ -408,66 +481,6 @@ list = Set.toList
 
 set :: Ord a => [a] -> Set.Set a
 set = Set.fromList
-
--- symmetries
--- substitution of literals inside of formulas
-
-type Generator = [(Literal,Literal)]
-
-applyGenerators :: [Generator] -> PrFormula -> [PrFormula]
-applyGenerators gens f
- = if null res
-    then res
-    else trace ("SYM on " ++ showLess f ++ ":" ++ intercalate "," (map showLess res))
-               res
-   where res =  delete f $ nub $ map (\gen -> subst gen f) gens
-
-subst :: Generator -> PrFormula -> PrFormula
-subst gen (PrFormula pr ds f) = PrFormula pr ds $ substNorm gen f
-
-substNorm :: Generator -> Formula -> Formula
--- act as if we were at modal depth 0 and generator has been adjusted
-substNorm gen (Lit a)     = Lit $ genOnLit gen a
-substNorm gen (At n f)    = At n $ substNorm gen f
-substNorm gen (Box r f)   = Box r $ substNorm gen f
-substNorm gen (Dia r f)   = Dia r $ substNorm gen f
-substNorm gen (Down n f)  = Down n $ substNorm gen f
-substNorm gen (A f)       = A $ substNorm gen f
-substNorm gen (E f)       = E $ substNorm gen f
-substNorm gen f           = composeMap id (substNorm gen) f
-
-genOnLit :: Generator -> Literal -> Literal
-genOnLit [] l           = l
-genOnLit ((x,y):g) l
- | x == l        = y
- | x == negLit l = negLit y
- | y == l        = x
- | y == negLit l = negLit x
- | otherwise     = genOnLit g l
-
-parseGenerators :: String -> [Generator]
-parseGenerators genString
- =  [lineToGen l [] | l <- lines genString,
-                        not ("%" `isPrefixOf` l),
-                        not (null l)            ]
-
--- turn such a line into a generator:
--- 4 -2 5, 5 3 5, 0 -6 -3
-lineToGen :: String -> Generator -> Generator
-lineToGen "" g    = g
-lineToGen (',':l) g = lineToGen l g
-lineToGen l g       = let triple = takeWhile (/= ',') l
-                          remainder = dropWhile (/= ',') l
-                          [_,l1::Int,l2::Int] = map read $ words triple
-                          -- we read X for PX or -Y for -PY,
-                          -- now we need to convert it in atom
-                          a1 = if l1 < 0
-                                then NegLit $ P $ "P" ++ show (negate l1)
-                                else PosLit $ P $ "P" ++ show l1
-                          a2 = if l2 < 0
-                                then NegLit $ P $ "P" ++ show (negate l2)
-                                else PosLit $ P $ "P" ++ show l2
-                      in lineToGen remainder (g ++ [(a1,a2)])
 
 up :: String -> String
 up = map toUpper

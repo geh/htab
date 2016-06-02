@@ -10,7 +10,6 @@ import HTab.Statistics( StatisticsState, setPrintOutInterval )
 
 data Params = Params {
            filename        :: FilePath,
-           symfile         :: Maybe FilePath,
            genModel        :: Maybe FilePath,
            dotModel        :: Bool,
            timeout         :: Int,
@@ -23,6 +22,7 @@ data Params = Params {
            showFormula     :: Bool,
            allTransitive   :: Bool,
            allReflexive    :: Bool
+         , translate       :: Bool
          } deriving (Show, Data, Typeable)
 
 data UnitProp = Eager | UPYes | UPNo deriving (Data, Typeable, Eq, Show)
@@ -31,7 +31,6 @@ defaultParams :: Annotate Ann
 defaultParams
  = record Params{}
      [ filename       := "" += name "f" += typFile += help "input file",
-       symfile        := Nothing += name "s" += typFile += help "input symmetries file (not used yet)",
        genModel       := Nothing += name "m" += typFile += help "output model file",
        dotModel       := False   += help "output model in dot format (otherwise: hylolib format)",
        timeout        := 0       += name "t" += help "timeout (in seconds, default=none)",
@@ -45,7 +44,8 @@ defaultParams
                          atom UPNo  += explicit += name "no-unit-prop" += help "unit propagation: disabled"] ,
        showFormula    := False   += help "display formula",
        allTransitive  := False   += help "make all relations transitive",
-       allReflexive   := False   += help "make all relations reflexive"
+       allReflexive   := False   += help "make all relations reflexive",
+       translate      := False   += help "translate relation-changing formulas to hybrid"
       ] += verbosity
 
 strategyVal :: String
@@ -62,12 +62,15 @@ checkParams p
                    "  b = down-arrow binder      | = or",
                    "  r = role inclusion",
                    "",
-                   "The default is `" ++ strategyVal ++ "'",
-                   "The rules conjunction, box, universal modality and converse difference",
-                   "modality are immediate, thus do not belong to the strategy."]
+                   "The default is \"" ++ strategyVal ++ "\"",
+                   "The rules conjunction, box, and universal modality",
+                   "are applied immediately, thus do not belong to the strategy."]
        return False
  | null (filename p) =
     do putStrLn $ unlines ["ERROR: No input specified.","Run with --help for usage options"]
+       return False
+ | translate p && (allTransitive p || allReflexive p) = 
+    do putStrLn $ unlines ["ERROR: --translate incompatible with --all-transitive or --all-reflexive."]
        return False
  | otherwise = return True
   where notPermutationOf l1 l2 = sort l1 /= sort l2

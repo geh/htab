@@ -3,7 +3,6 @@ module Main (main)
 where
 
 import Control.Monad ( unless )
-import Control.Applicative ( (<$>) )
 
 import System.Console.CmdArgs
 
@@ -11,7 +10,6 @@ import System.IO           ( hPrint, stderr )
 import System.Exit         ( exitWith, ExitCode(ExitFailure) )
 
 import Control.Exception   ( catch, SomeException )
-import Prelude hiding ( catch )
 
 import HTab.Main ( runWithParams, TaskRunFlag(..) )
 import HTab.CommandLine( defaultParams, checkParams )
@@ -47,9 +45,9 @@ runCmdLineVersion =
       else return Nothing
 
 header :: String
-header = unlines ["HTab 1.6.0",
-                  "G. Hoffmann, C. Areces, D.Gorin and J. Heguiabehere. (c) 2002-2011.",
-                  "http://code.google.com/p/intohylo/"]
+header = unlines ["HTab 1.7.0",
+                  "G. Hoffmann, C. Areces, D.Gorin and J. Heguiabehere. (c) 2002-2016.",
+                  "http://hub.darcs.net/gh/htab/"]
 
 gplTag :: [String]
 gplTag = [

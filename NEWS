@@ -1,3 +1,5 @@
+* 2016.06.03 : 1.7.0
+      o --translation to support relation-changing modal logics
 * 2011.12.02 : 1.6.0
       o pattern based blocking by default
       o lazy branching on all nodes except with chain blocking

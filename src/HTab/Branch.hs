@@ -17,7 +17,6 @@ prefixes, isInTheModel,
 isTransitive
 ) where
 
-import Control.Applicative ( (<$>) )
 import Data.Maybe( mapMaybe )
 
 import Data.Map ( Map )
@@ -73,8 +72,7 @@ data Branch =
                  -- information about language of input formula and blocking mode
                  inputLanguage :: LanguageInfo,
                    blockedDias :: IntMap {- Prefix -} [PrFormula],
-                       relInfo :: RelInfo,
-                    generators :: [Generator]}
+                       relInfo :: RelInfo}
 
 --
 
@@ -97,7 +95,6 @@ instance Show Branch where
      "\nPrefix-Nominal classes : ", showMap ", " (nomPrefClasses br),
      "\nlastPref : ", show (lastPref br),
      " nextnom : ", show (nextNom br),
-     "\ngenerators :", show (generators br),
      "\nRel info:", show (relInfo br), "\n"
   ]
    where
@@ -451,7 +448,7 @@ addBoxConstraint pr_ r f ds p br
  | boxAlreadyDone br pr (r,f) = BranchOK br
  | otherwise
     = let newBr = br{boxFwd = updateBoxConstr pr r f ds (boxFwd br)}
-          succs  = get [] r s1 $ successors (accStr br) pr
+          succs  = get [] r $ successors (accStr br) pr
           toAdd = fromTrans ++ fromBox
           fromTrans
            = if isTransitive (relInfo br) r
@@ -627,9 +624,9 @@ createNewNom br
 --  - add a nominal formula at a fresh prefix for each nominal of the input language
 --    (even if the nominal was filtered out during lexical normalisation)
 --  - add reflexive links for prefixes 0 and nominal witnesses
-initialBranch :: Params -> LanguageInfo -> RelInfo -> [Generator] -> Formula
+initialBranch :: Params -> LanguageInfo -> RelInfo -> Formula
                   -> BranchInfo
-initialBranch p fLang relInfo_ gs f
+initialBranch p fLang relInfo_ f
  = addFormulas p [pf] br
     where
           pf = firstPrefixedFormula f
@@ -661,8 +658,7 @@ initialBranch p fLang relInfo_ gs f
                    nomPrefClasses    = initClasses,
                    inputLanguage     = fLang,
                    blockedDias       = I.empty,
-                   relInfo           = relInfo_,
-                   generators        = gs
+                   relInfo           = relInfo_
                  }
 
 addToLiterals :: Prefix -> DependencySet -> Literal -> Branch -> BranchInfo
@@ -750,5 +746,4 @@ iget = I.findWithDefault
 
 get :: (Ord k) => a -> k -> Map k a -> a
 get = Map.findWithDefault
-
 

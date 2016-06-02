@@ -3,7 +3,6 @@ module HTab.Main
 ( runWithParams, TaskRunFlag(..))
 
 where
-import Control.Applicative ( (<$>) )
 import Control.Monad       ( when )
 import Control.Monad.State( runStateT )
 
@@ -16,14 +15,14 @@ import Prelude hiding ( readFile )
 
 import HyLo.InputFile.Parser ( QueryType(..) )
 
-import HTab.CommandLine( filename, symfile,
+import HTab.CommandLine( filename,
                          timeout, Params, genModel, dotModel, showFormula )
 import HTab.Branch( BranchInfo(..), initialBranch)
 import HTab.Statistics( Statistics, initialStatisticsStateFor, printOutMetricsFinal )
 import HTab.Tableau( OpenFlag(..), tableauStart )
 import HTab.Formula( Theory, RelInfo, LanguageInfo, Task,
                      Formula, encodeValidityTest, encodeSatTest, encodeRetrieveTask,
-                     showRelInfo, parseGenerators )
+                     showRelInfo )
 import qualified HTab.Formula as F
 import qualified HyLo.Signature.String as S
 import HTab.ModelGen ( Model, toDot )
@@ -44,11 +43,9 @@ runWithParams p =
                "End of input",
                "Relations properties :" ++ showRelInfo relInfo ]
     --
-    gs <- parseGenerators <$> maybe (return "") readFile (symfile p) -- read symmetries
-    --
     tResult <- inTimeout (timeout p) $
                 do (result,s) <- tableauInit p $
-                                  initialBranch p fLang relInfo gs f
+                                  initialBranch p fLang relInfo f
                    whenNormal $ printOutMetricsFinal s
                    return result
     --
@@ -111,7 +108,7 @@ runTask (Retrieve,mOutFile,fs) relInfo fLang theory p =
     --
     myPutStrLn $ "Instances making true: " ++ show fs
     --
-    results <- mapM (tableauInit p . initialBranch p fLang relInfo []) encfs
+    results <- mapM (tableauInit p . initialBranch p fLang relInfo) encfs
     let goods = [ S.NomSymbol n | (n,(CLOSED _ ,_)) <- zip noms results]
     myPutStrLn $ show goods
     let doWrite f = do writeFile f (show goods ++ "\n")
@@ -129,7 +126,7 @@ runTask (Satisfiable,mOutFile,fs) relInfo fLang theory p =
                            "End of input",
                            "Relations properties :" ++ showRelInfo relInfo ]
     --
-    (result,stats) <- tableauInit p $ initialBranch p fLang relInfo [] f
+    (result,stats) <- tableauInit p $ initialBranch p fLang relInfo f
     --
     whenNormal $ printOutMetricsFinal stats
     --
@@ -150,7 +147,7 @@ runTask (Valid,mOutFile,fs) relInfo fLang theory p =
                            "End of input",
                            "Relations properties :" ++ showRelInfo relInfo ]
     --
-    (result,stats) <- tableauInit p $ initialBranch p fLang relInfo [] f
+    (result,stats) <- tableauInit p $ initialBranch p fLang relInfo f
     --
     whenNormal $ printOutMetricsFinal stats
     --

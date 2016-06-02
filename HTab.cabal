@@ -1,15 +1,15 @@
 Name:                HTab
-Version:             1.6.3
+Version:             1.7.0
 Synopsis:            Tableau based theorem prover for hybrid logics
 Description:         Tableau based theorem prover for hybrid logics
-Homepage:            http://www.glyc.dc.uba.ar/intohylo/htab.php
-Bug-reports:         http://code.google.com/p/intohylo/
+Homepage:            http://hub.darcs.net/gh/htab
+Bug-reports:         http://hub.darcs.net/gh/htab/issues
 Category:            Theorem provers
 License:             GPL
 License-file:        COPYING
 Author:              Guillaume Hoffmann, Carlos Areces, Daniel Gorín, Juan Heguiabehere
 Maintainer:          guillaumh@gmail.com
-Cabal-version:       >= 1.6.0
+Cabal-version:       >= 1.22
 Build-type:          Simple
 Extra-source-files:  tests/test-example-formulas.hs
                      tests/coverage.sh
@@ -19,7 +19,7 @@ Data-files:  NEWS
              examples/unsat/*.frm
 source-repository head
     type:     darcs
-    location: http://www.glyc.dc.uba.ar/intohylo/repos/htab/
+    location: http://hub.darcs.net/gh/htab
 
 Flag static
   Description: Build a static binary
@@ -40,12 +40,12 @@ Executable          htab
                        HTab.Rules
                        HTab.Statistics
                        HTab.Tableau
-  Build-Depends:       base >= 4, base < 5,
+  Build-Depends:       base >= 4.8,
                        mtl >= 2, mtl < 3,
                        containers,
                        deepseq,
                        strict,
-                       cmdargs >= 0.10.1,
+                       cmdargs >= 0.10.10,
                        hylolib == 1.4.*
   Extensions:          GADTs
                        DeriveDataTypeable
@@ -58,10 +58,3 @@ Executable          htab
 
   if flag(static)
     ghc-options: -static -optl-static -optl-pthread
-
-  if impl(ghc>=7.6)
-     -- in ghc < 7.6 we need to import Prelude hiding (catch)
-     -- in ghc >= 7.6 catch isn't in Prelude
-     -- once the minimum version of ghc is >= 7.6 we can remove the hiding
-     -- clauses and this flag
-     ghc-options:     -fno-warn-dodgy-imports
