@@ -105,6 +105,8 @@ data RelProperty   =   Reflexive
 showRelInfo :: RelInfo -> String
 showRelInfo = Map.foldrWithKey (\r v -> (++ " " ++ show r ++ " -> " ++ show v )) ""
 
+data RelationChanging = Sabotage | Bridge | Swap
+
 parse :: Params -> String -> (Theory,RelInfo,LanguageInfo,[Task])
 parse p s
   = (theory, relInfo, fLang, tasks)
@@ -114,7 +116,7 @@ parse p s
                          then monomodal $ convertToOurType pRelInfo
                          else forceProperties p parseOutput $ convertToOurType pRelInfo
           theory      = if translate p
-                          then doTranslate $ P.theory parseOutput
+                          then doTranslate (detectRCLogic pRelInfo) $ P.theory parseOutput
                           else convert relInfo $ P.theory parseOutput
           tasks       = P.tasks parseOutput
           fLang       = langInfo parseOutput
@@ -138,6 +140,19 @@ forceProperties p po relI
 monomodal :: RelInfo -> RelInfo
 monomodal _ = Map.fromList [("R", [])]
  -- TODO check parameter and fail if relation other than R used in input file
+
+
+detectRCLogic :: PRelInfo -> RelationChanging
+detectRCLogic prelI
+ |  "sb" `elem` rels = Sabotage
+ |  "gsb" `elem` rels = Sabotage
+ |  "sw"  `elem` rels = Swap
+ |  "gsw" `elem` rels = Swap
+ |  "br"  `elem` rels = Bridge
+ |  "gbr"  `elem` rels = Bridge
+ | otherwise = error "does not seem like a relation-changing formula!"
+ where rels = map fst prelI
+
 
 convertToOurType :: PRelInfo -> RelInfo
  -- and add for each relation in the formula, the relevant key
@@ -203,70 +218,167 @@ specialise r relI (relational, global)
  | otherwise = relational r
  where props = Map.findWithDefault [] r relI
 
--- TODO TODO
--- translation of relation-changing modal operators to hybrid
--- TODO trans_ must take as parameter a set of couple of nominals
--- TODO these new noms must be recognizable, but for now just generate them
--- TODO
 
+-- COMMON STRUCTURES FOR ALL RELATION-CHANGING TRANSLATIONS --
 type S = ( [(String, String)] , Int)    -- Int = next nominal number to use
-
 emptyset :: S -- directly nominal strings (uppercase)
 emptyset = ([],0)
-
 -- generate unused nominal and update S
 next :: S -> (String,S)
 next (ss,n) = ("N" ++ show n, (ss, n + 1))
 
+-- SABOTAGE TRANSLATION --
 -- not exactly a union but we're mimicking the article
 union :: S -> (String, String) -> S
 union (ss,n) nm = (ss ++ [nm], n)
-
 -- macro for translation
 belongs :: String -> S -> Formula
-belongs n (ss,_) = Dis $ set [ (nom' y) `conj` At n (nom' x) | (x,y) <- ss ]
- where nom' = Lit . PosLit . N
+belongs n (ss,_) = Dis $ set [ (n' y) `conj` At n (n' x) | (x,y) <- ss ]
+ where n' = Lit . PosLit . N
 
-doTranslate ::  [F.Formula S.NomSymbol S.PropSymbol S.RelSymbol] -> Formula
-doTranslate =  trans_ emptyset  . foldr (F.:&:) F.Top
+-- SWAP TRANSLATION --
+inverse :: S -> S
+inverse (ss,n) =  (map (\(a,b) -> (b,a)) ss, n)
+-- | slightly different from paper: phi must be already translated
+isSat :: S -> Formula -> Formula
+isSat (ss,_) phi = foldr disj (neg taut) [ n x `conj` At y phi | (x,y) <- ss ]
+ where n = Lit . PosLit . N
 
-trans_ :: S -> F.Formula S.NomSymbol S.PropSymbol S.RelSymbol
-           -> Formula
-trans_ _ F.Top               = taut
-trans_ _ F.Bot               = neg taut
-trans_ _ (F.Prop p)          = prop p
-trans_ _ (F.Nom  n)          = nom n
-trans_ s (F.Neg  f)          = neg $ trans_ s f
-trans_ s (f1 F.:&:    f2)    = trans_ s f1 `conj` trans_ s f2
-trans_ s (f1 F.:|:    f2)    = trans_ s f1 `disj` trans_ s f2
-trans_ s (f1 F.:-->:  f2)    = trans_ s f1 `imp`  trans_ s f2
-trans_ s (f1 F.:<-->: f2)    = trans_ s f1 `dimp` trans_ s f2
-trans_ s (F.Diam (S.RelSymbol r) f)
+-- | swap again some pair in S
+again :: S -> (String, String) -> S
+again (ss,n) xy@(x,y)
+  | xy `elem` ss =  ( (y,x):(delete xy ss), n)
+  | otherwise    = error "trying to swap again something that is not here"
+
+doTranslate :: RelationChanging -> [F.Formula S.NomSymbol S.PropSymbol S.RelSymbol] -> Formula
+doTranslate rc input =  -- TODO detect if sabotage, if bridge, if swap
+  case rc of
+   Sabotage -> trSab  emptyset bigAnd
+   Swap     -> trSwap emptyset bigAnd
+   Bridge   -> trBri  emptyset bigAnd
+ where bigAnd = foldr (F.:&:) F.Top input
+
+trSab :: S -> F.Formula S.NomSymbol S.PropSymbol S.RelSymbol -> Formula
+trSab _ F.Top               = taut
+trSab _ F.Bot               = neg taut
+trSab _ (F.Prop p)          = prop p
+trSab _ (F.Nom  n)          = nom n
+trSab s (F.Neg  f)          = neg $ trSab s f
+trSab s (f1 F.:&:    f2)    = trSab s f1 `conj` trSab s f2
+trSab s (f1 F.:|:    f2)    = trSab s f1 `disj` trSab s f2
+trSab s (f1 F.:-->:  f2)    = trSab s f1 `imp`  trSab s f2
+trSab s (f1 F.:<-->: f2)    = trSab s f1 `dimp` trSab s f2
+trSab s (F.At   n f)        = at        n (trSab s f)
+trSab s (F.A f)             = univMod     (trSab s f)
+trSab s (F.E f)             = existMod    (trSab s f)
+trSab s (F.Down v f)        = downArrow v (trSab s f)
+trSab s (F.Box  relSym f)   = trSab s (F.Neg (F.Diam relSym (F.Neg f)))
+trSab s (F.Diam (S.RelSymbol r) f)
     | up r `elem` ["R","R1"] =
-        Down newNom1 ( Dia "R" ( (neg $ belongs newNom1 s1) `conj` (trans_ s1 f)))
+        Down newNom1 ( Dia "R" ( (neg $ belongs newNom1 s1) `conj` (trSab s1 f)))
     | up r == "SB" =
-        Down newNom1 (Dia "R" ( (neg $ belongs newNom1 s2) `conj` (Down newNom2 (trans_ s2u12 f)))) 
+        Down newNom1 (Dia "R" ( (neg $ belongs newNom1 s2) `conj` (Down newNom2 (trSab s2u12 f)))) 
     | up r == "GSB"     =
         Down newNom1 $ E $ Down newNom2
-          $ (Dia "R" ( (neg $ belongs newNom1 s2) `conj` (Down newNom2 $ At newNom1 (trans_ s4u23 f)))) 
-    | otherwise         = error ("relation should be r/r1 , sb or gsb, instead you gave me: " ++ r)
+          $ (Dia "R" ( (neg $ belongs newNom1 s2) `conj` (Down newNom2 $ At newNom1 (trSab s4u23 f)))) 
+    | otherwise         = error ("Relation is not r, r1, sb or gsb: " ++ r)
     where (newNom1,s1) = next s
           (newNom2,s2) = next s1
           s2u12 = s2 `union` (newNom1,newNom2)
           (newNom3,s3) = next s2
           s4u23 = s3 `union` (newNom2,newNom3)
+trSab _ f                 = error (show f ++ "not supported")
 
-trans_ s (F.Box  relSym f) = trans_ s (F.Neg (F.Diam relSym (F.Neg f)))
-trans_ s (F.At   n f)        = at        n (trans_ s f)
-trans_ s (F.Down v f)        = downArrow v (trans_ s f)
-trans_ s (F.A f)             = univMod     (trans_ s f)
-trans_ s (F.E f)             = existMod    (trans_ s f)
-trans_ _ f                 = error (show f ++ "not supported in translation")
+trBri :: S -> F.Formula S.NomSymbol S.PropSymbol S.RelSymbol -> Formula
+trBri _ F.Top               = taut
+trBri _ F.Bot               = neg taut
+trBri _ (F.Prop p)          = prop p
+trBri _ (F.Nom  n)          = nom n
+trBri s (F.Neg  f)          = neg $ trBri s f
+trBri s (f1 F.:&:    f2)    = trBri s f1 `conj` trBri s f2
+trBri s (f1 F.:|:    f2)    = trBri s f1 `disj` trBri s f2
+trBri s (f1 F.:-->:  f2)    = trBri s f1 `imp`  trBri s f2
+trBri s (f1 F.:<-->: f2)    = trBri s f1 `dimp` trBri s f2
+trBri s (F.At   n f)        = at        n (trBri s f)
+trBri s (F.A f)             = univMod     (trBri s f)
+trBri s (F.E f)             = existMod    (trBri s f)
+trBri s (F.Down v f)        = downArrow v (trBri s f)
+trBri s (F.Box  relSym f)   = trBri s (F.Neg (F.Diam relSym (F.Neg f)))
+trBri s (F.Diam (S.RelSymbol r) f)
+    | up r `elem` ["R","R1"] =
+        Down newNom1 $ E $ Down newNom2
+          ( (( At newNom1 (Dia "R" (n newNom2))) `disj` (belongs newNom1 s1))
+            `conj` (trBri s2 f)
+          )
+    | up r == "BR" =
+        Down newNom1 $ E $ Down newNom2
+          (   ( neg $ At newNom1 (Dia "R" (n newNom2)))
+            `conj` (neg $ belongs newNom1 s1)
+            `conj` (trBri s2u12 f)
+          )
+    | up r == "GBR"     =
+        Down newNom1 $ E $ Down newNom2 $ E $ Down newNom3
+          (   ( neg $ At newNom2 (Dia "R" (n newNom3)))
+            `conj` (neg $ belongs newNom2 s1)
+            `conj` At newNom1 (trBri s4u23 f)
+          )
+    | otherwise         = error ("Relation is not r, r1, br or gbr: " ++ r)
+    where (newNom1,s1) = next s
+          (newNom2,s2) = next s1
+          s2u12 = s2 `union` (newNom1,newNom2)
+          (newNom3,s3) = next s2
+          s4u23 = s3 `union` (newNom2,newNom3)
+          n = Lit . PosLit . N
+trBri _ f                 = error (show f ++ "not supported")
 
-
-
-
-
+trSwap :: S -> F.Formula S.NomSymbol S.PropSymbol S.RelSymbol -> Formula
+trSwap _ F.Top               = taut
+trSwap _ F.Bot               = neg taut
+trSwap _ (F.Prop p)          = prop p
+trSwap _ (F.Nom  n)          = nom n
+trSwap s (F.Neg  f)          = neg $ trSwap s f
+trSwap s (f1 F.:&:    f2)    = trSwap s f1 `conj` trSwap s f2
+trSwap s (f1 F.:|:    f2)    = trSwap s f1 `disj` trSwap s f2
+trSwap s (f1 F.:-->:  f2)    = trSwap s f1 `imp`  trSwap s f2
+trSwap s (f1 F.:<-->: f2)    = trSwap s f1 `dimp` trSwap s f2
+trSwap s (F.At   n f)        = at        n (trSwap s f)
+trSwap s (F.A f)             = univMod     (trSwap s f)
+trSwap s (F.E f)             = existMod    (trSwap s f)
+trSwap s (F.Down v f)        = downArrow v (trSwap s f)
+trSwap s (F.Box  relSym f)   = trSwap s (F.Neg (F.Diam relSym (F.Neg f)))
+trSwap s@(ss,_) (F.Diam (S.RelSymbol r) f)
+    | up r `elem` ["R","R1"] =
+        (Down newNom1 ( Dia "R" ( (neg $ belongs newNom1 s1) `conj` (trSwap s1 f))))
+        `disj`
+        (isSat (inverse s) (trSwap s f))
+    | up r == "SW" =
+          ( Down newNom1 (Dia "R" (n newNom1)) `conj` trSwap s f )
+        `disj`
+          ( Down newNom1 $ Dia "R" 
+               $    neg (n newNom1)
+                 `conj` neg (belongs newNom1 s)
+                 `conj` neg (belongs newNom1 (inverse s))
+                 `conj` (Down newNom2 $ trSwap s2u12 f))
+        `disj`
+          foldr disj (neg taut) [ n y `conj` At x (trSwap (again s (x,y)) f) | (x,y) <- ss ]
+    | up r == "GSW" =
+          ( (E $ Down newNom1 $ Dia "R" $ n newNom1) `conj` trSwap s f )
+        `disj`
+          ( Down newNom1 $ E $ Down newNom2 $ Dia "R"
+               $    neg (n newNom2)
+                 `conj` neg (belongs newNom2 s)
+                 `conj` neg (belongs newNom2 (inverse s))
+                 `conj` (Down newNom3 $ At newNom1 $ trSwap s4u23 f))
+        `disj`
+          foldr disj (neg taut) [ trSwap (again s (x,y)) f | (x,y) <- ss ]
+    | otherwise         = error ("Relation is not r, r1, sw or gsw: " ++ r)
+    where (newNom1,s1) = next s
+          (newNom2,s2) = next s1
+          s2u12 = s2 `union` (newNom1,newNom2)
+          (newNom3,s3) = next s2
+          s4u23 = s3 `union` (newNom2,newNom3)
+          n = Lit . PosLit . N
+trSwap _ f                 = error (show f ++ "not supported.")
 
 type HyLoFormula = F.Formula S.NomSymbol S.PropSymbol S.RelSymbol
 

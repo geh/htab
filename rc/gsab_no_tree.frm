@@ -1,12 +1,12 @@
 signature {
 propositions {  }
 nominals { }
-relations { sb, gsb }
+relations { gsb }
 }
 
 theory
 
 {
- <><>true;
- [sb][]false;
+ <><> true;
+ [gsb][] false;
 }

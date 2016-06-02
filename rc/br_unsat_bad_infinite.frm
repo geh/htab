@@ -11,7 +11,4 @@ theory
   [] false;
   [br](s --> [br]!s);
   [br][]!s;
-  [br]<> true;
-  [br][br](s --> [](!s --> [][]!s));
-  [br][][][br](s --> <>(!s & <><>s));
 }
