@@ -1,12 +1,13 @@
-# HTab 1.7.0
+# HTab, a hybrid logic tableau prover
 
-## A hybrid logic tableau prover
-
-Currently HTab handles the hybrid logic H(:,E,down-arrow) with role inclusions,
+HTab is a tableau-based satisfiability checker. It currently
+handles the hybrid logic H(:,E,down-arrow) with role inclusions,
 and terminates on input within any fragments that exclude the down-arrow operator.
 
 Relevant references for HTab are [1] and [2] for the general tableau algorithm
 and [3] for the pattern-based blocking and lazy branching technique currently used.
+
+## Getting and building
 
 To build HTab, you will need at least GHC 7.10, and either cabal-install
 or stack. Download the source code of HTab either using Darcs:
