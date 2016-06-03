@@ -26,6 +26,7 @@ Flag static
   Default:     False
 
 Executable          htab
+  Default-language:    Haskell2010
   Main-is:             htab.hs
   Other-modules:       HTab.Branch
                        HTab.CommandLine
@@ -46,7 +47,7 @@ Executable          htab
                        deepseq,
                        strict,
                        cmdargs >= 0.10.10,
-                       hylolib == 1.4.*
+                       hylolib >= 1.5
   Extensions:          GADTs
                        DeriveDataTypeable
                        FlexibleContexts
