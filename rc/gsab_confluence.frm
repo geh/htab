@@ -1,5 +1,5 @@
 signature {
-propositions { p, q, a, b }
+propositions { a, b, c }
 nominals { }
 relations { gsb }
 }
@@ -7,8 +7,8 @@ relations { gsb }
 theory
 
 {
- !a & !b & !p & !q;
- <>(p  & !a & !b & <> (q  & <> (!q & a) ));
- <>(!p & !a & !b & <> (q  & <> (!q & b) ));
+ <>(a & !b &  <><>a );
+ <>(b & !a &  <><>b );
+ [][](c & []!c);
  <gsb>[][][] false;
 }
