@@ -282,7 +282,7 @@ trSab s (F.Diam (S.RelSymbol r) f)
         Down newNom1 (Dia "R" ( (neg $ belongs newNom1 s2) `conj` (Down newNom2 (trSab s2u12 f)))) 
     | up r == "GSB"     =
         Down newNom1 $ E $ Down newNom2
-          $ (Dia "R" ( (neg $ belongs newNom1 s2) `conj` (Down newNom2 $ At newNom1 (trSab s4u23 f)))) 
+          $ (Dia "R" ( (neg $ belongs newNom1 s2) `conj` (Down newNom3 $ At newNom1 (trSab s4u23 f)))) 
     | otherwise         = error ("Relation is not r, r1, sb or gsb: " ++ r)
     where (newNom1,s1) = next s
           (newNom2,s2) = next s1
