@@ -275,7 +275,9 @@ trSab s (F.Down v f)        = downArrow v (trSab s f)
 trSab s (F.Box  relSym f)   = trSab s (F.Neg (F.Diam relSym (F.Neg f)))
 trSab s (F.Diam (S.RelSymbol r) f)
     | up r `elem` ["R","R1"] =
-        Down newNom1 ( Dia "R" ( (neg $ belongs newNom1 s1) `conj` (trSab s1 f)))
+        case s of
+         ([],_)  ->  Dia "R" (trSab s1 f)
+         _       ->  Down newNom1 ( Dia "R" ( (neg $ belongs newNom1 s1) `conj` (trSab s1 f)))
     | up r == "SB" =
         Down newNom1 (Dia "R" ( (neg $ belongs newNom1 s2) `conj` (Down newNom2 (trSab s2u12 f)))) 
     | up r == "GSB"     =
@@ -306,10 +308,12 @@ trBri s (F.Down v f)        = downArrow v (trBri s f)
 trBri s (F.Box  relSym f)   = trBri s (F.Neg (F.Diam relSym (F.Neg f)))
 trBri s (F.Diam (S.RelSymbol r) f)
     | up r `elem` ["R","R1"] =
-        Down newNom1 $ E $ Down newNom2
-          ( (( At newNom1 (Dia "R" (n newNom2))) `disj` (belongs newNom1 s1))
-            `conj` (trBri s2 f)
-          )
+        case s of
+         ([],_)  ->  Dia "R" (trBri s1 f)
+         _       ->  Down newNom1 $ E $ Down newNom2
+                       ( (( At newNom1 (Dia "R" (n newNom2))) `disj` (belongs newNom1 s1))
+                         `conj` (trBri s2 f)
+                       )
     | up r == "BR" =
         Down newNom1 $ E $ Down newNom2
           (   ( neg $ At newNom1 (Dia "R" (n newNom2)))
@@ -348,9 +352,11 @@ trSwap s (F.Down v f)        = downArrow v (trSwap s f)
 trSwap s (F.Box  relSym f)   = trSwap s (F.Neg (F.Diam relSym (F.Neg f)))
 trSwap s@(ss,_) (F.Diam (S.RelSymbol r) f)
     | up r `elem` ["R","R1"] =
-        (Down newNom1 ( Dia "R" ( (neg $ belongs newNom1 s1) `conj` (trSwap s1 f))))
-        `disj`
-        (isSat (inverse s) (trSwap s f))
+        case s of
+         ([],_)  ->  Dia "R" (trSwap s1 f)
+         _       ->  (Down newNom1 ( Dia "R" ( (neg $ belongs newNom1 s1) `conj` (trSwap s1 f))))
+                     `disj`
+                     (isSat (inverse s) (trSwap s f))
     | up r == "SW" =
           ( Down newNom1 (Dia "R" (n newNom1)) `conj` trSwap s f )
         `disj`
