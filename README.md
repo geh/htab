@@ -7,17 +7,18 @@ and terminates on input within any fragments that exclude the down-arrow operato
 Relevant references for HTab are [1] and [2] for the general tableau algorithm
 and [3] for the pattern-based blocking and lazy branching technique currently used.
 
-## Getting and building
+## Downloading
 
-To build HTab, you will need at least GHC 7.10, and either cabal-install
-or stack. Download the source code of HTab either using Darcs:
+Download the source code of HTab either using Darcs:
 
     darcs clone --lazy http://hub.darcs.net/gh/htab
 
 Or [downloading the source code as a zip file](http://hub.darcs.net/gh/htab/dist)
 and unpacking it.
 
-Then compile it using either [cabal-install](https://wiki.haskell.org/Cabal-Install)
+## Compiling and using
+
+To build HTab, you will need at least GHC 7.10, and either [cabal-install](https://wiki.haskell.org/Cabal-Install)
 or [stack](http://www.haskellstack.org/).
 Dependencies, including [hylolib](http://hackage.haskell.org/package/hylolib),
 will be downloaded and compiled automatically.
