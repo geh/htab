@@ -1,5 +1,5 @@
 signature {
-propositions { p }
+propositions { a, b }
 nominals { }
 relations { sw }
 }
@@ -7,8 +7,8 @@ relations { sw }
 theory
 
 {
-  <>p;
-  <>!p;
+  <>(a & !b);
+  <>(b & !a);
   []<> true;
   [][][] false;
   [sw][][sw][][] false;
