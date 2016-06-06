@@ -47,7 +47,7 @@ Executable          htab
                        deepseq,
                        strict,
                        cmdargs >= 0.10.10,
-                       hylolib >= 1.5
+                       hylolib >= 1.5.1
   Extensions:          GADTs
                        DeriveDataTypeable
                        FlexibleContexts
