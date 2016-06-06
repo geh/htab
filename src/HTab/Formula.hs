@@ -14,7 +14,7 @@ parse, simpleParse, Theory, RelInfo, Task,
 showRelInfo, negLit,
 encodeValidityTest, encodeSatTest, encodeRetrieveTask,
 HyLoFormula, RelProperty(..),
-isPositiveNom, isPositiveProp, isProp
+isPositiveNom, isPositiveProp, isProp, list
 )
 
  where
@@ -84,8 +84,8 @@ instance Show Formula where
  show (At n f)   =  n  ++ ":(" ++ show f ++ ")"
  show (Box r f)  = "[" ++ r ++ "]"   ++ show f
  show (Dia r f)  = "<" ++ r ++ ">"   ++ show f
- show (A f)      = "A" ++ show f
- show (E f)      = "E" ++ show f
+ show (A f)      = "A " ++ show f
+ show (E f)      = "E " ++ show f
  show (Down n f) = "down " ++ n ++ "." ++ show f
 
 -- parsing of the input file

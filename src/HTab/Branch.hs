@@ -29,7 +29,7 @@ import qualified Data.IntMap as I
 import qualified HTab.DMap as D
 import qualified HTab.DisjSet as DS
 import HTab.CommandLine(Params(..))
-import HTab.Formula
+import HTab.Formula hiding ( list )
 import HTab.Relations ( OutRels, emptyRels, insertRelation, mergePrefixes,
                         successors, linksFromTo, showRels )
 import HTab.Literals ( UpdateResult(..), Literals,

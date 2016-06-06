@@ -21,8 +21,8 @@ import HTab.Branch( BranchInfo(..), initialBranch)
 import HTab.Statistics( Statistics, initialStatisticsStateFor, printOutMetricsFinal )
 import HTab.Tableau( OpenFlag(..), tableauStart )
 import HTab.Formula( Theory, RelInfo, LanguageInfo, Task,
-                     Formula, encodeValidityTest, encodeSatTest, encodeRetrieveTask,
-                     showRelInfo )
+                     Formula(Con), encodeValidityTest, encodeSatTest, encodeRetrieveTask,
+                     showRelInfo, list )
 import qualified HTab.Formula as F
 import qualified HyLo.Signature.String as S
 import HTab.ModelGen ( Model, toDot )
@@ -120,10 +120,13 @@ runTask (Satisfiable,mOutFile,fs) relInfo fLang theory p =
  do myPutStrLn "\n* Satisfiability task"
     let f = encodeSatTest relInfo theory fs
     --
+    let f_lines = case f of
+                   Con cs -> list cs
+                   _ -> [f]
     when (showFormula p) $
-     myPutStrLn $ unlines ["Input for SAT test:",
-                           "{ " ++ show f ++ " }",
-                           "End of input",
+     myPutStrLn $ unlines $ ["Input for SAT test:",
+                           "{"] ++ map show f_lines ++
+                           ["}", "End of input",
                            "Relations properties :" ++ showRelInfo relInfo ]
     --
     (result,stats) <- tableauInit p $ initialBranch p fLang relInfo f
