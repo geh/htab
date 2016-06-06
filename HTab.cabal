@@ -48,14 +48,13 @@ Executable          htab
                        strict,
                        cmdargs >= 0.10.10,
                        hylolib >= 1.5.1
-  Extensions:          GADTs
+  Default-extensions:  GADTs
                        DeriveDataTypeable
                        FlexibleContexts
                        Rank2Types
                        ScopedTypeVariables
   Hs-Source-Dirs:      src
   ghc-options:         -O2 -Wall
-  ghc-prof-options:    -auto-all
 
   if flag(static)
     ghc-options: -static -optl-static -optl-pthread
