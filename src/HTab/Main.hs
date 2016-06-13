@@ -6,6 +6,7 @@ where
 import Control.Monad       ( when )
 import Control.Monad.State( runStateT )
 
+import Data.List ( intersperse )
 import System.Console.CmdArgs ( whenNormal, whenLoud )
 
 import System.CPUTime( getCPUTime )
@@ -125,7 +126,7 @@ runTask (Satisfiable,mOutFile,fs) relInfo fLang theory p =
                    _ -> [f]
     when (showFormula p) $
      myPutStrLn $ unlines $ ["Input for SAT test:",
-                           "{"] ++ map show f_lines ++
+                           "{"] ++ intersperse "" (map show f_lines) ++
                            ["}", "End of input",
                            "Relations properties :" ++ showRelInfo relInfo ]
     --
