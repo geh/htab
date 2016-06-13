@@ -20,6 +20,7 @@ import HTab.Branch( Branch(..), BranchInfo(..), TodoList(..),
                     addDownRuleCheck,
                     doLazyBranching,
                     getUrfatherAndDeps, merge,
+                    isNominalUrfather,
                     -- for choosing rule in todo list
                     patternBlocked,
                     diaAlreadyDone, downAlreadyDone,
@@ -29,19 +30,19 @@ import HTab.Branch( Branch(..), BranchInfo(..), TodoList(..),
                     )
 import HTab.CommandLine(Params, UnitProp(..),
                         lazyBranching, semBranch, unitProp,
-                        strategy)
+                        strategy, minimal)
 import HTab.RuleId(RuleId(..))
 import qualified HTab.DisjSet as DS
 
 -- rule constructors contain the data needed to modify a branch
 
-data Rule =  DiaRule    PrFormula                 -- creates a prefix
+data Rule =  DiaRule    PrFormula Dependency      -- creates a prefix
+           | ExistRule  PrFormula Dependency      -- creates a prefix
            | DisjRule   PrFormula [PrFormula]
            | SemBrRule  PrFormula [PrFormula]
            | LazyBrRule PrFormula Prefix Literal [PrFormula]
            | AtRule     PrFormula
            | DownRule   PrFormula
-           | ExistRule  PrFormula                 -- creates a prefix
            | DiscardDownRule PrFormula
            | DiscardDiaDoneRule PrFormula
            | DiscardDiaBlockedRule PrFormula
@@ -53,12 +54,12 @@ data Rule =  DiaRule    PrFormula                 -- creates a prefix
 
 instance Show Rule where
    show (MergeRule pr n _)                = "merge:              " ++ show (pr, show n)
-   show (DiaRule   todelete)              = "diamond:            " ++ showLess todelete
+   show (DiaRule   todelete _ )           = "diamond:            " ++ showLess todelete
    show (DisjRule  todelete _ )           = "disjunction:        " ++ showLess todelete
    show (SemBrRule todelete _ )           = "semantic branching: " ++ showLess todelete
    show (AtRule    todelete )             = "at:                 " ++ showLess todelete
    show (DownRule  todelete )             = "down:               " ++ showLess todelete
-   show (ExistRule todelete )             = "E:                  " ++ showLess todelete
+   show (ExistRule todelete _ )           = "E:                  " ++ showLess todelete
 
    show (DiscardDownRule todelete)        = "Discard:            " ++ showLess todelete
    show (DiscardDiaDoneRule todelete)     = "Discard done:       " ++ showLess todelete
@@ -73,12 +74,12 @@ instance Show Rule where
 ruleToId :: Rule -> RuleId
 ruleToId r = case r of
               (MergeRule _ _ _)  -> R_Merge
-              (DiaRule _ )       -> R_Dia
+              (DiaRule _ _)      -> R_Dia
               (DisjRule _ _)     -> R_Disj
               (SemBrRule _ _)    -> R_SemBr
               (AtRule _ )        -> R_At
               (DownRule _)       -> R_Down
-              (ExistRule _)      -> R_Exist
+              (ExistRule _ _)    -> R_Exist
               (DiscardDownRule _)        -> R_DiscardDown
               (DiscardDiaDoneRule _)     -> R_DiscardDiaDone
               (DiscardDiaBlockedRule _)  -> R_DiscardDiaBlocked
@@ -116,7 +117,7 @@ ruleByChar br p d char =
           else
            if patternBlocked br f
              then return ( DiscardDiaBlockedRule f, todos{diaTodo = new})
-             else return ( DiaRule f,               todos{diaTodo = new})
+             else return ( DiaRule f d,             todos{diaTodo = new})
   applicableAtRule    = do (f,new) <- Set.minView $ atTodo todos
                            return (AtRule f, todos{atTodo = new})
   applicableDownRule  = do (f,new) <- Set.minView $ downTodo todos
@@ -124,7 +125,7 @@ ruleByChar br p d char =
                             then return (DiscardDownRule f, todos{downTodo = new})
                             else return (DownRule f, todos{downTodo = new})
   applicableExistRule = do (f,new) <- Set.minView $ existTodo todos
-                           return (ExistRule f, todos{existTodo = new})
+                           return (ExistRule f d, todos{existTodo = new})
   applicableRoleIncRule
    = do ((ds, p1, p2, rs),new) <- Set.minView $ roleIncTodo todos
         return (RoleIncRule p1 rs p2 (dsInsert d ds), todos{roleIncTodo = new})
@@ -175,14 +176,32 @@ clash@(BranchClash _ _ _ _) >>? _ = clash
 applyRule :: Params -> Rule -> Branch -> [BranchInfo]
 applyRule p rule br
  = case rule of
-    DiaRule (PrFormula pr ds (Dia r f))
-     -> [ createNewNode p br >>?
-          addAccFormula p (dsUnion ds ds2, r, ur, newPr) >>?
-          addFormulas p [PrFormula newPr ds f] >>?
-          addDiaRuleCheck pr (r,f) newPr
-        ]
-          where newPr      = lastPref br + 1
+    DiaRule (PrFormula pr ds (Dia r f)) d -- here, if minimal, branch on all prefixes
+     | minimal p -> tryAllPrefixes ++ properNewBranch
+     | otherwise -> properNewBranch
+          where
+                tryAllPrefixes = map reusePrefix $ filter (isNominalUrfather br) [0..lastPref br]
+                reusePrefix pr' =
+                    addAccFormula p (dsInsert d (dsUnion ds ds2), r, ur, pr') br >>?
+                    addFormulas p [PrFormula pr' (dsInsert d ds) f] >>?
+                    addDiaRuleCheck pr (r,f) pr'
+                properNewBranch =
+                  [ createNewNode p br >>?
+                    addAccFormula p (dsUnion ds ds2, r, ur, newPr) >>?  -- do not add d since this is last choice
+                    addFormulas p [PrFormula newPr ds f] >>?
+                    addDiaRuleCheck pr (r,f) newPr
+                  ]
+                newPr      = lastPref br + 1
                 (ur,ds2,_) = getUrfatherAndDeps br (DS.Prefix pr)
+    ExistRule (PrFormula _ ds (E f2)) d -- here, if minimal, branch on all prefixes
+     | minimal p -> tryAllPrefixes ++ properNewBranch
+     | otherwise -> properNewBranch
+       where
+             tryAllPrefixes = map reusePrefix $ filter (isNominalUrfather br) [0..lastPref br]
+             reusePrefix pr' = addFormulas p [PrFormula pr' (dsInsert d ds) f2] br
+             properNewBranch = [createNewNode p br >>? addFormulas p [PrFormula newPr ds f2]]
+             newPr = lastPref br + 1
+
     DisjRule _ prFormulas ->
             [ addFormulas p [toadd] br |  toadd <- prFormulas ]
     SemBrRule _ prFormulas ->
@@ -203,10 +222,6 @@ applyRule p rule br
                   where toadd1 = PrFormula pr ds (replaceVar v newNom f2)
                         toadd2 = PrFormula pr ds $ Lit $ PosLit $ N newNom
                         newNom = '_':(show $ nextNom br)
-    ExistRule (PrFormula _ ds (E f2)) ->
-       [createNewNode p br >>? addFormulas p [toadd]]
-       where toadd = PrFormula newPr ds f2
-             newPr = lastPref br + 1
     DiscardDownRule _         -> [BranchOK br]
     DiscardDiaDoneRule _      -> [BranchOK br]
     DiscardDisjTrivialRule _  -> [BranchOK br]

@@ -23,6 +23,7 @@ data Params = Params {
            allTransitive   :: Bool,
            allReflexive    :: Bool
          , translate       :: Bool
+         , minimal         :: Bool
          } deriving (Show, Data, Typeable)
 
 data UnitProp = Eager | UPYes | UPNo deriving (Data, Typeable, Eq, Show)
@@ -45,7 +46,8 @@ defaultParams
        showFormula    := False   += help "display formula",
        allTransitive  := False   += help "make all relations transitive",
        allReflexive   := False   += help "make all relations reflexive",
-       translate      := False   += help "translate relation-changing formulas to hybrid"
+       translate      := False   += help "translate relation-changing formulas to hybrid",
+       minimal        := False   += help "look for minimal model (slow)"
       ] += verbosity
 
 strategyVal :: String

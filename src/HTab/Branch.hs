@@ -13,7 +13,7 @@ getModelRepresentative, patternBlocked,
 diaAlreadyDone, downAlreadyDone,
 ReducedDisjunct(..),
 patternOf, findByPattern,
-prefixes, isInTheModel,
+prefixes, isNominalUrfather, isInTheModel,
 isTransitive
 ) where
 
