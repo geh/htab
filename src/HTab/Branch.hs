@@ -14,6 +14,7 @@ diaAlreadyDone, downAlreadyDone,
 ReducedDisjunct(..),
 patternOf, findByPattern,
 prefixes, isNominalUrfather, isInTheModel,
+positiveNomOf,
 isTransitive
 ) where
 
@@ -34,7 +35,8 @@ import HTab.Relations ( OutRels, emptyRels, insertRelation, mergePrefixes,
                         successors, linksFromTo, showRels )
 import HTab.Literals ( UpdateResult(..), Literals,
                        SlotUpdateResult(..), LiteralSlot,
-                       updateMap, lsUnions, lsAddDeps, lsQuery)
+                       updateMap, lsUnions, lsAddDeps, lsQuery,
+                       positiveNom)
 
 data BranchInfo = BranchOK Branch |
                   BranchClash Branch Prefix DependencySet Formula
@@ -592,6 +594,11 @@ downAlreadyDone b (PrFormula p _ f@(Down _ _)) =
  where ur = getUrfather b (DS.Prefix p)
 
 downAlreadyDone _ _ = error "down already done : wrong formula kind"
+
+-- | return some nominal that holds at a given prefix
+positiveNomOf :: Branch -> Prefix -> Maybe String
+positiveNomOf b p = positiveNom (literals b) ur
+ where ur = getUrfather b (DS.Prefix p)
 
 addUnivConstraint :: Formula -> DependencySet -> Params -> Branch -> BranchInfo
 addUnivConstraint f ds p br

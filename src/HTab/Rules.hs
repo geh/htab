@@ -20,7 +20,7 @@ import HTab.Branch( Branch(..), BranchInfo(..), TodoList(..),
                     addDownRuleCheck,
                     doLazyBranching,
                     getUrfatherAndDeps, merge,
-                    isNominalUrfather,
+                    isNominalUrfather, positiveNomOf,
                     -- for choosing rule in todo list
                     patternBlocked,
                     diaAlreadyDone, downAlreadyDone,
@@ -216,12 +216,16 @@ applyRule p rule br
             where (ur,ds2,equiv) = getUrfatherAndDeps br (DS.Nominal n)
                   toadd = PrFormula ur (dsUnion ds ds2) f
     DownRule (PrFormula pr ds f@(Down v f2)) ->
-                 [ createNewNom br >>?
-                   addFormulas p [toadd1, toadd2] >>?
-                   addDownRuleCheck pr f ]
-                  where toadd1 = PrFormula pr ds (replaceVar v newNom f2)
-                        toadd2 = PrFormula pr ds $ Lit $ PosLit $ N newNom
-                        newNom = '_':(show $ nextNom br)
+                 case positiveNomOf br pr of -- reuse positive nominal if we can
+                  Nothing -> [ createNewNom br >>?
+                               addFormulas p [toadd1, toadd2] >>?
+                               addDownRuleCheck pr f ]
+                    where toadd1 = PrFormula pr ds (replaceVar v newNom f2)
+                          toadd2 = PrFormula pr ds $ Lit $ PosLit $ N newNom
+                          newNom = '_':(show $ nextNom br)
+                  Just n' ->
+                     [ addFormulas p [PrFormula pr ds (replaceVar v n' f2)] br >>?
+                       addDownRuleCheck pr f ]
     DiscardDownRule _         -> [BranchOK br]
     DiscardDiaDoneRule _      -> [BranchOK br]
     DiscardDisjTrivialRule _  -> [BranchOK br]
