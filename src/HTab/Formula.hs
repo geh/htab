@@ -233,7 +233,7 @@ union :: S -> (String, String) -> S
 union (ss,n) nm = (ss ++ [nm], n)
 -- macro for translation
 belongs :: String -> S -> Formula
-belongs n (ss,_) = Dis $ set [ (n' y) `conj` At n (n' x) | (x,y) <- ss ]
+belongs n (ss,_) = foldr disj (neg taut) $ set [ (n' y) `conj` At n (n' x) | (x,y) <- ss ]
  where n' = Lit . PosLit . N
 
 -- SWAP TRANSLATION --
