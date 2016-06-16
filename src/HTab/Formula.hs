@@ -563,6 +563,9 @@ replaceVar v n f = composeMap id (replaceVar v n) f
 type Dependency = Int
 type DependencySet = IntSet.IntSet
 
+
+-- the ordering of prformula's is used in selecting the next formula in the todo list
+-- here we select the one that's most promising for backjumping
 instance Ord PrFormula where
  compare (PrFormula pr1 ds1 f1) (PrFormula pr2 ds2 f2) =
   case dsMin ds1 `compare` dsMin ds2 of
