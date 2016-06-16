@@ -26,7 +26,7 @@ data Params = Params {
          , minimal         :: Bool
          } deriving (Show, Data, Typeable)
 
-data UnitProp = Eager | UPYes | UPNo deriving (Data, Typeable, Eq, Show)
+data UnitProp = UPYes | Eager | UPNo deriving (Data, Typeable, Eq, Show)
 
 defaultParams :: Annotate Ann
 defaultParams
@@ -40,9 +40,9 @@ defaultParams
        semBranch      := True    += help "enable semantic branching (default)",
        backjumping    := True    += help "enable backjumping (default)",
        lazyBranching  := True    += help "enable lazy branching (default)" ,
-       unitProp `enum_` [atom Eager += explicit += name "eager"        += help "unit propagation: eager (default)",
-                         atom UPYes += explicit += name "unit-prop"    += help "unit propagation: enabled",
-                         atom UPNo  += explicit += name "no-unit-prop" += help "unit propagation: disabled"] ,
+       unitProp `enum_` [atom UPYes += explicit += name "unit-prop"    += help "unit propagation on selected disjunction (default)",
+                         atom Eager += explicit += name "eager"        += help "unit propagation on all disjunctions",
+                         atom UPNo  += explicit += name "no-unit-prop" += help "unit propagation disabled"] ,
        showFormula    := False   += help "display formula",
        allTransitive  := False   += help "make all relations transitive",
        allReflexive   := False   += help "make all relations reflexive",
