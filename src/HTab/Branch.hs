@@ -84,7 +84,7 @@ instance Show Branch where
      "\nLiterals:", showIMap (\v -> "(" ++ showMap_lits v ++ ")") "\n " (literals br),
      "\nRelations: ", showRels (accStr br),
      "\nBoxes: ", showIMap (\v -> "(" ++ showMap_rel v ++ ")") "\n " (boxFwd br),
-     "\n", show (todoList br),
+     "\n", showTodo (todoList br),
      "\nWitnesses: ",
      showIMap (\v -> "(" ++ showMap_lits2 v ++ ")") "\n " (brWitnesses br),
      "\nDia rule chart: ", show (diaRlCh br),
@@ -116,7 +116,17 @@ data TodoList= TodoList{disjTodo :: Set PrFormula,
                         downTodo :: Set PrFormula,
                        mergeTodo :: Set (DependencySet, Prefix, Nom),
                      roleIncTodo :: Set (DependencySet, Prefix, Prefix, [Rel]) }
- deriving Show
+
+showTodo :: TodoList -> String
+showTodo t = unlines
+ [ "DisjTodo  " ++ show (disjTodo t)
+ , "DiaTodo   " ++ show (diaTodo t)
+ , "ExistTodo " ++ show (existTodo t)
+ , "AtTodo    " ++ show (atTodo t)
+ , "DownTodo  " ++ show (downTodo t)
+ , "MergeTodo " ++ show (mergeTodo t)
+ , "RoleITodo " ++ show (roleIncTodo t)
+ ]
 
 emptyTodoList :: TodoList
 emptyTodoList =
