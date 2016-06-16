@@ -568,7 +568,12 @@ type DependencySet = IntSet.IntSet
 -- here we select the one that's most promising for backjumping
 instance Ord PrFormula where
  compare (PrFormula pr1 ds1 f1) (PrFormula pr2 ds2 f2) =
-  case dsMin ds1 `compare` dsMin ds2 of
+-- This one seems more performant in many cases:
+
+-- case dsMin ds1 `compare` dsMin ds2 of
+
+-- But this one seems 'fairer' and helps termination on some complicated formulas
+  case  IntSet.size ds1  `compare` IntSet.size ds2 of
    LT -> LT
    GT -> GT
    EQ -> compare (pr1,f1) (pr2,f2)
