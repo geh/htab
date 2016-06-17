@@ -8,15 +8,15 @@ import Control.Monad.State( runStateT )
 
 import Data.List ( intersperse )
 import System.Console.CmdArgs ( whenNormal, whenLoud )
-
 import System.CPUTime( getCPUTime )
 import qualified System.Timeout as T
+import System.Random (StdGen, getStdGen)
 import System.IO.Strict ( readFile )
 import Prelude hiding ( readFile )
 
 import HyLo.InputFile.Parser ( QueryType(..) )
 
-import HTab.CommandLine( filename,
+import HTab.CommandLine( filename, random, seed,
                          timeout, Params, genModel, dotModel, showFormula )
 import HTab.Branch( BranchInfo(..), initialBranch)
 import HTab.Statistics( Statistics, initialStatisticsStateFor, printOutMetricsFinal )
@@ -33,6 +33,11 @@ data TaskRunFlag = SUCCESS | FAILURE
 runWithParams :: Params -> IO (Maybe TaskRunFlag)
 runWithParams p =
  time "Total time: " $ do
+  g <- case seed p of
+        Nothing -> getStdGen
+        Just s  -> do putStrLn "Using given random seed."
+                      return (read s)
+  when (random p) $ putStrLn ( unlines ["Will use random seed:",show g])
   i <- readFile (filename p)
   if head (words i) == "begin"
    then do
@@ -45,7 +50,7 @@ runWithParams p =
                "Relations properties :" ++ showRelInfo relInfo ]
     --
     tResult <- inTimeout (timeout p) $
-                do (result,s) <- tableauInit p $
+                do (result,s) <- tableauInit p g $
                                   initialBranch p fLang relInfo f
                    whenNormal $ printOutMetricsFinal s
                    return result
@@ -59,7 +64,7 @@ runWithParams p =
                              return (Just FAILURE)
    else do
     let allTasks = F.parse p i
-    result <- inTimeout (timeout p) (runTasks allTasks p)
+    result <- inTimeout (timeout p) (runTasks allTasks p g)
     --
     case result of
        Nothing      -> myPutStrLn "\nTimeout.\n"
@@ -74,42 +79,42 @@ inTimeout t action = T.timeout (t * (10::Int)^(6::Int)) action
 
 --
 
-runTasks :: (Theory,RelInfo,LanguageInfo,[Task]) -> Params -> IO TaskRunFlag
-runTasks allTasks@(theory,relInfo,fLang,tasks) p =
+runTasks :: (Theory,RelInfo,LanguageInfo,[Task]) -> Params -> StdGen -> IO TaskRunFlag
+runTasks allTasks@(theory,relInfo,fLang,tasks) p g =
  do
     myPutStrLn "== Checking theory satisfiability =="
     res <- time "Task time:" $
-            runTask (Satisfiable, genModel p, []) relInfo fLang theory p
+            runTask (Satisfiable, genModel p, []) relInfo fLang theory p g
     case res of
      SUCCESS | null tasks -> return SUCCESS
              | otherwise  -> do myPutStrLn "\n==         Starting tasks         =="
-                                res2 <- runTasks2 allTasks p
+                                res2 <- runTasks2 allTasks p g
                                 myPutStrLn "\n==         End of   tasks         =="
                                 return res2
      FAILURE              -> return FAILURE
 
 --
 
-runTasks2 :: (Theory,RelInfo,LanguageInfo,[Task]) -> Params -> IO TaskRunFlag
-runTasks2 (_,_,_,[]) _                  = error "runTasks2 empty list error"
-runTasks2 (theory,relInfo,fLang,(hd:tl)) p =
- do res <- time "Task time:" $ runTask hd relInfo fLang theory p
+runTasks2 :: (Theory,RelInfo,LanguageInfo,[Task]) -> Params -> StdGen -> IO TaskRunFlag
+runTasks2 (_,_,_,[]) _ _               = error "runTasks2 empty list error"
+runTasks2 (theory,relInfo,fLang,(hd:tl)) p g =
+ do res <- time "Task time:" $ runTask hd relInfo fLang theory p g
     case res of
       SUCCESS | null tl   -> return SUCCESS
-              | otherwise -> runTasks2 (theory,relInfo,fLang,tl) p
-      FAILURE             -> do _ <- runTasks2 (theory,relInfo,fLang,tl) p
+              | otherwise -> runTasks2 (theory,relInfo,fLang,tl) p g
+      FAILURE             -> do _ <- runTasks2 (theory,relInfo,fLang,tl) p g
                                 return FAILURE
 
 --
 
-runTask :: Task -> RelInfo -> LanguageInfo -> Formula -> Params -> IO TaskRunFlag
-runTask (Retrieve,mOutFile,fs) relInfo fLang theory p =
+runTask :: Task -> RelInfo -> LanguageInfo -> Formula -> Params -> StdGen -> IO TaskRunFlag
+runTask (Retrieve,mOutFile,fs) relInfo fLang theory p g =
  do myPutStrLn "\n* Instance retrieval task"
     let (noms,encfs) = encodeRetrieveTask relInfo fLang theory fs
     --
     myPutStrLn $ "Instances making true: " ++ show fs
     --
-    results <- mapM (tableauInit p . initialBranch p fLang relInfo) encfs
+    results <- mapM (tableauInit p g . initialBranch p fLang relInfo) encfs -- NOTE: we reuse the same random generator
     let goods = [ S.NomSymbol n | (n,(CLOSED _ ,_)) <- zip noms results]
     myPutStrLn $ show goods
     let doWrite f = do writeFile f (show goods ++ "\n")
@@ -117,7 +122,7 @@ runTask (Retrieve,mOutFile,fs) relInfo fLang theory p =
     maybe (return ()) doWrite mOutFile
     return SUCCESS
 
-runTask (Satisfiable,mOutFile,fs) relInfo fLang theory p =
+runTask (Satisfiable,mOutFile,fs) relInfo fLang theory p g =
  do myPutStrLn "\n* Satisfiability task"
     let f = encodeSatTest relInfo theory fs
     --
@@ -130,7 +135,7 @@ runTask (Satisfiable,mOutFile,fs) relInfo fLang theory p =
                            ["}", "End of input",
                            "Relations properties :" ++ showRelInfo relInfo ]
     --
-    (result,stats) <- tableauInit p $ initialBranch p fLang relInfo f
+    (result,stats) <- tableauInit p g $ initialBranch p fLang relInfo f
     --
     whenNormal $ printOutMetricsFinal stats
     --
@@ -141,7 +146,7 @@ runTask (Satisfiable,mOutFile,fs) relInfo fLang theory p =
        CLOSED _ -> do myPutStrLn "The formula is unsatisfiable."
                       return FAILURE
 
-runTask (Valid,mOutFile,fs) relInfo fLang theory p =
+runTask (Valid,mOutFile,fs) relInfo fLang theory p g =
  do myPutStrLn "\n* Validity task"
     let f = encodeValidityTest relInfo theory fs
     --
@@ -151,7 +156,7 @@ runTask (Valid,mOutFile,fs) relInfo fLang theory p =
                            "End of input",
                            "Relations properties :" ++ showRelInfo relInfo ]
     --
-    (result,stats) <- tableauInit p $ initialBranch p fLang relInfo f
+    (result,stats) <- tableauInit p g $ initialBranch p fLang relInfo f
     --
     whenNormal $ printOutMetricsFinal stats
     --
@@ -162,7 +167,7 @@ runTask (Valid,mOutFile,fs) relInfo fLang theory p =
        CLOSED _ -> do myPutStrLn "The formula is valid."
                       return SUCCESS
 
-runTask (Counting,_,_) _ _ _ _ =
+runTask (Counting,_,_) _ _ _ _ _ =
  do myPutStrLn "\n* Counting task is NOT supported"
     return FAILURE
 
@@ -175,11 +180,11 @@ saveGenModel mOutFile p m = maybe (return ()) doWrite mOutFile
           output | dotModel p = toDot m
                  | otherwise  = show m
 
-tableauInit :: Params -> BranchInfo -> IO (OpenFlag,Statistics)
-tableauInit p bi =
+tableauInit :: Params -> StdGen -> BranchInfo -> IO (OpenFlag,Statistics)
+tableauInit p g bi =
         do whenLoud $ putStrLn ">> Starting rules application"
            initStatsState $ tableauStart p bi
- where initStatsState  = initialStatisticsStateFor runStateT
+ where initStatsState  = initialStatisticsStateFor runStateT g
 
 --
 

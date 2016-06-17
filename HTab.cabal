@@ -47,6 +47,7 @@ Executable          htab
                        containers,
                        deepseq,
                        strict,
+                       random,
                        cmdargs >= 0.10.10,
                        hylolib >= 1.5.1
   Default-extensions:  GADTs

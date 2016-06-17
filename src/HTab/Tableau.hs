@@ -4,8 +4,8 @@ where
 
 import System.Console.CmdArgs ( whenLoud )
 
-import Control.Monad.State(StateT,lift,modify)
-import HTab.Statistics(Statistics,updateStep,printOutMetrics,
+import Control.Monad.State(StateT,lift,modify, gets, modify)
+import HTab.Statistics(Statistics(rGen),updateStep,printOutMetrics,
                        recordClosedBranch,recordFiredRule)
 import HTab.Branch(BranchInfo(..))
 import HTab.CommandLine(backjumping,Params,configureStats)
@@ -33,16 +33,19 @@ tableauDown p depth branchInfo =
                 return $ CLOSED bprs
             BranchOK br ->
              do verbose (show br)
-                case applicableRule br p (depth + 1) of
+                g <- gets rGen
+                case applicableRule br p (depth + 1) g of -- generate new number
                   Nothing  ->
                       do verbose ">> Saturated open branch"
                          return $ OPEN $ buildModel br
-                  Just (rule,newBranch)  ->
+                  Just (rule,newBranch, g')  ->
                       do verbose $ ">> Rule : " ++ show rule
                          recordFiredRule $ ruleToId rule
-                         case applyRule p rule newBranch of
+                         let (bis,g'') = applyRule p rule newBranch g'
+                         modify $ \s -> s{rGen = g''}
+                         case bis of     -- need to shuffle disjunction order
                           [newBi] -> tableauDown  p (depth + 1) newBi
-                          bis     -> tableauRight p (depth + 1) bis dsEmpty
+                          _       -> tableauRight p (depth + 1) bis dsEmpty
 
 tableauRight :: Params -> Depth -> [BranchInfo] -> DependencySet -> TableauMonad OpenFlag
 tableauRight p depth (hd:tl) currentDepSet =
