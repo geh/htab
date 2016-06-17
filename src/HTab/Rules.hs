@@ -6,6 +6,8 @@ applicableRule, applyRule, ruleToId
 
 import System.Random
 
+import qualified Data.Map as Map
+
 import qualified Data.Set as Set
 import Data.Maybe ( mapMaybe )
 
@@ -191,7 +193,7 @@ applyRule :: Params -> Rule -> Branch -> StdGen -> ([BranchInfo], StdGen)
 applyRule p rule br g
  = case rule of
     DiaRule (PrFormula pr ds (Dia r f)) d -- here, if minimal, branch on all prefixes
-     | minimal p -> (tryAllPrefixes ++ properNewBranch, g)
+     | minimal p -> if CL.random p then shuffle g choices else (choices, g)
      | otherwise -> (properNewBranch, g)
           where
                 tryAllPrefixes = map reusePrefix $ filter (isNominalUrfather br) [0..lastPref br]
@@ -205,22 +207,28 @@ applyRule p rule br g
                     addFormulas p [PrFormula newPr ds f] >>?
                     addDiaRuleCheck pr (r,f) newPr
                   ]
+                choices = tryAllPrefixes ++ properNewBranch
                 newPr      = lastPref br + 1
                 (ur,ds2,_) = getUrfatherAndDeps br (DS.Prefix pr)
     ExistRule (PrFormula _ ds (E f2)) d -- here, if minimal, branch on all prefixes
-     | minimal p -> (tryAllPrefixes ++ properNewBranch, g)
+     | minimal p -> if CL.random p then shuffle g choices else (choices, g)
      | otherwise -> (properNewBranch, g)
        where
              tryAllPrefixes = map reusePrefix $ filter (isNominalUrfather br) [0..lastPref br]
              reusePrefix pr' = addFormulas p [PrFormula pr' (dsInsert d ds) f2] br
              properNewBranch = [createNewNode p br >>? addFormulas p [PrFormula newPr ds f2]]
+             choices = tryAllPrefixes ++ properNewBranch
              newPr = lastPref br + 1
 
-    DisjRule _ prFormulas ->
-            ([ addFormulas p [toadd] br |  toadd <- prFormulas ] , g)  -- TODO shuffle
-    SemBrRule _ prFormulas ->
-            ([ addFormulas p toadds br |  toadds <- go prFormulas [] ], g)  -- TODO shuffle
+    DisjRule _ prFormulas
+     | CL.random p -> shuffle g choices
+     | otherwise -> (choices, g)
+     where choices = [ addFormulas p [toadd] br |  toadd <- prFormulas ]
+    SemBrRule _ prFormulas
+     | CL.random p  -> shuffle g choices
+     | otherwise -> (choices, g)
              where
+              choices = [ addFormulas p toadds br |  toadds <- go prFormulas [] ]
               go (hd:tl) negs = (hd:negs):(go tl (negPr hd:negs))
               go [] _ = []
     LazyBrRule _ pr lit prFormulas ->
@@ -263,3 +271,22 @@ disjRule p df@(PrFormula pr ds (Dis fs)) br d
     where rule = if semBranch p then SemBrRule else DisjRule
 -- todo: if only one conjunct remaining, do not add d , but still create a DisjRule
 disjRule _ _ _ _ = error "disjRule"
+
+
+-- list shuffler
+-- http://okmij.org/ftp/Haskell/perfect-shuffle.txt 
+
+fisherYatesStep :: RandomGen g => (Map.Map Int a, g) -> (Int, a) -> (Map.Map Int a, g)
+fisherYatesStep (m, gen) (i, x) = ((Map.insert j x . Map.insert i (m Map.! j)) m, gen')
+  where
+    (j, gen') = randomR (0, i) gen
+
+shuffle :: RandomGen g => g -> [a] -> ([a], g)
+shuffle gen [] = ([], gen)
+shuffle gen l =
+  toElems $ foldl fisherYatesStep (initial (head l) gen) (numerate (tail l))
+  where
+    toElems (x, y) = (Map.elems x, y)
+    numerate = zip [1..]
+    initial x gen' = (Map.singleton 0 x, gen')
+
