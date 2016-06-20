@@ -576,8 +576,7 @@ instance Ord PrFormula where
   case  IntSet.size ds1  `compare` IntSet.size ds2 of
    LT -> LT
    GT -> GT
--- used to be:  EQ -> compare (pr1,f1) (pr2,f2)
-   EQ -> compare f1 f2
+   EQ -> compare (pr1,f1,ds1) (pr2,f2,ds2)
 
 dsUnion :: DependencySet -> DependencySet -> DependencySet
 dsUnion = IntSet.union
