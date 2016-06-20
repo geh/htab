@@ -203,10 +203,11 @@ applyRule p rule br g
                     addDiaRuleCheck pr (r,f) pr'
                 properNewBranch =
                   [ createNewNode p br >>?
-                    addAccFormula p (dsUnion ds ds2, r, ur, newPr) >>?  -- do not add d since this is last choice
+                    addAccFormula p (deps, r, ur, newPr) >>?
                     addFormulas p [PrFormula newPr ds f] >>?
                     addDiaRuleCheck pr (r,f) newPr
                   ]
+                deps = if CL.random p && minimal p then dsInsert d (dsUnion ds ds2) else dsUnion ds ds2
                 choices = tryAllPrefixes ++ properNewBranch
                 newPr      = lastPref br + 1
                 (ur,ds2,_) = getUrfatherAndDeps br (DS.Prefix pr)
@@ -216,7 +217,8 @@ applyRule p rule br g
        where
              tryAllPrefixes = map reusePrefix $ filter (isNominalUrfather br) [0..lastPref br]
              reusePrefix pr' = addFormulas p [PrFormula pr' (dsInsert d ds) f2] br
-             properNewBranch = [createNewNode p br >>? addFormulas p [PrFormula newPr ds f2]]
+             properNewBranch = [createNewNode p br >>? addFormulas p [PrFormula newPr deps f2]]
+             deps = if CL.random p && minimal p then dsInsert d ds else ds
              choices = tryAllPrefixes ++ properNewBranch
              newPr = lastPref br + 1
 
