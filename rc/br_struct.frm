@@ -1,5 +1,5 @@
 signature {
-propositions { s, a, b, c }
+propositions { s, a, b, c, d }
 nominals { }
 relations { br }
 }
@@ -12,6 +12,11 @@ theory
   [br](s --> [br]!s);
   [br](!s --> []!s);
 
-  <br>(!s & <br>(!s & a & !b & !c & <>(!s & !a & b & !c &  <>(!s & !a & !b & c ))
-                ));
+  <br>(!s & <br>(
+     !s &  a & !b & !c & !d &
+  <>(!s & !a &  b & !c & !d &
+  <>(!s & !a & !b &  c & !d &
+  <>(!s & !a & !b & !c &  d
+  )))));
+
 }
