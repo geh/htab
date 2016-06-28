@@ -610,3 +610,112 @@ set = Set.fromList
 
 up :: String -> String
 up = map toUpper
+
+--
+--
+
+data MemFormula
+     = MLit    Literal
+     | MCon   MemFormula MemFormula
+     | MDis   MemFormula MemFormula
+     | MBox   MemFormula
+     | MDia   MemFormula
+     | MNeg   MemFormula
+     | Re     MemFormula -- ^ Remember
+     | Kn                -- ^ Known
+  deriving (Eq, Ord)
+
+mtop, mbot :: MemFormula
+mtop = MLit $ PosLit Taut
+mbot = MLit $ NegLit Taut
+
+-- unsat memory logic formulas
+
+-- 'known' is initially false:
+kn = Kn
+
+-- 'remember' does not change the evaluation state
+re1 = (MLit (PosLit (P "P"))) `MCon` (Re (MLit (NegLit (P "P")))) 
+re2 = (MBox mbot) `MCon` (Re (MDia mtop)) 
+re3 = (MDia mbot) `MCon` (Re (MBox mtop)) 
+
+unsats' = [kn, re1, re2, re3]
+
+-- bury these unsat formulas in sufficiently deep diamonds
+unsats = concat [ [f, MDia f, MDia (MDia f), MDia (MDia (MDia f))] | f <- unsats]
+
+-- ^ Modal depth of a memory logic formula
+mmd :: MemFormula -> Int
+mmd (MBox f)   = 1 + mmd f
+mmd (MDia f)   = 1 + mmd f
+mmd (MDis f g) = max (mmd f) (mmd g)
+mmd (MCon f g) = max (mmd f) (mmd g)
+mmd (MNeg f)   = mmd f
+mmd (Re f)     = mmd f
+mmd (MLit _ )  = 0
+mmd Kn         = 0
+
+-- ^ translate a memory logic formula into a global sabotage
+--   formula where modalities are R and GSB
+memGSb :: MemFormula -> Formula
+memGSb f = struct (md f) `conj` go f
+ where
+   neg_s = Lit (NegLit (P "S"))
+   s = Lit (PosLig (P "S"))
+   nestBox 0 f = f
+   nestBox n f = nestBox (n-1) (Box "R" f)
+   struct n = foldr MCon mtop [ nestBox i (neg_s `imp` Dia "R" s) | i <- [0..n]]
+
+   go (Kn)       = Neg (Dia "R" s)
+   go (Re f)     = Dia "GSB" ( (Neg (Dia "R" s)) `conj` go f)
+   go (MDia f)   = Dia "R" (go f)
+   go (MBox f)   = Box "R" (go f)
+   go (MCon f g) = (go f) `conj` (go g)
+   go (MDis f g) = (go f) `disj` (go g)
+   go (MLit l)   = go (Lit l)
+   go (MNeg f)   = go (Neg f)
+
+memGSw :: MemFormula -> Formula
+memGSw f = struct (md f) `conj` go f
+ where
+   neg_s = Lit (NegLit (P "S"))
+   s = Lit (PosLig (P "S"))
+   nestBox 0 f = f
+   nestBox n f = nestBox (n-1) (Box "R" f)
+   struct n = foldr MCon mtop [ nestBox i (neg_s `imp` Dia "R" s) | i <- [0..n]]
+
+   go (Kn)       = Neg (Dia "R" s)
+   go (Re f)     = Dia "GSW" ( (Neg (Dia "R" s)) `conj` go f)
+   go (MDia f)   = Dia "R" (go f)
+   go (MBox f)   = Box "R" (go f)
+   go (MCon f g) = (go f) `conj` (go g)
+   go (MDis f g) = (go f) `disj` (go g)
+   go (MLit l)   = go (Lit l)
+   go (MNeg f)   = go (Neg f)
+
+memGBr :: MemFormula -> Formula
+memGBr f = struct (md f) `conj` go f
+ where
+   neg_s = Lit (NegLit (P "S"))
+   s = Lit (PosLig (P "S"))
+   nestBox 0 f = f
+   nestBox n f = nestBox (n-1) (Box "R" f)
+   struct n = foldr MCon mtop [ nestBox i (neg_s `imp` Dia "R" s) | i <- [0..(n+1)]]
+
+   go (Kn)       = Dia "R" s
+   go (Re f)     = Dia "GBR" ( (Dia "R" s) `conj` go f)
+   go (MDia f)   = Dia "R" (go f)
+   go (MBox f)   = Box "R" (go f)
+   go (MCon f g) = (go f) `conj` (go g)
+   go (MDis f g) = (go f) `disj` (go g)
+   go (MLit l)   = go (Lit l)
+   go (MNeg f)   = go (Neg f)
+
+memLSb :: MemFormula -> Formula
+memLSb = undefined
+
+memLBr :: MemFormula -> Formula
+memLBr = undefined
+
+memLSw :: MemFormula -> Formula
+memLSw = undefined
