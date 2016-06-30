@@ -3,10 +3,11 @@ module HTab.Main
 ( runWithParams, TaskRunFlag(..))
 
 where
-import Control.Monad       ( when )
+import Control.Monad       ( when, forM_ )
 import Control.Monad.State( runStateT )
 
 import Data.List ( intersperse )
+import qualified Data.Map as Map
 import System.Console.CmdArgs ( whenNormal, whenLoud )
 import System.CPUTime( getCPUTime )
 import qualified System.Timeout as T
@@ -16,14 +17,14 @@ import Prelude hiding ( readFile )
 
 import HyLo.InputFile.Parser ( QueryType(..) )
 
-import HTab.CommandLine( filename, random, seed,
+import HTab.CommandLine( filename, random, seed, memory,
                          timeout, Params, genModel, dotModel, showFormula )
 import HTab.Branch( BranchInfo(..), initialBranch)
 import HTab.Statistics( Statistics, initialStatisticsStateFor, printOutMetricsFinal )
 import HTab.Tableau( OpenFlag(..), tableauStart )
-import HTab.Formula( Theory, RelInfo, LanguageInfo, Task,
+import HTab.Formula( Theory, RelInfo, LanguageInfo(..), Task,
                      Formula(Con), encodeValidityTest, encodeSatTest, encodeRetrieveTask,
-                     showRelInfo, list )
+                     showRelInfo, list, unsats, sats  )
 import qualified HTab.Formula as F
 import qualified HyLo.Signature.String as S
 import HTab.ModelGen ( Model, toDot )
@@ -31,6 +32,37 @@ import HTab.ModelGen ( Model, toDot )
 data TaskRunFlag = SUCCESS | FAILURE
 
 runWithParams :: Params -> IO (Maybe TaskRunFlag)
+runWithParams p | memory p =
+ do putStrLn "Running memory logic -> relation-changing logics test suite."
+    g <- case seed p of
+        Nothing -> getStdGen
+        Just s  -> do putStrLn "Using given random seed."
+                      return (read s)
+    let fLang = LanguageInfo []
+    putStrLn "UNSATs"
+    forM_ (zip [1::Int ..] unsats) $ \(i,(mf,f)) ->
+        do myPutStrLn (show i ++ " " ++ show mf)
+           r <- inTimeout (timeout p) $
+                  do (result,s) <- tableauInit p g $ initialBranch p fLang Map.empty f
+                     whenNormal $ printOutMetricsFinal s
+                     return result
+           case r of
+            Nothing         -> myPutStrLn "Timeout."
+            Just (OPEN _)   -> myPutStrLn ("Formula is sat. Not Good." ++ show f)
+            Just (CLOSED _) -> myPutStrLn "[OK]"
+    putStrLn "SATs"
+    forM_ (zip [1::Int ..] sats) $ \(i,(mf,f)) ->
+        do myPutStrLn (show i ++ " " ++ show mf)
+           r <- inTimeout (timeout p) $
+                  do (result,s) <- tableauInit p g $ initialBranch p fLang Map.empty f
+                     whenNormal $ printOutMetricsFinal s
+                     return result
+           case r of
+            Nothing         -> myPutStrLn "Timeout."
+            Just (OPEN _)   -> myPutStrLn "[OK]"
+            Just (CLOSED _) -> myPutStrLn ("Formula is unsat. Not Good." ++ show f)
+    return (Just SUCCESS)
+
 runWithParams p =
  time "Total time: " $ do
   g <- case seed p of

@@ -14,7 +14,8 @@ parse, simpleParse, Theory, RelInfo, Task,
 showRelInfo, negLit,
 encodeValidityTest, encodeSatTest, encodeRetrieveTask,
 HyLoFormula, RelProperty(..),
-isPositiveNom, isPositiveProp, isProp, list
+isPositiveNom, isPositiveProp, isProp, list,
+MemFormula(..), unsats, sats
 )
 
  where
@@ -256,24 +257,18 @@ doTranslate rc input =  -- TODO detect if sabotage, if bridge, if swap
    Sabotage -> trSab  emptyset bigAnd
    Swap     -> trSwap emptyset bigAnd
    Bridge   -> trBri  emptyset bigAnd
- where bigAnd = foldr (F.:&:) F.Top input
+ where bigAnd = convert Map.empty input
 
-trSab :: S -> F.Formula S.NomSymbol S.PropSymbol S.RelSymbol -> Formula
-trSab _ F.Top               = taut
-trSab _ F.Bot               = neg taut
-trSab _ (F.Prop p)          = prop p
-trSab _ (F.Nom  n)          = nom n
-trSab s (F.Neg  f)          = neg $ trSab s f
-trSab s (f1 F.:&:    f2)    = trSab s f1 `conj` trSab s f2
-trSab s (f1 F.:|:    f2)    = trSab s f1 `disj` trSab s f2
-trSab s (f1 F.:-->:  f2)    = trSab s f1 `imp`  trSab s f2
-trSab s (f1 F.:<-->: f2)    = trSab s f1 `dimp` trSab s f2
-trSab s (F.At   n f)        = at        n (trSab s f)
-trSab s (F.A f)             = univMod     (trSab s f)
-trSab s (F.E f)             = existMod    (trSab s f)
-trSab s (F.Down v f)        = downArrow v (trSab s f)
-trSab s (F.Box  relSym f)   = trSab s (F.Neg (F.Diam relSym (F.Neg f)))
-trSab s (F.Diam (S.RelSymbol r) f)
+trSab :: S -> Formula -> Formula
+trSab _ l@(Lit _)           = l
+trSab s (Con fs)            = Con (Set.map (trSab s) fs)
+trSab s (Dis fs)            = Dis (Set.map (trSab s) fs)
+trSab s (At n f)            = At n (trSab s f)
+trSab s (Down v f)          = Down v (trSab s f)
+trSab s (A f)               = univMod     (trSab s f)
+trSab s (E f)               = existMod    (trSab s f)
+trSab s (Box r f)           = trSab s (neg (Dia r (neg f)))
+trSab s (Dia r f)
     | up r `elem` ["R","R1"] =
         case s of
          ([],_)  ->  Dia "R" (trSab s1 f)
@@ -289,24 +284,17 @@ trSab s (F.Diam (S.RelSymbol r) f)
           s2u12 = s2 `union` (newNom1,newNom2)
           (newNom3,s3) = next s2
           s4u23 = s3 `union` (newNom2,newNom3)
-trSab _ f                 = error (show f ++ "not supported")
 
-trBri :: S -> F.Formula S.NomSymbol S.PropSymbol S.RelSymbol -> Formula
-trBri _ F.Top               = taut
-trBri _ F.Bot               = neg taut
-trBri _ (F.Prop p)          = prop p
-trBri _ (F.Nom  n)          = nom n
-trBri s (F.Neg  f)          = neg $ trBri s f
-trBri s (f1 F.:&:    f2)    = trBri s f1 `conj` trBri s f2
-trBri s (f1 F.:|:    f2)    = trBri s f1 `disj` trBri s f2
-trBri s (f1 F.:-->:  f2)    = trBri s f1 `imp`  trBri s f2
-trBri s (f1 F.:<-->: f2)    = trBri s f1 `dimp` trBri s f2
-trBri s (F.At   n f)        = at        n (trBri s f)
-trBri s (F.A f)             = univMod     (trBri s f)
-trBri s (F.E f)             = existMod    (trBri s f)
-trBri s (F.Down v f)        = downArrow v (trBri s f)
-trBri s (F.Box  relSym f)   = trBri s (F.Neg (F.Diam relSym (F.Neg f)))
-trBri s (F.Diam (S.RelSymbol r) f)
+trBri :: S -> Formula -> Formula
+trBri _ l@(Lit _)           = l
+trBri s (Con fs)            = Con (Set.map (trBri s) fs)
+trBri s (Dis fs)            = Dis (Set.map (trBri s) fs)
+trBri s (At n f)            = At   n (trBri s f)
+trBri s (Down v f)          = Down v (trBri s f)
+trBri s (A f)               = univMod     (trBri s f)
+trBri s (E f)               = existMod    (trBri s f)
+trBri s (Box r f)           = trBri s (neg (Dia r (neg f)))
+trBri s (Dia r f)
     | up r `elem` ["R","R1"] =
         case s of
          ([],_)  ->  Dia "R" (trBri s1 f)
@@ -333,24 +321,17 @@ trBri s (F.Diam (S.RelSymbol r) f)
           (newNom3,s3) = next s2
           s4u23 = s3 `union` (newNom2,newNom3)
           n = Lit . PosLit . N
-trBri _ f                 = error (show f ++ "not supported")
 
-trSwap :: S -> F.Formula S.NomSymbol S.PropSymbol S.RelSymbol -> Formula
-trSwap _ F.Top               = taut
-trSwap _ F.Bot               = neg taut
-trSwap _ (F.Prop p)          = prop p
-trSwap _ (F.Nom  n)          = nom n
-trSwap s (F.Neg  f)          = neg $ trSwap s f
-trSwap s (f1 F.:&:    f2)    = trSwap s f1 `conj` trSwap s f2
-trSwap s (f1 F.:|:    f2)    = trSwap s f1 `disj` trSwap s f2
-trSwap s (f1 F.:-->:  f2)    = trSwap s f1 `imp`  trSwap s f2
-trSwap s (f1 F.:<-->: f2)    = trSwap s f1 `dimp` trSwap s f2
-trSwap s (F.At   n f)        = at        n (trSwap s f)
-trSwap s (F.A f)             = univMod     (trSwap s f)
-trSwap s (F.E f)             = existMod    (trSwap s f)
-trSwap s (F.Down v f)        = downArrow v (trSwap s f)
-trSwap s (F.Box  relSym f)   = trSwap s (F.Neg (F.Diam relSym (F.Neg f)))
-trSwap s@(ss,_) (F.Diam (S.RelSymbol r) f)
+trSwap :: S -> Formula -> Formula
+trSwap _ l@(Lit _)           = l
+trSwap s (Con fs)            = Con (Set.map (trSwap s) fs)
+trSwap s (Dis fs)            = Dis (Set.map (trSwap s) fs)
+trSwap s (At n f)            = At        n (trSwap s f)
+trSwap s (Down v f)          = Down      v (trSwap s f)
+trSwap s (A f)               = univMod     (trSwap s f)
+trSwap s (E f)               = existMod    (trSwap s f)
+trSwap s (Box r f)           = trSwap s (neg (Dia r (neg f)))
+trSwap s@(ss,_) (Dia r f)
     | up r `elem` ["R","R1"] =
         case s of
          ([],_)  ->  Dia "R" (trSwap s1 f)
@@ -384,7 +365,6 @@ trSwap s@(ss,_) (F.Diam (S.RelSymbol r) f)
           (newNom3,s3) = next s2
           s4u23 = s3 `union` (newNom2,newNom3)
           n = Lit . PosLit . N
-trSwap _ f                 = error (show f ++ "not supported.")
 
 type HyLoFormula = F.Formula S.NomSymbol S.PropSymbol S.RelSymbol
 
@@ -623,42 +603,68 @@ data MemFormula
      | MNeg   MemFormula
      | Re     MemFormula -- ^ Remember
      | Kn                -- ^ Known
-  deriving (Eq, Ord)
+  deriving (Eq, Ord, Show)
 
 mtop, mbot :: MemFormula
 mtop = MLit $ PosLit Taut
 mbot = MLit $ NegLit Taut
 
 -- unsat memory logic formulas
-
--- 'known' is initially false:
+kn, re1, re2, re3 :: MemFormula
 kn = Kn
-
--- 'remember' does not change the evaluation state
 re1 = (MLit (PosLit (P "P"))) `MCon` (Re (MLit (NegLit (P "P")))) 
 re2 = (MBox mbot) `MCon` (Re (MDia mtop)) 
 re3 = (MDia mbot) `MCon` (Re (MBox mtop)) 
-
-unsats' = [kn, re1, re2, re3]
-
 -- bury these unsat formulas in sufficiently deep diamonds
-unsats = concat [ [f, MDia f, MDia (MDia f), MDia (MDia (MDia f))] | f <- unsats]
+unsats_mem :: [MemFormula]
+unsats_mem = concat [ [f {-, MDia (MDia (MDia f)) -} ] | f <- [kn, re1] ]
+
+-- (interesting) SAT memory logic formulas
+rekn1, rekn2, chain4 :: MemFormula
+rekn1 = Re (MDia Kn `MCon` MBox Kn)          -- (r)( <>(k) & [](k) )
+rekn2 = Re (MDia Kn `MCon` MDia (MNeg Kn))   -- (r)( <>(k) & <>!(k) )
+chain4 = c [ p "a", q "b", q "c", q "d", MDia
+        (c [ q "a", p "b", q "c", q "d", MDia
+        (c [ q "a", q "b", p "c", q "d", MDia
+        (c [ q "a", q "b", q "c", p "d"])])])]
+  where p = MLit . PosLit . P
+        q = MLit . NegLit . P
+        c = foldr1 MCon
+
+sats_mem :: [MemFormula]
+sats_mem = [rekn1 {-, rekn2, chain4 -}]
+
+-- test suite for translations Memory Logic -> Relation-Changing logics
+unsats, sats :: [(MemFormula, Formula)]
+unsats = concatMap memToHybrid unsats_mem  -- all of them should be found UNSAT
+sats   = concatMap memToHybrid sats_mem    -- all of them should be found SAT
+
+-- given a memory logic formula, translate it to the 6 relation-changing logics + translate again to hybrid logic
+
+memToHybrid :: MemFormula -> [(MemFormula,Formula)]
+memToHybrid f = map (\tr -> (f,tr f))
+  [ trSab  emptyset . memGSb
+{-  , trSwap emptyset . memGSw
+  , trBri  emptyset . memGBr
+  , trSwap emptyset . memLSw
+  , trBri  emptyset . memLBr
+  , trSab  emptyset . memLSb -} ]
 
 -- ^ Modal depth of a memory logic formula
 mmd :: MemFormula -> Int
+mmd Kn         = 0
+mmd (MLit _ )  = 0
 mmd (MBox f)   = 1 + mmd f
 mmd (MDia f)   = 1 + mmd f
 mmd (MDis f g) = max (mmd f) (mmd g)
 mmd (MCon f g) = max (mmd f) (mmd g)
 mmd (MNeg f)   = mmd f
 mmd (Re f)     = mmd f
-mmd (MLit _ )  = 0
-mmd Kn         = 0
 
 -- ^ translate a memory logic formula into a global sabotage
 --   formula where modalities are R and GSB
 memGSb :: MemFormula -> Formula
-memGSb f = struct (mmd f) `conj` go f
+memGSb f_ = struct (mmd f_) `conj` go f_
  where
    neg_s = Lit (NegLit (P "S"))
    s = Lit (PosLit (P "S"))
@@ -676,7 +682,7 @@ memGSb f = struct (mmd f) `conj` go f
    go (MNeg f)   = neg (go f)
 
 memGSw :: MemFormula -> Formula
-memGSw f = struct (mmd f) `conj` go f
+memGSw f_ = struct (mmd f_) `conj` go f_
  where
    neg_s = Lit (NegLit (P "S"))
    s = Lit (PosLit (P "S"))
@@ -694,7 +700,7 @@ memGSw f = struct (mmd f) `conj` go f
    go (MNeg f)   = neg (go f)
 
 memGBr :: MemFormula -> Formula
-memGBr f = struct (mmd f) `conj` go f
+memGBr f_ = struct (mmd f_) `conj` go f_
  where
    neg_s = Lit (NegLit (P "S"))
    s = Lit (PosLit (P "S"))
@@ -712,7 +718,7 @@ memGBr f = struct (mmd f) `conj` go f
    go (MNeg f)   = neg (go f)
 
 memLSw :: MemFormula -> Formula
-memLSw f = struct `conj` d (go f)
+memLSw f_ = struct `conj` d (go f_)
   where
    b   = Box "R"
    bsw = Box "SW"
@@ -729,8 +735,8 @@ memLSw f = struct `conj` d (go f)
    struct = foldr1 conj
       [ s
       , Box "R" neg_s
-      , foldr1 conj [nestBox i (neg_s `imp` uniq) | i <- [1..3]]
-      , foldr1 conj [nestBox i (bsw (s `imp` (b( b( b (s `imp` b (neg taut))))))) | i <- [1,2]]
+      , foldr1 conj [nestBox i (neg_s `imp` uniq) | i <- [1::Int ..3]]
+      , foldr1 conj [nestBox i (bsw (s `imp` (b( b( b (s `imp` b (neg taut))))))) | i <- [1::Int,2]]
       , bsw ( bsw ( neg_s `imp` dsw( s `conj` d(d(dsw(s `conj` d(b(neg_s))))))))
       ]
 
@@ -747,7 +753,7 @@ memLSw f = struct `conj` d (go f)
 
 -- TODO maybe add neg t to diamond
 memLBr :: MemFormula -> Formula
-memLBr f = struct `conj` dbr(neg_s `conj` t `conj` dbr(neg_s `conj` neg_t `conj` go f))
+memLBr f_ = struct `conj` dbr(neg_s `conj` t `conj` dbr(neg_s `conj` neg_t `conj` go f_))
   where
    neg_s = Lit (NegLit (P "S"))
    s = Lit (PosLit (P "S"))
@@ -778,7 +784,7 @@ memLBr f = struct `conj` dbr(neg_s `conj` t `conj` dbr(neg_s `conj` neg_t `conj`
    go (Re f)     = dbr( s `conj` dbr ( (d s) `conj` (go f)))
 
 memLSb :: MemFormula -> Formula
-memLSb f = struct `conj` d (go f)
+memLSb f_ = struct `conj` d (go f_)
   where
     neg_s = Lit (NegLit (P "S"))
     s = Lit (PosLit (P "S"))
