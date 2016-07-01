@@ -622,7 +622,7 @@ unsats_mem = concat [ [f, MDia (MDia (MDia f)) ] | f <- [kn, re1, re2, re3] ]
 -- (interesting) SAT memory logic formulas
 rekn1, rekn2, rekn3, rekn4, chain4 :: MemFormula
 rekn1 = Re (MDia Kn `MCon` MBox Kn)          -- (r)( <>(k) & [](k) )
-rekn2 = MNeg Kn                              -- <>!(k)
+rekn2 = MNeg Kn                              -- !(k)
 rekn3 = Re ( MDia (MNeg Kn))                 -- (r)<>!(k)
 rekn4 = Re (MDia Kn `MCon` MDia (MNeg Kn))   -- (r)( <>(k) & <>!(k) )
 chain4 = c [ p "a", q "b", q "c", q "d", MDia
@@ -649,8 +649,8 @@ memToHybrid f = map (\(rcTr, hTr) -> (f, rcTr f, hTr (rcTr f)))
   , (memGSw, trSwap emptyset)
   , (memGBr, trBri  emptyset)
   , (memLBr, trBri  emptyset)
-  , -} (memLSw, trSwap emptyset)
- {- , 'memLSb, trSab  emptyset) -} ]
+  , (memLSw, trSwap emptyset)
+ , -} (memLSb, trSab  emptyset)  ]
 
 -- ^ Modal depth of a memory logic formula
 mmd :: MemFormula -> Int
@@ -801,6 +801,7 @@ memLSb f_ = struct `conj` d (go f_)
     struct = Con $ set
      [ s
      , b neg_s
+     , b $ d s
      , bsb ( bsb ( s `imp` b (d s)))
      ,   b ( bsb ( s `imp` d (b neg_s )))
      ,   b (   b ( neg_s `imp` d s))
