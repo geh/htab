@@ -265,9 +265,9 @@ trSab s (Con fs)            = Con (Set.map (trSab s) fs)
 trSab s (Dis fs)            = Dis (Set.map (trSab s) fs)
 trSab s (At n f)            = At n (trSab s f)
 trSab s (Down v f)          = Down v (trSab s f)
-trSab s (A f)               = univMod     (trSab s f)
-trSab s (E f)               = existMod    (trSab s f)
-trSab s (Box r f)           = trSab s (neg (Dia r (neg f)))
+trSab s (A f)               = A    (trSab s f)
+trSab s (E f)               = E    (trSab s f)
+trSab s (Box r f)           = neg $ trSab s (Dia r (neg f))
 trSab s (Dia r f)
     | up r `elem` ["R","R1"] =
         case s of
@@ -291,9 +291,9 @@ trBri s (Con fs)            = Con (Set.map (trBri s) fs)
 trBri s (Dis fs)            = Dis (Set.map (trBri s) fs)
 trBri s (At n f)            = At   n (trBri s f)
 trBri s (Down v f)          = Down v (trBri s f)
-trBri s (A f)               = univMod     (trBri s f)
-trBri s (E f)               = existMod    (trBri s f)
-trBri s (Box r f)           = trBri s (neg (Dia r (neg f)))
+trBri s (A f)               = A    (trBri s f)
+trBri s (E f)               = E    (trBri s f)
+trBri s (Box r f)           = neg $ trBri s (Dia r (neg f))
 trBri s (Dia r f)
     | up r `elem` ["R","R1"] =
         case s of
@@ -328,9 +328,9 @@ trSwap s (Con fs)            = Con (Set.map (trSwap s) fs)
 trSwap s (Dis fs)            = Dis (Set.map (trSwap s) fs)
 trSwap s (At n f)            = At        n (trSwap s f)
 trSwap s (Down v f)          = Down      v (trSwap s f)
-trSwap s (A f)               = univMod     (trSwap s f)
-trSwap s (E f)               = existMod    (trSwap s f)
-trSwap s (Box r f)           = trSwap s (neg (Dia r (neg f)))
+trSwap s (A f)               = A    (trSwap s f)
+trSwap s (E f)               = E    (trSwap s f)
+trSwap s (Box r f)           = neg $ trSwap s (Dia r (neg f))
 trSwap s@(ss,_) (Dia r f)
     | up r `elem` ["R","R1"] =
         case s of
@@ -617,7 +617,7 @@ re2 = (MBox mbot) `MCon` (Re (MDia mtop))
 re3 = (MDia mbot) `MCon` (Re (MBox mtop)) 
 -- bury these unsat formulas in sufficiently deep diamonds
 unsats_mem :: [MemFormula]
-unsats_mem = concat [ [f {-, MDia (MDia (MDia f)) -} ] | f <- [kn, re1] ]
+unsats_mem = concat [ [f, MDia (MDia (MDia f)) ] | f <- [kn, re1, re2, re3] ]
 
 -- (interesting) SAT memory logic formulas
 rekn1, rekn2, chain4 :: MemFormula
@@ -632,23 +632,23 @@ chain4 = c [ p "a", q "b", q "c", q "d", MDia
         c = foldr1 MCon
 
 sats_mem :: [MemFormula]
-sats_mem = [rekn1 {-, rekn2, chain4 -}]
+sats_mem = [rekn1, rekn2, chain4]
 
 -- test suite for translations Memory Logic -> Relation-Changing logics
-unsats, sats :: [(MemFormula, Formula)]
+unsats, sats :: [(MemFormula, Formula,Formula)]
 unsats = concatMap memToHybrid unsats_mem  -- all of them should be found UNSAT
 sats   = concatMap memToHybrid sats_mem    -- all of them should be found SAT
 
 -- given a memory logic formula, translate it to the 6 relation-changing logics + translate again to hybrid logic
 
-memToHybrid :: MemFormula -> [(MemFormula,Formula)]
-memToHybrid f = map (\tr -> (f,tr f))
-  [ trSab  emptyset . memGSb
-{-  , trSwap emptyset . memGSw
-  , trBri  emptyset . memGBr
-  , trSwap emptyset . memLSw
-  , trBri  emptyset . memLBr
-  , trSab  emptyset . memLSb -} ]
+memToHybrid :: MemFormula -> [(MemFormula,Formula,Formula)]
+memToHybrid f = map (\(rcTr, hTr) -> (f, rcTr f, hTr (rcTr f)))
+  [ {-(memGSb, trSab  emptyset)
+  , (memGSw, trSwap emptyset)
+  , (memGBr, trBri  emptyset)
+  , (memLBr, trBri  emptyset)
+  , -} (memLSw, trSwap emptyset)
+ {- , 'memLSb, trSab  emptyset) -} ]
 
 -- ^ Modal depth of a memory logic formula
 mmd :: MemFormula -> Int
@@ -670,11 +670,11 @@ memGSb f_ = struct (mmd f_) `conj` go f_
    s = Lit (PosLit (P "S"))
    nestBox 0 f = f
    nestBox n f = nestBox (n-1) (Box "R" f)
-   struct n = foldr conj taut [ nestBox i (neg_s `imp` Dia "R" s) | i <- [0..n]]
+   struct n = foldr conj neg_s [ nestBox i (neg_s `imp` Dia "R" s) | i <- [0..n]]
 
    go (Kn)       = neg (Dia "R" s)
    go (Re f)     = Dia "GSB" ( (neg (Dia "R" s)) `conj` go f)
-   go (MDia f)   = Dia "R" (s `conj` go f)
+   go (MDia f)   = Dia "R" (neg_s `conj` go f)
    go (MBox f)   = Box "R" (neg_s `imp` go f)
    go (MCon f g) = (go f) `conj` (go g)
    go (MDis f g) = (go f) `disj` (go g)
@@ -688,11 +688,11 @@ memGSw f_ = struct (mmd f_) `conj` go f_
    s = Lit (PosLit (P "S"))
    nestBox 0 f = f
    nestBox n f = nestBox (n-1) (Box "R" f)
-   struct n = foldr conj taut [ nestBox i (neg_s `imp` Dia "R" s) | i <- [0..n]]
+   struct n = foldr conj neg_s [ nestBox i (neg_s `imp` Dia "R" s) | i <- [0..n]]
 
    go (Kn)       = neg (Dia "R" s)
    go (Re f)     = Dia "GSW" ( (neg (Dia "R" s)) `conj` go f)
-   go (MDia f)   = Dia "R" (s `conj` go f)
+   go (MDia f)   = Dia "R" (neg_s `conj` go f)
    go (MBox f)   = Box "R" (neg_s `imp` go f)
    go (MCon f g) = (go f) `conj` (go g)
    go (MDis f g) = (go f) `disj` (go g)
@@ -704,13 +704,14 @@ memGBr f_ = struct (mmd f_) `conj` go f_
  where
    neg_s = Lit (NegLit (P "S"))
    s = Lit (PosLit (P "S"))
+
    nestBox 0 f = f
    nestBox n f = nestBox (n-1) (Box "R" f)
    struct n = foldr conj taut [ nestBox i (Box "R" neg_s) | i <- [0..(n+1)]]
 
    go (Kn)       = Dia "R" s
    go (Re f)     = Dia "GBR" ( (Dia "R" s) `conj` go f)
-   go (MDia f)   = Dia "R" (s `conj` go f)
+   go (MDia f)   = Dia "R" (neg_s `conj` go f)
    go (MBox f)   = Box "R" (neg_s `imp` go f)
    go (MCon f g) = (go f) `conj` (go g)
    go (MDis f g) = (go f) `disj` (go g)
@@ -732,7 +733,7 @@ memLSw f_ = struct `conj` d (go f_)
    uniq =   (Dia "R" (s `conj` (Box "R" (neg taut))))
           `conj` Box "SW" (s `imp` Box "R" (Box "R" neg_s))
 
-   struct = foldr1 conj
+   struct = Con $ set
       [ s
       , Box "R" neg_s
       , foldr1 conj [nestBox i (neg_s `imp` uniq) | i <- [1::Int ..3]]
@@ -740,7 +741,7 @@ memLSw f_ = struct `conj` d (go f_)
       , bsw ( bsw ( neg_s `imp` dsw( s `conj` d(d(dsw(s `conj` d(b(neg_s))))))))
       ]
 
-   go (MDia f)   = Dia "R" (s `conj` go f)
+   go (MDia f)   = Dia "R" (neg_s `conj` go f)
    go (MBox f)   = Box "R" (neg_s `imp` go f)
    go (MCon f g) = (go f) `conj` (go g)
    go (MDis f g) = (go f) `disj` (go g)
@@ -750,16 +751,14 @@ memLSw f_ = struct `conj` d (go f_)
    go (Re f)     = dsw (s `conj` d (go f))
 
 
-
--- TODO maybe add neg t to diamond
 memLBr :: MemFormula -> Formula
 memLBr f_ = struct `conj` dbr(neg_s `conj` t `conj` dbr(neg_s `conj` neg_t `conj` go f_))
   where
    neg_s = Lit (NegLit (P "S"))
    s = Lit (PosLit (P "S"))
-
    neg_t = Lit (NegLit (P "T"))
    t = Lit (PosLit (P "T"))
+   neg_s_and_neg_t = neg_s `conj` neg_t
 
    b   = Box "R"
    bbr = Box "BR"
@@ -767,21 +766,21 @@ memLBr f_ = struct `conj` dbr(neg_s `conj` t `conj` dbr(neg_s `conj` neg_t `conj
    d   = Dia "R"
    dbr = Dia "BR"
 
-   struct = foldr1 conj
+   struct = Con $ set
             [ s
             , b (neg taut)
             , bbr (s `imp` bbr neg_s)
             , bbr (neg_s `imp` b neg_s)
             ]
 
-   go (MDia f)   = Dia "R" (s `conj` go f)
-   go (MBox f)   = Box "R" (neg_s `imp` go f)
+   go (MDia f)   = Dia "R" (neg_s_and_neg_t `conj` go f)
+   go (MBox f)   = Box "R" (neg_s_and_neg_t `imp` go f)
    go (MCon f g) = (go f) `conj` (go g)
    go (MDis f g) = (go f) `disj` (go g)
    go (MLit l)   = Lit l
    go (MNeg f)   = neg (go f)
    go (Kn)       = d s
-   go (Re f)     = dbr( s `conj` dbr ( (d s) `conj` (go f)))
+   go (Re f)     = dbr( s `conj` dbr ( neg_s `conj` (d s) `conj` (go f)))
 
 memLSb :: MemFormula -> Formula
 memLSb f_ = struct `conj` d (go f_)
@@ -794,7 +793,7 @@ memLSb f_ = struct `conj` d (go f_)
     b   = Box "R"
     bsb = Box "SB"
 
-    struct = foldr1 conj
+    struct = Con $ set
      [ s
      , b neg_s
      , bsb ( bsb ( s `imp` b (d s)))
@@ -806,7 +805,7 @@ memLSb f_ = struct `conj` d (go f_)
      ,   b ( bsb ( s `imp`   b( (b neg_s) `imp` b ( b (s `imp` d ( b neg_s))))))
      ]
 
-    go (MDia f)   = Dia "R" (s `conj` go f)
+    go (MDia f)   = Dia "R" (neg_s `conj` go f)
     go (MBox f)   = Box "R" (neg_s `imp` go f)
     go (MCon f g) = (go f) `conj` (go g)
     go (MDis f g) = (go f) `disj` (go g)

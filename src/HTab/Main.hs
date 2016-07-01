@@ -40,27 +40,25 @@ runWithParams p | memory p =
                       return (read s)
     let fLang = LanguageInfo []
     putStrLn "UNSATs"
-    forM_ (zip [1::Int ..] unsats) $ \(i,(mf,f)) ->
+    forM_ (zip [1::Int ..] unsats) $ \(i,(mf,rc,h)) ->
         do myPutStrLn (show i ++ " " ++ show mf)
            r <- inTimeout (timeout p) $
-                  do (result,s) <- tableauInit p g $ initialBranch p fLang Map.empty f
-                     whenNormal $ printOutMetricsFinal s
+                  do (result,_) <- tableauInit p g $ initialBranch p fLang Map.empty h
                      return result
            case r of
             Nothing         -> myPutStrLn "Timeout."
-            Just (OPEN _)   -> myPutStrLn ("Formula is sat. Not Good." ++ show f)
+            Just (OPEN _)   -> myPutStrLn ("Formula is sat. Not Good.\n" ++ show rc)
             Just (CLOSED _) -> myPutStrLn "[OK]"
     putStrLn "SATs"
-    forM_ (zip [1::Int ..] sats) $ \(i,(mf,f)) ->
+    forM_ (zip [1::Int ..] sats) $ \(i,(mf,rc,h)) ->
         do myPutStrLn (show i ++ " " ++ show mf)
            r <- inTimeout (timeout p) $
-                  do (result,s) <- tableauInit p g $ initialBranch p fLang Map.empty f
-                     whenNormal $ printOutMetricsFinal s
+                  do (result,_) <- tableauInit p g $ initialBranch p fLang Map.empty h
                      return result
            case r of
             Nothing         -> myPutStrLn "Timeout."
             Just (OPEN _)   -> myPutStrLn "[OK]"
-            Just (CLOSED _) -> myPutStrLn ("Formula is unsat. Not Good." ++ show f)
+            Just (CLOSED _) -> myPutStrLn ("Formula is unsat. Not Good.\n" ++ show rc)
     return (Just SUCCESS)
 
 runWithParams p =
