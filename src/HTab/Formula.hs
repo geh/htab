@@ -620,9 +620,11 @@ unsats_mem :: [MemFormula]
 unsats_mem = concat [ [f, MDia (MDia (MDia f)) ] | f <- [kn, re1, re2, re3] ]
 
 -- (interesting) SAT memory logic formulas
-rekn1, rekn2, chain4 :: MemFormula
+rekn1, rekn2, rekn3, rekn4, chain4 :: MemFormula
 rekn1 = Re (MDia Kn `MCon` MBox Kn)          -- (r)( <>(k) & [](k) )
-rekn2 = Re (MDia Kn `MCon` MDia (MNeg Kn))   -- (r)( <>(k) & <>!(k) )
+rekn2 = MNeg Kn                              -- <>!(k)
+rekn3 = Re ( MDia (MNeg Kn))                 -- (r)<>!(k)
+rekn4 = Re (MDia Kn `MCon` MDia (MNeg Kn))   -- (r)( <>(k) & <>!(k) )
 chain4 = c [ p "a", q "b", q "c", q "d", MDia
         (c [ q "a", p "b", q "c", q "d", MDia
         (c [ q "a", q "b", p "c", q "d", MDia
@@ -632,7 +634,7 @@ chain4 = c [ p "a", q "b", q "c", q "d", MDia
         c = foldr1 MCon
 
 sats_mem :: [MemFormula]
-sats_mem = [rekn1, rekn2, chain4]
+sats_mem = [rekn1, rekn2, rekn3, rekn4, chain4]
 
 -- test suite for translations Memory Logic -> Relation-Changing logics
 unsats, sats :: [(MemFormula, Formula,Formula)]
@@ -727,19 +729,22 @@ memLSw f_ = struct `conj` d (go f_)
    dsw = Dia "SW"
    neg_s = Lit (NegLit (P "S"))
    s = Lit (PosLit (P "S"))
-   nestBox 1 f = f
-   nestBox n f = nestBox (n-1) (Box "R" f)
 
-   uniq =   (Dia "R" (s `conj` (Box "R" (neg taut))))
-          `conj` Box "SW" (s `imp` Box "R" (Box "R" neg_s))
+   uniq =        (d (s `conj` (b (neg taut))))
+          `conj` bsw (s `imp` b (b neg_s))
+
+   has_uniq = neg_s `imp` uniq
 
    struct = Con $ set
-      [ s
-      , Box "R" neg_s
-      , foldr1 conj [nestBox i (neg_s `imp` uniq) | i <- [1::Int ..3]]
-      , foldr1 conj [nestBox i (bsw (s `imp` (b( b( b (s `imp` b (neg taut))))))) | i <- [1::Int,2]]
-      , bsw ( bsw ( neg_s `imp` dsw( s `conj` d(d(dsw(s `conj` d(b(neg_s))))))))
-      ]
+    [ s
+    , b neg_s
+    , b has_uniq
+    , b $ b has_uniq
+    , b $ b $ b has_uniq
+    , b $ bsw (s `imp` (b $ b $ b (s `imp` b (neg taut))))
+    , b $ b $ bsw (s `imp` (b $ b $ b (s `imp` b (neg taut))))
+    , bsw $ bsw ( neg_s `imp` dsw (  s `conj` (d (b neg_s `imp` (d $ d (s `conj` d(b(neg_s))))))))
+    ]
 
    go (MDia f)   = Dia "R" (neg_s `conj` go f)
    go (MBox f)   = Box "R" (neg_s `imp` go f)
