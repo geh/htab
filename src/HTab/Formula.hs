@@ -617,7 +617,7 @@ re2 = (MBox mbot) `MCon` (Re (MDia mtop))
 re3 = (MDia mbot) `MCon` (Re (MBox mtop)) 
 -- bury these unsat formulas in sufficiently deep diamonds
 unsats_mem :: [MemFormula]
-unsats_mem = concat [ [f, MDia (MDia (MDia f)) ] | f <- [kn, re1, re2, re3] ]
+unsats_mem = concat [ [f, MDia (MDia f) ] | f <- [kn, re1, re2, re3] ]
 
 -- (interesting) SAT memory logic formulas
 rekn1, rekn2, rekn3, rekn4, chain4 :: MemFormula
