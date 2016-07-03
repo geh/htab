@@ -30,7 +30,7 @@ re2 = (MBox mbot) `MCon` (Re (MDia mtop))
 re3 = (MDia mbot) `MCon` (Re (MBox mtop)) 
 -- bury these unsat formulas in sufficiently deep diamonds
 unsats_mem :: [MemFormula]
-unsats_mem = concat [ [f, MDia f, MDia (MDia f) ] | f <- [kn, re1, re2, re3] ]
+unsats_mem = concat [ nested f | f <- [kn, re1, re2, re3] ]
 
 -- (interesting) SAT memory logic formulas
 rekn1, rekn2, rekn3, rekn4, chain4 :: MemFormula
@@ -47,7 +47,10 @@ chain4 = c [ p "a", q "b", q "c", q "d", MDia
         c = foldr1 MCon
 
 sats_mem :: [MemFormula]
-sats_mem = [rekn1, rekn2, rekn3, rekn4, chain4]
+sats_mem = chain4 : concat [ nested f | f <- [rekn1, rekn2, rekn3, rekn4]]
+
+nested :: MemFormula -> [MemFormula]
+nested f = [f, MDia f, MDia $ MDia f, MDia $ MDia $ MDia f]
 
 -- test suite for translations Memory Logic -> Relation-Changing logics
 unsats, sats :: [(MemFormula, Formula,Formula,String)]
