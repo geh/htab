@@ -24,7 +24,8 @@ import HTab.Statistics( Statistics, initialStatisticsStateFor, printOutMetricsFi
 import HTab.Tableau( OpenFlag(..), tableauStart )
 import HTab.Formula( Theory, RelInfo, LanguageInfo(..), Task,
                      Formula(Con), encodeValidityTest, encodeSatTest, encodeRetrieveTask,
-                     showRelInfo, list, unsats, sats  )
+                     showRelInfo, list )
+import HTab.Memory (unsats, sats)
 import qualified HTab.Formula as F
 import qualified HyLo.Signature.String as S
 import HTab.ModelGen ( Model, toDot )
@@ -33,32 +34,31 @@ data TaskRunFlag = SUCCESS | FAILURE
 
 runWithParams :: Params -> IO (Maybe TaskRunFlag)
 runWithParams p | memory p =
- do putStrLn "Running memory logic -> relation-changing logics test suite."
+ do putStrLn "Running memory logic to relation-changing logics test suite."
     g <- case seed p of
         Nothing -> getStdGen
         Just s  -> do putStrLn "Using given random seed."
                       return (read s)
-    let fLang = LanguageInfo []
-    putStrLn "UNSATs"
-    forM_ (zip [1::Int ..] unsats) $ \(i,(mf,rc,h)) ->
-        do myPutStrLn (show i ++ " " ++ show mf)
+    putStrLn "=== UNSAT formulas ==="
+    forM_ (zip [1::Int ..] unsats) $ \(i,(mf,rc,h,name)) ->
+        do myPutStrLn (show i ++ " " ++ show mf ++ " via " ++ name)
            r <- inTimeout (timeout p) $
-                  do (result,_) <- tableauInit p g $ initialBranch p fLang Map.empty h
+                  do (result,_) <- tableauInit p g $ initialBranch p (LanguageInfo []) Map.empty h
                      return result
            case r of
-            Nothing         -> myPutStrLn "Timeout."
-            Just (OPEN _)   -> myPutStrLn ("Formula is sat. Not Good.\n" ++ show rc)
-            Just (CLOSED _) -> myPutStrLn "[OK]"
-    putStrLn "SATs"
-    forM_ (zip [1::Int ..] sats) $ \(i,(mf,rc,h)) ->
-        do myPutStrLn (show i ++ " " ++ show mf)
+            Nothing         -> myPutStrLn "Timeout"
+            Just (CLOSED _) -> myPutStrLn "OK"
+            Just (OPEN _)   -> myPutStrLn ("ERROR: formula is sat\n" ++ show rc)
+    putStrLn "=== SAT formulas ==="
+    forM_ (zip [(length unsats + 1)::Int ..] sats) $ \(i,(mf,rc,h,name)) ->
+        do myPutStrLn (show i ++ " " ++ show mf ++ " via " ++ name)
            r <- inTimeout (timeout p) $
-                  do (result,_) <- tableauInit p g $ initialBranch p fLang Map.empty h
+                  do (result,_) <- tableauInit p g $ initialBranch p (LanguageInfo []) Map.empty h
                      return result
            case r of
-            Nothing         -> myPutStrLn "Timeout."
-            Just (OPEN _)   -> myPutStrLn "[OK]"
-            Just (CLOSED _) -> myPutStrLn ("Formula is unsat. Not Good.\n" ++ show rc)
+            Nothing         -> myPutStrLn "Timeout"
+            Just (OPEN _)   -> myPutStrLn "OK"
+            Just (CLOSED _) -> myPutStrLn ("ERROR: formula is unsat\n" ++ show rc)
     return (Just SUCCESS)
 
 runWithParams p =
