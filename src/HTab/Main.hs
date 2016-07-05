@@ -17,7 +17,7 @@ import Prelude hiding ( readFile )
 
 import HyLo.InputFile.Parser ( QueryType(..) )
 
-import HTab.CommandLine( filename, random, seed, memory,
+import HTab.CommandLine( filename, random, seed, test_translations,
                          timeout, Params, genModel, dotModel, showFormula )
 import HTab.Branch( BranchInfo(..), initialBranch)
 import HTab.Statistics( Statistics, initialStatisticsStateFor, printOutMetricsFinal )
@@ -33,7 +33,7 @@ import HTab.ModelGen ( Model, toDot )
 data TaskRunFlag = SUCCESS | FAILURE
 
 runWithParams :: Params -> IO (Maybe TaskRunFlag)
-runWithParams p | memory p =
+runWithParams p | test_translations p =
  do putStrLn "Running memory logic to relation-changing logics test suite."
     g <- case seed p of
         Nothing -> getStdGen

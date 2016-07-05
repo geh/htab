@@ -26,7 +26,7 @@ data Params = Params {
          , minimal         :: Bool
          , random          :: Bool
          , seed            :: Maybe String
-         , memory          :: Bool
+         , test_translations :: Bool
          } deriving (Show, Data, Typeable)
 
 data UnitProp = UPYes | Eager | UPNo deriving (Data, Typeable, Eq, Show)
@@ -53,7 +53,7 @@ defaultParams
        minimal        := False   += help "look for minimal model (slow)",
        random         := False   += help "randomly select next disjunctive formula, also randomize disjuncts",
        seed           := Nothing += help "set random seed (integer)",
-       memory         := False   += help "run the memory-to-relation-changing test suite"
+       test_translations := False   += help "run the memory-to-relation-changing test suite"
       ] += verbosity
 
 strategyVal :: String
@@ -74,7 +74,7 @@ checkParams p
                    "The rules conjunction, box, and universal modality",
                    "are applied immediately, thus do not belong to the strategy."]
        return False
- | null (filename p) && not (memory p)=
+ | null (filename p) && not (test_translations p)=
     do putStrLn $ unlines ["ERROR: No input specified.","Run with --help for usage options"]
        return False
  | translate p && (allTransitive p || allReflexive p) = 
