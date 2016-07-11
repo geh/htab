@@ -83,10 +83,6 @@ mmd (Re f)     = mmd f
 memGSb :: MemFormula -> Formula
 memGSb f_ = struct (mmd f_) `conj` go f_
  where
-   neg_s = Lit (NegLit (P "S"))
-   s = Lit (PosLit (P "S"))
-   nestBox 0 f = f
-   nestBox n f = nestBox (n-1) (Box "R" f)
    struct n = foldr conj neg_s [ nestBox i (neg_s `imp` Dia "R" s) | i <- [0..n]]
 
    go (Kn)       = neg (Dia "R" s)
@@ -101,10 +97,6 @@ memGSb f_ = struct (mmd f_) `conj` go f_
 memGSw :: MemFormula -> Formula
 memGSw f_ = struct (mmd f_) `conj` go f_
  where
-   neg_s = Lit (NegLit (P "S"))
-   s = Lit (PosLit (P "S"))
-   nestBox 0 f = f
-   nestBox n f = nestBox (n-1) (Box "R" f)
    struct n = foldr conj neg_s [ nestBox i (neg_s `imp` Dia "R" s) | i <- [0..n]]
 
    go (Kn)       = neg (Dia "R" s)
@@ -119,11 +111,6 @@ memGSw f_ = struct (mmd f_) `conj` go f_
 memGBr :: MemFormula -> Formula
 memGBr f_ = struct (mmd f_) `conj` go f_
  where
-   neg_s = Lit (NegLit (P "S"))
-   s = Lit (PosLit (P "S"))
-
-   nestBox 0 f = f
-   nestBox n f = nestBox (n-1) (Box "R" f)
    struct n = foldr conj taut [ nestBox i neg_s | i <- [0..(n+1)]]
 
    go (Kn)       = Dia "R" s
@@ -138,24 +125,12 @@ memGBr f_ = struct (mmd f_) `conj` go f_
 memLSw :: MemFormula -> Formula
 memLSw f_ = struct `conj` d (go f_)
   where
-   b   = Box "R"
-   bsw = Box "SW"
-   d   = Dia "R"
-   dsw = Dia "SW"
-   neg_s = Lit (NegLit (P "S"))
-   s = Lit (PosLit (P "S"))
-
-   uniq =        (d (s `conj` (b (neg taut))))
-          `conj` bsw (s `imp` b (b neg_s))
-
-   has_uniq = neg_s `imp` uniq
-
    struct = Con $ set
     [ s
     , b neg_s
-    , b has_uniq
-    , b $ b has_uniq
-    , b $ b $ b has_uniq
+    , b (neg_s `imp` uniq)
+    , b $ b (neg_s `imp` uniq)
+    , b $ b $ b (neg_s `imp` uniq)
     , b $ bsw (s `imp` (b $ b $ b (s `imp` b (neg taut))))
     , b $ b $ bsw (s `imp` (b $ b $ b (s `imp` b (neg taut))))
     , bsw $ bsw ( neg_s `imp` dsw (  s `conj` (d (b neg_s `imp` (d $ d (s `conj` d(b(neg_s))))))))
@@ -170,22 +145,14 @@ memLSw f_ = struct `conj` d (go f_)
    go (Kn)       = neg (d s)
    go (Re f)     = dsw (s `conj` d (go f))
 
+   uniq =        (d (s `conj` (b (neg taut))))
+          `conj` bsw (s `imp` b (b neg_s))
+   bsw = Box "SW"
+   dsw = Dia "SW"
 
 memLBr :: MemFormula -> Formula
 memLBr f_ = struct `conj` dbr(neg_s `conj` t `conj` dbr(neg_s `conj` neg_t `conj` go f_))
   where
-   neg_s = Lit (NegLit (P "S"))
-   s = Lit (PosLit (P "S"))
-   neg_t = Lit (NegLit (P "T"))
-   t = Lit (PosLit (P "T"))
-   neg_s_and_neg_t = neg_s `conj` neg_t
-
-   b   = Box "R"
-   bbr = Box "BR"
-
-   d   = Dia "R"
-   dbr = Dia "BR"
-
    struct = Con $ set
             [ s
             , b (neg taut)
@@ -202,17 +169,15 @@ memLBr f_ = struct `conj` dbr(neg_s `conj` t `conj` dbr(neg_s `conj` neg_t `conj
    go (Kn)       = d s
    go (Re f)     = dbr( s `conj` dbr ( neg_s `conj` (d s) `conj` (go f)))
 
+   t = Lit (PosLit (P "T"))
+   neg_t = Lit (NegLit (P "T"))
+   neg_s_and_neg_t = neg_s `conj` neg_t
+   dbr = Dia "BR"
+   bbr = Box "BR"
+
 memLSb :: MemFormula -> Formula
 memLSb f_ = struct `conj` d (go f_)
   where
-    neg_s = Lit (NegLit (P "S"))
-    s = Lit (PosLit (P "S"))
-
-    d   = Dia "R"
-    dsb = Dia "SB"
-    b   = Box "R"
-    bsb = Box "SB"
-
     struct = Con $ set
      [ s
      , b neg_s
@@ -235,5 +200,24 @@ memLSb f_ = struct `conj` d (go f_)
     go (Kn)       = neg (d s)
     go (Re f)     = dsb( s `conj` dsb ( neg (d s) `conj` go f))
 
+    dsb = Dia "SB"
+    bsb = Box "SB"
+
+
+-- helper functions
+
+nestBox :: Int -> Formula -> Formula
+nestBox 0 f = f
+nestBox n f = nestBox (n-1) (Box "R" f)
+
+s, neg_s :: Formula
+neg_s = Lit (NegLit (P "S"))
+s = Lit (PosLit (P "S"))
+
 set :: Ord a => [a] -> Set.Set a
 set = Set.fromList
+
+d, b :: Formula -> Formula
+d   = Dia "R"
+b   = Box "R"
+
