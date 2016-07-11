@@ -1,7 +1,4 @@
-module HTab.Memory
-
-( sats, unsats )
-
+module HTab.Memory ( sats, unsats )
 where
 
 import qualified Data.Set as Set
@@ -16,7 +13,17 @@ data MemFormula
      | MNeg   MemFormula
      | Re     MemFormula -- ^ Remember
      | Kn                -- ^ Known
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord )
+
+instance Show MemFormula where
+ show (MLit a)   = show a
+ show (MCon f1 f2) = "(" ++ show f1 ++ " & " ++ show f2 ++ ")"
+ show (MDis f1 f2) = "(" ++ show f1 ++ " v " ++ show f2 ++ ")"
+ show (MBox f) = "[](" ++ show f ++ ")"
+ show (MDia f) = "<>(" ++ show f ++ ")"
+ show (MNeg f) = "¬(" ++ show f ++ ")"
+ show (Re f)   = "Re(" ++ show f ++ ")"
+ show  Kn      = "Kn"
 
 mtop, mbot :: MemFormula
 mtop = MLit $ PosLit Taut
@@ -66,17 +73,6 @@ memToHybrid f = map (\(rcTr, hTr,name) -> (f, rcTr f, hTr (rcTr f), name))
   , (memLBr, trBri  emptyset, "Local Bridge")
   , (memLSw, trSwap emptyset, "Local Swap")
   , (memLSb, trSab  emptyset, "Local Sabotage")  ]
-
--- ^ Modal depth of a memory logic formula
-mmd :: MemFormula -> Int
-mmd Kn         = 0
-mmd (MLit _ )  = 0
-mmd (MBox f)   = 1 + mmd f
-mmd (MDia f)   = 1 + mmd f
-mmd (MDis f g) = max (mmd f) (mmd g)
-mmd (MCon f g) = max (mmd f) (mmd g)
-mmd (MNeg f)   = mmd f
-mmd (Re f)     = mmd f
 
 -- ^ translate a memory logic formula into a global sabotage
 --   formula where modalities are R and GSB
@@ -205,6 +201,17 @@ memLSb f_ = struct `conj` d (go f_)
 
 
 -- helper functions
+
+-- ^ Modal depth of a memory logic formula
+mmd :: MemFormula -> Int
+mmd Kn         = 0
+mmd (MLit _ )  = 0
+mmd (MBox f)   = 1 + mmd f
+mmd (MDia f)   = 1 + mmd f
+mmd (MDis f g) = max (mmd f) (mmd g)
+mmd (MCon f g) = max (mmd f) (mmd g)
+mmd (MNeg f)   = mmd f
+mmd (Re f)     = mmd f
 
 nestBox :: Int -> Formula -> Formula
 nestBox 0 f = f
