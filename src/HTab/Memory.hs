@@ -124,7 +124,7 @@ memGBr f_ = struct (mmd f_) `conj` go f_
 
    nestBox 0 f = f
    nestBox n f = nestBox (n-1) (Box "R" f)
-   struct n = foldr conj taut [ nestBox i neg_s | i <- [0..n]]
+   struct n = foldr conj taut [ nestBox i neg_s | i <- [0..(n+1)]]
 
    go (Kn)       = Dia "R" s
    go (Re f)     = Dia "GBR" ( (Dia "R" s) `conj` go f)
