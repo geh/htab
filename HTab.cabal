@@ -1,5 +1,5 @@
 Name:                HTab
-Version:             1.7.0
+Version:             1.7.1
 Synopsis:            Tableau based theorem prover for hybrid logics
 Description:         Tableau based theorem prover for hybrid logics
 Homepage:            http://hub.darcs.net/gh/htab
@@ -21,10 +21,6 @@ Data-files:  NEWS
 source-repository head
     type:     darcs
     location: http://hub.darcs.net/gh/htab
-
-Flag static
-  Description: Build a static binary
-  Default:     False
 
 Executable          htab
   Default-language:    Haskell2010
@@ -58,6 +54,3 @@ Executable          htab
                        ScopedTypeVariables
   Hs-Source-Dirs:      src
   ghc-options:         -O2 -Wall
-
-  if flag(static)
-    ghc-options: -static -optl-static -optl-pthread
