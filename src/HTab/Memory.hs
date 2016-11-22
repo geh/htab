@@ -152,7 +152,7 @@ memLBr f_ = struct `conj` dbr(neg_s `conj` t `conj` dbr(neg_s `conj` neg_t `conj
    struct = Con $ set
             [ s
             , b (neg taut)
-            , bbr (s `imp` bbr neg_s)
+            , bbr (s `imp` (b neg_s `conj` bbr neg_s))
             , bbr (neg_s `imp` b neg_s)
             ]
 
