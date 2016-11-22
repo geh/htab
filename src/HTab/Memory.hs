@@ -181,10 +181,12 @@ memLSb f_ = struct `conj` d (go f_)
      , bsb ( bsb ( s `imp` b (d s)))
      ,   b ( bsb ( s `imp` d (b neg_s )))
      ,   b (   b ( neg_s `imp` d s))
-     ,   b (   b (   b (s `imp` b (d s))))
-     ,   b (   b ( bsb (s `imp` d ( b neg_s))))
-     ,   b ( bsb ( s `imp` bsb( (b neg_s) `imp` b ( b (s `imp` b ( d s))))))
-     ,   b ( bsb ( s `imp`   b( (b neg_s) `imp` b ( b (s `imp` d ( b neg_s))))))
+
+
+     ,   b ( bsb ( s `imp` ( bsb ( (b neg_s) `imp` (b ( b ( s `imp` b (d s))))))))
+     ,   b ( bsb ( s `imp` (   b ( (b neg_s) `imp` (b ( b ( s `imp` d (b neg_s))))))))
+     ,   b ( b ( neg_s `imp`( s `imp` d ( b neg_s))))
+
      ]
 
     go (MDia f)   = Dia "R" (neg_s `conj` go f)
