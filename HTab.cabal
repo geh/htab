@@ -1,3 +1,4 @@
+cabal-version:       2.4
 Name:                HTab
 Version:             1.7.1
 Synopsis:            Tableau based theorem prover for hybrid logics
@@ -9,7 +10,6 @@ License:             GPL
 License-file:        COPYING
 Author:              Guillaume Hoffmann, Carlos Areces, Daniel Gorín, Juan Heguiabehere
 Maintainer:          guillaumh@gmail.com
-Cabal-version:       >= 1.22
 Build-type:          Simple
 Extra-source-files:  tests/test-example-formulas.hs
                      tests/coverage.sh

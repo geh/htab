@@ -102,7 +102,7 @@ instance Show Branch where
    where
     showIMap :: (a -> String) -> String -> IntMap a -> String
     showIMap vShow sep im
-     = I.foldWithKey (\k v -> (++ sep ++ show k ++ " -> " ++ vShow v )) "" im
+     = I.foldrWithKey (\k v -> (++ sep ++ show k ++ " -> " ++ vShow v )) "" im
     showMap sep = Map.foldrWithKey (\k v -> (++ sep ++ show k ++ " -> " ++ show v )) ""
     showMap_lits ml = Map.foldrWithKey (\l d -> (++ show l ++ " " ++ dsShow d  ++ ", ")) "" ml
     showMap_lits2 = Map.foldrWithKey (\l fs -> (++ show l ++ " :" ++ show fs ++ ", ")) ""

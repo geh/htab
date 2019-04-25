@@ -1,3 +1,6 @@
+* 2019.04.25 : 1.7.2
+      o --memory flag to run memory logic testsuite
+      o compile with GHC 8.6
 * 2016.06.03 : 1.7.0
       o --translation to support relation-changing modal logics
 * 2011.12.02 : 1.6.0
