@@ -1,6 +1,6 @@
 cabal-version:       2.4
 Name:                HTab
-Version:             1.7.2
+Version:             1.7.3
 Synopsis:            Tableau based theorem prover for hybrid logics
 Description:         Tableau based theorem prover for hybrid logics
 Homepage:            http://hub.darcs.net/gh/htab

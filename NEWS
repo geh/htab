@@ -1,3 +1,6 @@
+* 2020.05.15 : 1.7.3
+      o remove dynamic logics support, these were branched to HTabDyn and HTabDown
+      o remove randomization
 * 2019.04.25 : 1.7.2
       o --memory flag to run memory logic testsuite
       o compile with GHC 8.6
