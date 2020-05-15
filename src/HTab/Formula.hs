@@ -8,7 +8,6 @@ PrFormula(..),showLess,
 LanguageInfo(..), neg,
 conj, disj, taut,
 prop, nom, prefix, negPr,
-replaceVar,
 firstPrefixedFormula,
 parse, simpleParse, Theory, RelInfo, Task,
 showRelInfo, negLit,
@@ -70,7 +69,6 @@ data Formula
      | Con   (Set Formula)
      | Dis   (Set Formula)
      | At     Nom Formula
-     | Down   Nom Formula
      | Box    Rel     Formula
      | Dia    Rel     Formula
      | A      Formula
@@ -86,7 +84,6 @@ instance Show Formula where
  show (Dia r f)  = "<" ++ r ++ ">"   ++ show f
  show (A f)      = "A " ++ show f
  show (E f)      = "E " ++ show f
- show (Down n f) = "down " ++ n ++ "." ++ show f
 
 -- parsing of the input file
 
@@ -173,7 +170,6 @@ conv_ relI (f1 F.:<-->: f2)    = conv_ relI f1 `dimp` conv_ relI f2
 conv_ relI (F.Diam (S.RelSymbol r) f)        = specialiseDia (up r) relI (conv_ relI f)
 conv_ relI (F.Box  (S.RelSymbol r) f)        = specialiseBox (up r) relI (conv_ relI f)
 conv_ relI (F.At   n f)        = at        n (conv_ relI f)
-conv_ relI (F.Down v f)        = downArrow v (conv_ relI f)
 conv_ relI (F.A f)             = univMod     (conv_ relI f)
 conv_ relI (F.E f)             = existMod    (conv_ relI f)
 conv_ _    f                 = error (show f ++ "not supported")
@@ -227,10 +223,6 @@ box        r    = Box   r
 diamond    r    = Dia   r
 univMod    = A
 existMod   = E
-
-{- binder -}
-downArrow :: S.NomSymbol -> Formula -> Formula
-downArrow (S.NomSymbol n) = Down (up n)
 
 {- Hybrid operators -}
 at :: S.NomSymbol -> Formula -> Formula
@@ -296,14 +288,12 @@ neg :: Formula -> Formula
 neg (Con l)          = Dis (Set.map neg l)
 neg (Dis l)          = Con (Set.map neg l)
 neg (At n f)         = At   n (neg f)
-neg (Down v f)       = Down v (neg f)
 neg (Box r f)        = Dia  r (neg f)
 neg (Dia r f)        = Box  r (neg f)
 neg (A f)            = E (neg f)
 neg (E f)            = A (neg f)
 neg (Lit (PosLit a)) = Lit (NegLit a)
 neg (Lit (NegLit a)) = Lit (PosLit a)
-
 
 -- prefixed formula
 
@@ -339,31 +329,6 @@ langInfo po
  = LanguageInfo { languageNoms = noms }
     where noms = nub $ map (\(S.NomSymbol n) -> up n) $ concatMap (list . nomSymbols . getSignature) theory
           theory =  P.theory po
-
--- composeXX functions follow the idea from
--- "A pattern for almost compositional functions", Bringert and Ranta.
-composeMap :: (Formula -> Formula)
-           -> (Formula -> Formula)
-           -> (Formula -> Formula)
-composeMap baseCase g e = case e of
-    Con fs     -> Con $ Set.map g fs
-    Dis fs     -> Dis $ Set.map g fs
-    Dia r f    -> Dia r (g f)
-    Box r f    -> Box r (g f)
-    At   i f   -> At  i (g f)
-    A f        -> A (g f)
-    E f        -> E (g f)
-    Down x f   -> Down x (g f)
-    f          -> baseCase f
-
-replaceVar :: String -> String -> Formula -> Formula
-replaceVar v n a@(Lit (PosLit (N v2))) = if v == v2 then Lit (PosLit (N n)) else a
-replaceVar v n a@(Lit (NegLit (N v2))) = if v == v2 then Lit (NegLit (N n)) else a
-replaceVar v n a@(Down v2 f) = if v == v2 then a   -- variable capture
-                                          else Down v2 (replaceVar v n f)
-replaceVar v n (At v2 f)   = if v == v2 then At n (replaceVar v n f)
-                                        else At v2 (replaceVar v n f)
-replaceVar v n f = composeMap id (replaceVar v n) f
 
 -- backjumping
 

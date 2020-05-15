@@ -1,8 +1,8 @@
 # HTab, a hybrid logic tableau prover
 
 HTab is a tableau-based satisfiability checker. It currently
-handles the hybrid logic H(:,E,down-arrow) with role inclusions,
-and terminates on input within any fragments that exclude the down-arrow operator.
+handles the hybrid logic H(:,E) with role inclusions,
+and terminates on all inputs.
 
 Relevant references for HTab are [1] and [2] for the general tableau algorithm
 and [3] for the pattern-based blocking and lazy branching technique currently used.

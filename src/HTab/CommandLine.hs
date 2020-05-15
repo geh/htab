@@ -54,7 +54,7 @@ defaultParams
       ] += verbosity
 
 strategyVal :: String
-strategyVal = "n@E<b|r"
+strategyVal = "n@E<|r"
 
 checkParams :: Params -> IO Bool
 checkParams p
@@ -64,8 +64,7 @@ checkParams p
                    "strategy should contain all of the following characters: ",
                    "  n = nominals               @ = satisfaction operator",
                    "  E = existential modality   < = diamond",
-                   "  b = down-arrow binder      | = or",
-                   "  r = role inclusion",
+                   "  | = or                     r = role inclusion",
                    "",
                    "The default is \"" ++ strategyVal ++ "\"",
                    "The rules conjunction, box, and universal modality",

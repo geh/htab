@@ -1,8 +1,7 @@
 module HTab.Literals (
 UpdateResult(..), Literals,
 SlotUpdateResult(..), LiteralSlot,
-updateMap, lsUnions, lsAddDeps, lsQuery,
-positiveNom
+updateMap, lsUnions, lsAddDeps, lsQuery
 ) where
 
 import Data.IntMap ( IntMap)
@@ -113,10 +112,4 @@ lsQuery lits pr l
 
    where dlookup pr_ l_ lits_ = do slot <- I.lookup pr_ lits_
                                    M.lookup l_ slot
-
-positiveNom :: Literals -> Prefix -> Maybe String
-positiveNom lits pr = do slot <- I.lookup pr lits
-                         case filter isPositiveNom (M.keys slot) of
-                           (PosLit (N n):_) -> Just n
-                           _                -> Nothing
 
