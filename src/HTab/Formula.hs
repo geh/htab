@@ -14,8 +14,7 @@ parse, simpleParse, Theory, RelInfo, Task,
 showRelInfo, negLit,
 encodeValidityTest, encodeSatTest, encodeRetrieveTask,
 HyLoFormula, RelProperty(..),
-isPositiveNom, isPositiveProp, isProp, list, imp,
-trSab, trSwap, trBri, emptyset
+isPositiveNom, isPositiveProp, isProp, list, imp
 )
 
  where
@@ -106,19 +105,13 @@ data RelProperty   =   Reflexive
 showRelInfo :: RelInfo -> String
 showRelInfo = Map.foldrWithKey (\r v -> (++ " " ++ show r ++ " -> " ++ show v )) ""
 
-data RelationChanging = Sabotage | Bridge | Swap
-
 parse :: Params -> String -> (Theory,RelInfo,LanguageInfo,[Task])
 parse p s
   = (theory, relInfo, fLang, tasks)
     where parseOutput = InputFile.myparse s       -- direct parse from hylolib
           pRelInfo    = P.relations parseOutput
-          relInfo     = if translate p
-                         then monomodal $ convertToOurType pRelInfo
-                         else forceProperties p parseOutput $ convertToOurType pRelInfo
-          theory      = if translate p
-                          then doTranslate (detectRCLogic pRelInfo) $ P.theory parseOutput
-                          else convert relInfo $ P.theory parseOutput
+          relInfo     = forceProperties p parseOutput $ convertToOurType pRelInfo
+          theory      = convert relInfo $ P.theory parseOutput
           tasks       = P.tasks parseOutput
           fLang       = langInfo parseOutput
 
@@ -135,25 +128,6 @@ forceProperties p po relI
                    filter fst   [(allTransitive p, Transitive),
                                  (allReflexive  p, Reflexive )]
          theory =  P.theory po
-
--- assume input formula is relation-changing
--- then it is monomodal, only relation is R
-monomodal :: RelInfo -> RelInfo
-monomodal _ = Map.fromList [("R", [])]
- -- TODO check parameter and fail if relation other than R used in input file
-
-
-detectRCLogic :: PRelInfo -> RelationChanging
-detectRCLogic prelI
- |  "sb" `elem` rels = Sabotage
- |  "gsb" `elem` rels = Sabotage
- |  "sw"  `elem` rels = Swap
- |  "gsw" `elem` rels = Swap
- |  "br"  `elem` rels = Bridge
- |  "gbr"  `elem` rels = Bridge
- | otherwise = error "does not seem like a relation-changing formula!"
- where rels = map fst prelI
-
 
 convertToOurType :: PRelInfo -> RelInfo
  -- and add for each relation in the formula, the relevant key
@@ -218,153 +192,6 @@ specialise r relI (relational, global)
  | Universal `elem` props  = global
  | otherwise = relational r
  where props = Map.findWithDefault [] r relI
-
-
--- COMMON STRUCTURES FOR ALL RELATION-CHANGING TRANSLATIONS --
-type S = ( [(String, String)] , Int)    -- Int = next nominal number to use
-emptyset :: S -- directly nominal strings (uppercase)
-emptyset = ([],0)
--- generate unused nominal and update S
-next :: S -> (String,S)
-next (ss,n) = ("N" ++ show n, (ss, n + 1))
-
--- SABOTAGE TRANSLATION --
--- not exactly a union but we're mimicking the article
-union :: S -> (String, String) -> S
-union (ss,n) nm = (ss ++ [nm], n)
--- macro for translation
-belongs :: String -> S -> Formula
-belongs n (ss,_) = foldr disj (neg taut) $ set [ (n' y) `conj` At n (n' x) | (x,y) <- ss ]
- where n' = Lit . PosLit . N
-
--- SWAP TRANSLATION --
-inverse :: S -> S
-inverse (ss,n) =  (map (\(a,b) -> (b,a)) ss, n)
--- | slightly different from paper: phi must be already translated
-isSat :: S -> Formula -> Formula
-isSat (ss,_) phi = foldr disj (neg taut) [ n x `conj` At y phi | (x,y) <- ss ]
- where n = Lit . PosLit . N
-
--- | swap again some pair in S
-again :: S -> (String, String) -> S
-again (ss,n) xy@(x,y)
-  | xy `elem` ss =  ( (y,x):(delete xy ss), n)
-  | otherwise    = error "trying to swap again something that is not here"
-
-doTranslate :: RelationChanging -> [F.Formula S.NomSymbol S.PropSymbol S.RelSymbol] -> Formula
-doTranslate rc input =  -- TODO detect if sabotage, if bridge, if swap
-  case rc of
-   Sabotage -> trSab  emptyset bigAnd
-   Swap     -> trSwap emptyset bigAnd
-   Bridge   -> trBri  emptyset bigAnd
- where bigAnd = convert Map.empty input
-
-trSab :: S -> Formula -> Formula
-trSab _ l@(Lit _)           = l
-trSab s (Con fs)            = Con (Set.map (trSab s) fs)
-trSab s (Dis fs)            = Dis (Set.map (trSab s) fs)
-trSab s (At n f)            = At n (trSab s f)
-trSab s (Down v f)          = Down v (trSab s f)
-trSab s (A f)               = A    (trSab s f)
-trSab s (E f)               = E    (trSab s f)
-trSab s (Box r f)           = neg $ trSab s (Dia r (neg f))
-trSab s (Dia r f)
-    | up r `elem` ["R","R1"] =
-        case s of
-         ([],_)  ->  Dia "R" (trSab s1 f)
-         _       ->  Down newNom1 ( Dia "R" ( (neg $ belongs newNom1 s1) `conj` (trSab s1 f)))
-    | up r == "SB" =
-        Down newNom1 (Dia "R" ( (neg $ belongs newNom1 s2) `conj` (Down newNom2 (trSab s2u12 f)))) 
-    | up r == "GSB"     =
-        Down newNom1 $ E $ Down newNom2
-          $ (Dia "R" ( (neg $ belongs newNom2 s2) `conj` (Down newNom3 $ At newNom1 (trSab s4u23 f))))
-    | otherwise         = error ("Relation is not r, r1, sb or gsb: " ++ r)
-    where (newNom1,s1) = next s
-          (newNom2,s2) = next s1
-          s2u12 = s2 `union` (newNom1,newNom2)
-          (newNom3,s3) = next s2
-          s4u23 = s3 `union` (newNom2,newNom3)
-
-trBri :: S -> Formula -> Formula
-trBri _ l@(Lit _)           = l
-trBri s (Con fs)            = Con (Set.map (trBri s) fs)
-trBri s (Dis fs)            = Dis (Set.map (trBri s) fs)
-trBri s (At n f)            = At   n (trBri s f)
-trBri s (Down v f)          = Down v (trBri s f)
-trBri s (A f)               = A    (trBri s f)
-trBri s (E f)               = E    (trBri s f)
-trBri s (Box r f)           = neg $ trBri s (Dia r (neg f))
-trBri s (Dia r f)
-    | up r `elem` ["R","R1"] =
-        case s of
-         ([],_)  ->  Dia "R" (trBri s1 f)
-         _       ->  Down newNom1 $ E $ Down newNom2
-                       ( (( At newNom1 (Dia "R" (n newNom2))) `disj` (belongs newNom1 s1))
-                         `conj` (trBri s2 f)
-                       )
-    | up r == "BR" =
-        Down newNom1 $ E $ Down newNom2
-          (   ( neg $ At newNom1 (Dia "R" (n newNom2)))
-            `conj` (neg $ belongs newNom1 s1)
-            `conj` (trBri s2u12 f)
-          )
-    | up r == "GBR"     =
-        Down newNom1 $ E $ Down newNom2 $ E $ Down newNom3
-          (   ( neg $ At newNom2 (Dia "R" (n newNom3)))
-            `conj` (neg $ belongs newNom2 s1)
-            `conj` At newNom1 (trBri s4u23 f)
-          )
-    | otherwise         = error ("Relation is not r, r1, br or gbr: " ++ r)
-    where (newNom1,s1) = next s
-          (newNom2,s2) = next s1
-          s2u12 = s2 `union` (newNom1,newNom2)
-          (newNom3,s3) = next s2
-          s4u23 = s3 `union` (newNom2,newNom3)
-          n = Lit . PosLit . N
-
-trSwap :: S -> Formula -> Formula
-trSwap _ l@(Lit _)           = l
-trSwap s (Con fs)            = Con (Set.map (trSwap s) fs)
-trSwap s (Dis fs)            = Dis (Set.map (trSwap s) fs)
-trSwap s (At n f)            = At        n (trSwap s f)
-trSwap s (Down v f)          = Down      v (trSwap s f)
-trSwap s (A f)               = A    (trSwap s f)
-trSwap s (E f)               = E    (trSwap s f)
-trSwap s (Box r f)           = neg $ trSwap s (Dia r (neg f))
-trSwap s@(ss,_) (Dia r f)
-    | up r `elem` ["R","R1"] =
-        case s of
-         ([],_)  ->  Dia "R" (trSwap s1 f)
-         _       ->  (Down newNom1 ( Dia "R" ( (neg $ belongs newNom1 s1) `conj` (trSwap s1 f))))
-                     `disj`
-                     (isSat (inverse s) (trSwap s f))
-    | up r == "SW" =
-          ( Down newNom1 (Dia "R" (n newNom1)) `conj` trSwap s f )
-        `disj`
-          ( Down newNom1 $ Dia "R" 
-               $    neg (n newNom1)
-                 `conj` neg (belongs newNom1 s)
-                 `conj` neg (belongs newNom1 (inverse s))
-                 `conj` (Down newNom2 $ trSwap s2u12 f))
-        `disj`
-          foldr disj (neg taut) [ n y `conj` At x (trSwap (again s (x,y)) f) | (x,y) <- ss ]
-    | up r == "GSW" =
-          ( (E $ Down newNom1 $ Dia "R" $ n newNom1) `conj` trSwap s f )
-        `disj`
-          ( Down newNom1 $ E $ Down newNom2 $ Dia "R"
-               $    neg (n newNom2)
-                 `conj` neg (belongs newNom2 s)
-                 `conj` neg (belongs newNom2 (inverse s))
-                 `conj` (Down newNom3 $ At newNom1 $ trSwap s4u23 f))
-        `disj`
-          foldr disj (neg taut) [ trSwap (again s (x,y)) f | (x,y) <- ss ]
-    | otherwise         = error ("Relation is not r, r1, sw or gsw: " ++ r)
-    where (newNom1,s1) = next s
-          (newNom2,s2) = next s1
-          s2u12 = s2 `union` (newNom1,newNom2)
-          (newNom3,s3) = next s2
-          s4u23 = s3 `union` (newNom2,newNom3)
-          n = Lit . PosLit . N
 
 type HyLoFormula = F.Formula S.NomSymbol S.PropSymbol S.RelSymbol
 

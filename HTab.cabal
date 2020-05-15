@@ -17,7 +17,6 @@ Data-files:  NEWS
              examples/*.sh
              examples/sat/*.frm
              examples/unsat/*.frm
-             rc/*.frm
 source-repository head
     type:     darcs
     location: http://hub.darcs.net/gh/htab
@@ -32,7 +31,6 @@ Executable          htab
                        HTab.Formula
                        HTab.Literals
                        HTab.Main
-                       HTab.Memory
                        HTab.ModelGen
                        HTab.Relations
                        HTab.RuleId

@@ -26,7 +26,6 @@ data Params = Params {
          , minimal         :: Bool
          , random          :: Bool
          , seed            :: Maybe String
-         , test_translations :: Bool
          } deriving (Show, Data, Typeable)
 
 data UnitProp = UPYes | Eager | UPNo deriving (Data, Typeable, Eq, Show)
@@ -49,11 +48,9 @@ defaultParams
        showFormula    := False   += help "display formula",
        allTransitive  := False   += help "make all relations transitive",
        allReflexive   := False   += help "make all relations reflexive",
-       translate      := False   += help "translate relation-changing formulas to hybrid",
        minimal        := False   += help "look for minimal model (slow)",
        random         := False   += help "randomly select next disjunctive formula, also randomize disjuncts",
-       seed           := Nothing += help "set random seed (integer)",
-       test_translations := False   += help "run the memory-to-relation-changing test suite"
+       seed           := Nothing += help "set random seed (integer)"
       ] += verbosity
 
 strategyVal :: String
@@ -74,11 +71,8 @@ checkParams p
                    "The rules conjunction, box, and universal modality",
                    "are applied immediately, thus do not belong to the strategy."]
        return False
- | null (filename p) && not (test_translations p)=
+ | null (filename p)=
     do putStrLn $ unlines ["ERROR: No input specified.","Run with --help for usage options"]
-       return False
- | translate p && (allTransitive p || allReflexive p) = 
-    do putStrLn $ unlines ["ERROR: --translate incompatible with --all-transitive or --all-reflexive."]
        return False
  | otherwise = return True
   where notPermutationOf l1 l2 = sort l1 /= sort l2
