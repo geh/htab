@@ -22,7 +22,6 @@ data Params = Params {
            showFormula     :: Bool,
            allTransitive   :: Bool,
            allReflexive    :: Bool
-         , translate       :: Bool
          , minimal         :: Bool
          } deriving (Show, Data, Typeable)
 
