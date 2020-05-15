@@ -24,8 +24,6 @@ data Params = Params {
            allReflexive    :: Bool
          , translate       :: Bool
          , minimal         :: Bool
-         , random          :: Bool
-         , seed            :: Maybe String
          } deriving (Show, Data, Typeable)
 
 data UnitProp = UPYes | Eager | UPNo deriving (Data, Typeable, Eq, Show)
@@ -48,9 +46,7 @@ defaultParams
        showFormula    := False   += help "display formula",
        allTransitive  := False   += help "make all relations transitive",
        allReflexive   := False   += help "make all relations reflexive",
-       minimal        := False   += help "look for minimal model (slow)",
-       random         := False   += help "randomly select next disjunctive formula, also randomize disjuncts",
-       seed           := Nothing += help "set random seed (integer)"
+       minimal        := False   += help "look for minimal model (slow)"
       ] += verbosity
 
 strategyVal :: String

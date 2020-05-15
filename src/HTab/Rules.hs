@@ -4,10 +4,6 @@ Rule(..),
 applicableRule, applyRule, ruleToId
 ) where
 
-import System.Random
-
-import qualified Data.Map as Map
-
 import qualified Data.Set as Set
 import Data.Maybe ( mapMaybe )
 
@@ -33,7 +29,6 @@ import HTab.Branch( Branch(..), BranchInfo(..), TodoList(..),
 import HTab.CommandLine(Params, UnitProp(..),
                         lazyBranching, semBranch, unitProp,
                         strategy, minimal)
-import qualified HTab.CommandLine as CL ( random )
 import HTab.RuleId(RuleId(..))
 import qualified HTab.DisjSet as DS
 
@@ -86,14 +81,14 @@ ruleToId r = case r of
 
 -- the rules application strategy is defined here:
 -- the first rule is the one that will be applied at the next tableau step
-applicableRule :: Branch -> Params -> Dependency -> StdGen -> Maybe (Rule,Branch, StdGen)
-applicableRule br p d g =
- case mapMaybe (ruleByChar br p d g) (strategy p) of  -- TODO weird to use the same g, but right after we only take the first rule
+applicableRule :: Branch -> Params -> Dependency -> Maybe (Rule,Branch)
+applicableRule br p d =
+ case mapMaybe (ruleByChar br p d) (strategy p) of  -- TODO weird to use the same g, but right after we only take the first rule
    [] -> Nothing
-   ((rule,newtodo,g'):_) -> Just (rule, br{todoList = newtodo}, g')
+   ((rule,newtodo):_) -> Just (rule, br{todoList = newtodo})
 
-ruleByChar :: Branch -> Params -> Dependency -> StdGen -> Char -> Maybe (Rule,TodoList, StdGen)
-ruleByChar br p d g char =
+ruleByChar :: Branch -> Params -> Dependency -> Char -> Maybe (Rule,TodoList)
+ruleByChar br p d char =
  case char of
   'n' -> applicableMergeRule
   '|' -> applicableDisjRule
@@ -108,43 +103,35 @@ ruleByChar br p d g char =
   applicableDiaRule
    = do (f,new) <- Set.minView $ diaTodo todos
         if diaAlreadyDone br f
-          then       return ( DiscardDiaDoneRule f,    todos{diaTodo = new}, g)
+          then       return ( DiscardDiaDoneRule f,    todos{diaTodo = new})
           else
            if patternBlocked br f
-             then return ( DiscardDiaBlockedRule f, todos{diaTodo = new}, g)
-             else return ( DiaRule f d,             todos{diaTodo = new}, g)
+             then return ( DiscardDiaBlockedRule f, todos{diaTodo = new})
+             else return ( DiaRule f d,             todos{diaTodo = new})
   applicableAtRule    = do (f,new) <- Set.minView $ atTodo todos
-                           return (AtRule f, todos{atTodo = new}, g)
+                           return (AtRule f, todos{atTodo = new})
 
   applicableExistRule = do (f,new) <- Set.minView $ existTodo todos
-                           return (ExistRule f d, todos{existTodo = new}, g)
+                           return (ExistRule f d, todos{existTodo = new})
   applicableRoleIncRule
    = do ((ds, p1, p2, rs),new) <- Set.minView $ roleIncTodo todos
-        return (RoleIncRule p1 rs p2 (dsInsert d ds), todos{roleIncTodo = new}, g)
+        return (RoleIncRule p1 rs p2 (dsInsert d ds), todos{roleIncTodo = new})
 
   applicableMergeRule  = do ((ds,pr,n),new) <- Set.minView $ mergeTodo todos
-                            return (MergeRule pr n ds, todos{mergeTodo = new}, g)
+                            return (MergeRule pr n ds, todos{mergeTodo = new})
   applicableDisjRule
    = case unitProp p of
       Eager -> {- scan all disjuncts until one can be discarded,
                   reduced to one disjunct or clashes -}
           case mapMaybe (makeInteresting p br d) $ Set.toList $ disjTodo todos of
-            ((r,pf):_) -> return (r, todos{disjTodo = Set.delete pf $ disjTodo todos}, g)
+            ((r,pf):_) -> return (r, todos{disjTodo = Set.delete pf $ disjTodo todos})
             [] -> regularApplicableDisjRule
          -- todo: update counter (CurCount, MaxCount) step 10
          -- to space out unit propagation lookup
       _     ->  regularApplicableDisjRule
   regularApplicableDisjRule
-      | not (CL.random p)
-          = do (f,new) <- Set.minView $ disjTodo todos
-               return (disjRule p f br d, todos{disjTodo = new}, g)
-      | otherwise
-          = if Set.null s then Nothing
-             else let (n, g') = randomR (0, Set.size s - 1) g
-                      f = Set.elemAt n s  -- pick formula
-                      new = Set.deleteAt n s -- remove from Set
-                  in  Just (disjRule p f br d, todos{disjTodo = new}, g')
-           where s = disjTodo todos
+    = do (f,new) <- Set.minView $ disjTodo todos
+         return (disjRule p f br d, todos{disjTodo = new})
 
 makeInteresting :: Params -> Branch -> Dependency -> PrFormula ->  Maybe (Rule,PrFormula)
 makeInteresting p br d df@(PrFormula pr ds (Dis fs))
@@ -174,12 +161,12 @@ makeInteresting _ _ _ _ = error "makeInteresting on a non disjunction"
 clash@(BranchClash _ _ _ _) >>? _ = clash
 (BranchOK br) >>? f = f br
 
-applyRule :: Params -> Rule -> Branch -> StdGen -> ([BranchInfo], StdGen)
-applyRule p rule br g
+applyRule :: Params -> Rule -> Branch -> [BranchInfo]
+applyRule p rule br
  = case rule of
     DiaRule (PrFormula pr ds (Dia r f)) d -- here, if minimal, branch on all prefixes
-     | minimal p -> if CL.random p then shuffle g choices else (choices, g)
-     | otherwise -> (properNewBranch, g)
+     | minimal p -> choices
+     | otherwise -> properNewBranch
           where
                 tryAllPrefixes = map reusePrefix $ filter (isNominalUrfather br) [0..lastPref br]
                 reusePrefix pr' =
@@ -192,46 +179,43 @@ applyRule p rule br g
                     addFormulas p [PrFormula newPr ds f] >>?
                     addDiaRuleCheck pr (r,f) newPr
                   ]
-                deps = if CL.random p && minimal p then dsInsert d (dsUnion ds ds2) else dsUnion ds ds2
+                deps = dsUnion ds ds2
                 choices = tryAllPrefixes ++ properNewBranch
                 newPr      = lastPref br + 1
                 (ur,ds2,_) = getUrfatherAndDeps br (DS.Prefix pr)
     ExistRule (PrFormula _ ds (E f2)) d -- here, if minimal, branch on all prefixes
-     | minimal p -> if CL.random p then shuffle g choices else (choices, g)
-     | otherwise -> (properNewBranch, g)
+     | minimal p -> choices
+     | otherwise -> properNewBranch
        where
              tryAllPrefixes = map reusePrefix $ filter (isNominalUrfather br) [0..lastPref br]
              reusePrefix pr' = addFormulas p [PrFormula pr' (dsInsert d ds) f2] br
-             properNewBranch = [createNewNode p br >>? addFormulas p [PrFormula newPr deps f2]]
-             deps = if CL.random p && minimal p then dsInsert d ds else ds
+             properNewBranch = [createNewNode p br >>? addFormulas p [PrFormula newPr ds f2]]
              choices = tryAllPrefixes ++ properNewBranch
              newPr = lastPref br + 1
 
     DisjRule _ prFormulas
-     | CL.random p -> shuffle g choices
-     | otherwise -> (choices, g)
+     -> choices
      where choices = [ addFormulas p [toadd] br |  toadd <- prFormulas ]
     SemBrRule _ prFormulas
-     | CL.random p  -> shuffle g choices
-     | otherwise -> (choices, g)
+     -> choices
              where
               choices = [ addFormulas p toadds br |  toadds <- go prFormulas [] ]
               go (hd:tl) negs = (hd:negs):(go tl (negPr hd:negs))
               go [] _ = []
     LazyBrRule _ pr lit prFormulas ->
-            ([ doLazyBranching pr lit prFormulas br ], g)
+            [ doLazyBranching pr lit prFormulas br ]
     AtRule  (PrFormula _ ds (At n f)) ->
-            ([ addFormulas p [toadd] br{ nomPrefClasses = equiv }], g)
+            [ addFormulas p [toadd] br{ nomPrefClasses = equiv }]
             where (ur,ds2,equiv) = getUrfatherAndDeps br (DS.Nominal n)
                   toadd = PrFormula ur (dsUnion ds ds2) f
-    DiscardDiaDoneRule _      -> ([BranchOK br], g)
-    DiscardDisjTrivialRule _  -> ([BranchOK br], g)
-    DiscardDiaBlockedRule f   -> ([addToBlockedDias f br], g)
+    DiscardDiaDoneRule _      -> [BranchOK br]
+    DiscardDisjTrivialRule _  -> [BranchOK br]
+    DiscardDiaBlockedRule f   -> [addToBlockedDias f br]
 
-    ClashDisjRule ds (PrFormula pr ds2 f) -> ([BranchClash br pr (dsUnion ds ds2) f], g)
-    MergeRule pr n ds -> ([merge p pr ds n br], g)
+    ClashDisjRule ds (PrFormula pr ds2 f) -> [BranchClash br pr (dsUnion ds ds2) f]
+    MergeRule pr n ds -> [merge p pr ds n br]
     RoleIncRule p1 rs p2 ds ->
-     ([addAccFormula p (ds, r, p1, p2) br | r <- rs], g)
+     [addAccFormula p (ds, r, p1, p2) br | r <- rs]
     _ -> error $ "applyRule with bad argument: " ++ show rule
 
 disjRule :: Params -> PrFormula -> Branch -> Dependency -> Rule
@@ -246,22 +230,3 @@ disjRule p df@(PrFormula pr ds (Dis fs)) br d
     where rule = if semBranch p then SemBrRule else DisjRule
 -- todo: if only one conjunct remaining, do not add d , but still create a DisjRule
 disjRule _ _ _ _ = error "disjRule"
-
-
--- list shuffler
--- http://okmij.org/ftp/Haskell/perfect-shuffle.txt 
-
-fisherYatesStep :: RandomGen g => (Map.Map Int a, g) -> (Int, a) -> (Map.Map Int a, g)
-fisherYatesStep (m, gen) (i, x) = ((Map.insert j x . Map.insert i (m Map.! j)) m, gen')
-  where
-    (j, gen') = randomR (0, i) gen
-
-shuffle :: RandomGen g => g -> [a] -> ([a], g)
-shuffle gen [] = ([], gen)
-shuffle gen l =
-  toElems $ foldl fisherYatesStep (initial (head l) gen) (numerate (tail l))
-  where
-    toElems (x, y) = (Map.elems x, y)
-    numerate = zip [1..]
-    initial x gen' = (Map.singleton 0 x, gen')
-

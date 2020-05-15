@@ -39,8 +39,6 @@ import Control.Monad.State(MonadState , MonadIO, modify, unless,
 import qualified Control.Monad.State as State(liftIO)
 import Control.DeepSeq ( NFData, rnf )
 
-import System.Random
-
 import Data.Map(Map)
 import qualified Data.Map as Map(insertWith, toList, empty)
 import Data.List ( intercalate )
@@ -49,11 +47,10 @@ import HTab.RuleId(RuleId(..))
 
 data Statistics = Stat{metrics::[Metric],
                        count::Int,
-                       step::Int,
-                       rGen::StdGen}
+                       step::Int}
 
 instance NFData Statistics where
- rnf (Stat sM sC sS _) = rnf sM  `seq` rnf sC `seq`  rnf sS
+ rnf (Stat sM sC sS) = rnf sM  `seq` rnf sC `seq`  rnf sS
 
 type StatisticsState a   = forall m. (MonadState Statistics m) => m a
 type StatisticsStateIO a = forall m. (MonadState Statistics m, MonadIO m) => m a
@@ -64,23 +61,23 @@ updateMetrics f stat = let s = stat{metrics           = map (f $!) (metrics stat
                             rnf s `seq` s
 
 updateStep :: Statistics -> Statistics
-updateStep s@(Stat _  _ 0    _)   = s
+updateStep s@(Stat _  _ 0)       = s
 updateStep stat                  = stat{count = count stat + 1}
 
 needsToPrintOut :: Statistics -> Bool
-needsToPrintOut (Stat _  _ 0   _)  = False
-needsToPrintOut (Stat _  iter toi _) = iter > 0 && iter `mod` toi == 0
+needsToPrintOut (Stat _  _ 0)      = False
+needsToPrintOut (Stat _  iter toi) = iter > 0 && iter `mod` toi == 0
 
-defaultStats :: StdGen -> Statistics
-defaultStats g = Stat{metrics=[closedBranches, ruleApplicationCount],
-                      count=0, step=0, rGen=g}
+defaultStats :: Statistics
+defaultStats = Stat{metrics=[closedBranches, ruleApplicationCount],
+                      count=0, step=0}
 
 ---------- Monadic Statistics functions follow -------------
 
 
-initialStatisticsStateFor :: (MonadState Statistics m) => (m a -> Statistics -> b) -> StdGen
+initialStatisticsStateFor :: (MonadState Statistics m) => (m a -> Statistics -> b)
                                                              -> m a -> b
-initialStatisticsStateFor f g = flip f (defaultStats g)
+initialStatisticsStateFor f = flip f defaultStats
 
 setPrintOutInterval :: Int -> StatisticsState ()
 setPrintOutInterval i = modify $ \s -> s{step = i}
