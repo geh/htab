@@ -18,14 +18,26 @@ and unpacking it.
 
 ## Compiling and using
 
-To build HTab, you will need at least GHC 7.10, and either [cabal-install](https://wiki.haskell.org/Cabal-Install)
+To build HTab, you will need at least GHC 8.6, and either
+[cabal-install](https://wiki.haskell.org/Cabal-Install)
 or [stack](http://www.haskellstack.org/).
 Dependencies, including [hylolib](http://hackage.haskell.org/package/hylolib),
 will be downloaded and compiled automatically.
 
-A help is available by running:
+A summary of the `htab` flags is available by running:
 
     htab --help
+
+## Model building
+
+HTab can output a model in the dot format for a satisfiable formula by using
+the `-m` option with `-d`:
+
+    htab -f input.frm -m model.m -d
+    dot model.m  -Tpdf  -omodel.pdf
+
+You will probably need to install the `graphviz` package to get the `dot`
+executable.
 
 [1] https://cs.famaf.unc.edu.ar/~hoffmann/publi/2009_m4m_htab.pdf
 [2] https://cs.famaf.unc.edu.ar/~hoffmann/publi/2010_jal.pdf

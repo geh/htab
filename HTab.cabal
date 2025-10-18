@@ -44,7 +44,7 @@ Executable          htab
                        strict,
                        random,
                        cmdargs >= 0.10.10,
-                       hylolib >= 1.5.1
+                       hylolib >= 1.5.5
   Default-extensions:  GADTs
                        DeriveDataTypeable
                        FlexibleContexts
