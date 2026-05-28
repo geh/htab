@@ -2,14 +2,10 @@ cabal-version:       2.4
 Name:                HTab
 Version:             1.7.3
 Synopsis:            Tableau based theorem prover for hybrid logics
-Description:         Tableau based theorem prover for hybrid logics
-Homepage:            http://hub.darcs.net/gh/htab
-Bug-reports:         http://hub.darcs.net/gh/htab/issues
+Homepage:            https://github.com/geh/htab
 Category:            Theorem provers
 License:             BSD-3-Clause
 License-file:        LICENSE
-Author:              Guillaume Hoffmann, Carlos Areces, Daniel Gorín, Juan Heguiabehere
-Maintainer:          guillaumh@gmail.com
 Build-type:          Simple
 Extra-source-files:  tests/test-example-formulas.hs
                      tests/coverage.sh
@@ -17,9 +13,6 @@ Data-files:  NEWS
              examples/*.sh
              examples/sat/*.frm
              examples/unsat/*.frm
-source-repository head
-    type:     darcs
-    location: http://hub.darcs.net/gh/htab
 
 Executable          htab
   Default-language:    Haskell2010
@@ -51,4 +44,4 @@ Executable          htab
                        Rank2Types
                        ScopedTypeVariables
   Hs-Source-Dirs:      src
-  ghc-options:         -O2 -Wall
+  ghc-options:         -O2 -Wall -Wno-incomplete-uni-patterns
